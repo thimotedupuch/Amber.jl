@@ -1,0 +1,20 @@
+using Test
+using Amber
+
+include("fixtures/circuits.jl")
+
+@testset "Amber.jl" begin
+    include("Core/circuit_ir.jl")
+    include("Devices/models.jl")
+    include("Devices/controlled_sources.jl")
+    include("Solvers/operating_point.jl")
+    include("Solvers/transient.jl")
+    include("Solvers/small_signal.jl")
+    include("Solvers/noise.jl")
+    include("Analysis/sweeps.jl")
+    include("Analysis/metrics.jl")
+    include("Results/results.jl")
+    include("Diagnostics/diagnostics.jl")
+    include("reference/examples.jl")
+    include("reference/gallery.jl")
+end

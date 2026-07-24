@@ -1,0 +1,175 @@
+function _apply_initial_conditions!(z,cc)
+    for x in cc.circuit.components
+        x.kind===:capacitor||continue
+        haskey(x.parameters,:initial_voltage)||continue
+        a,b=map(n->_idx(cc,n),x.terminals); value=Float64(x.parameters[:initial_voltage])
+        if a>0&&b==0; z[a]=value
+        elseif a==0&&b>0; z[b]=-value
+        elseif a>0&&b>0; z[a]=z[b]+value
+        end
+    end
+    z
+end
+
+function transient(c,p::Pair;overrides=nothing,kw...)
+    cc=compile(c); saved=_apply_overrides!(cc,overrides)
+    try
+        _transient(cc,p;kw...)
+    finally
+        _restore_overrides!(saved)
+    end
+end
+
+function _waveform_events(cc,t0,t1)
+    events=Float64[]
+    for component in cc.circuit.components
+        component.kind in (:voltage_source,:current_source)||continue
+        waveform=get(component.parameters,:waveform,nothing)
+        if waveform isa Step
+            push!(events,waveform.at); waveform.rise>0&&push!(events,waveform.at+waveform.rise)
+        elseif waveform isa Pulse
+            period=inv(waveform.frequency); first_cycle=floor(Int,(t0-waveform.delay)/period)-1; last_cycle=ceil(Int,(t1-waveform.delay)/period)+1
+            for cycle in first_cycle:last_cycle
+                start=waveform.delay+cycle*period
+                append!(events,(start,start+waveform.rise,start+waveform.duty_cycle*period,start+waveform.duty_cycle*period+waveform.fall))
+            end
+        end
+    end
+    filter!(time->t0<time<t1,events); events
+end
+
+function _merge_time_grid(times,nominal_step)
+    sorted=sort!(Float64.(times)); merged=Float64[]; tolerance=max(eps(maximum(abs,sorted))*16,nominal_step*1e-10)
+    for time in sorted
+        if isempty(merged)||time-last(merged)>tolerance
+            push!(merged,time)
+        end
+    end
+    merged
+end
+
+function _prescribed_node_voltage(cc,node,t)
+    _known_node_voltage(cc,node,t,:time)
+end
+
+function _apply_switch_events!(history,cc,previous_time,time)
+    applied=false
+    for component in cc.circuit.components
+        component.kind===:switch||continue; model=component.parameters[:model]; model.charge_injection==0&&continue
+        control_positive,control_negative=component.terminals[3:4]
+        positive_before=_prescribed_node_voltage(cc,control_positive,previous_time); negative_before=_prescribed_node_voltage(cc,control_negative,previous_time)
+        positive_after=_prescribed_node_voltage(cc,control_positive,time); negative_after=_prescribed_node_voltage(cc,control_negative,time)
+        any(isnothing,(positive_before,negative_before,positive_after,negative_after))&&continue
+        before=positive_before-negative_before; after=positive_after-negative_after
+        before>=model.threshold>after||continue
+        held=component.terminals[2]; held.id==0&&continue; capacitance=0.
+        for candidate in cc.circuit.components
+            candidate.kind===:capacitor||continue
+            any(node->node.id==held.id,candidate.terminals)&& (capacitance+=Float64(candidate.parameters[:value]))
+        end
+        capacitance>0||continue
+        history[cc.node_index[held.id]]+=model.charge_injection/capacitance; applied=true
+    end
+    applied
+end
+
+function _initial_transient_state(cc,initial)
+    z=try operating_point(cc).values[:,1] catch; zeros(cc.n) end
+    initial===:discharged&&(z[collect(values(cc.node_index))].=0)
+    _apply_initial_conditions!(z,cc)
+end
+
+function _mandatory_times(cc,t0,t1,saveat,event_mode)
+    times=Float64[t1]
+    if saveat!==nothing
+        append!(times,collect((t0+saveat):saveat:t1))
+    end
+    event_mode===:exact&&append!(times,_waveform_events(cc,t0,t1))
+    _merge_time_grid(filter(time->t0<time<=t1,times),something(saveat,(t1-t0)/100))
+end
+
+function _error_norm(high,low,previous,cc,reltol,abstol)
+    indices=sort!(vcat(collect(values(cc.node_index)),collect(values(cc.states))))
+    isempty(indices)&&return 0.
+    maximum(abs(high[index]-low[index])/(abstol+reltol*max(abs(high[index]),abs(previous[index]),1e-12)) for index in indices)
+end
+
+function _transient_adaptive(cc,t0,t1;saveat,max_step,method,reltol,abstol,maxiters,initial,event_mode)
+    z=_initial_transient_state(cc,initial); times=Float64[t0]; states=Vector{Vector{Float64}}([copy(z)])
+    mandatory=_mandatory_times(cc,t0,t1,saveat,event_mode); mandatory_index=1
+    span=t1-t0; maximum_step=something(max_step,saveat,span/10); dt=min(maximum_step,span/100)
+    minimum_step=max(eps(max(abs(t0),abs(t1),1.))*32,span*1e-12)
+    total_iterations=0; rejected=0; failed_steps=Int[]
+    while last(times)<t1
+        time=last(times)
+        while mandatory_index<=length(mandatory)&&mandatory[mandatory_index]<=time+minimum_step; mandatory_index+=1 end
+        boundary=mandatory_index<=length(mandatory) ? mandatory[mandatory_index] : t1
+        next_time=min(time+dt,boundary,t1); h=next_time-time; previous=copy(z)
+        event_history=copy(previous); event_applied=event_mode===:exact&&_apply_switch_events!(event_history,cc,time,next_time)
+        use_bdf2=method===:bdf2&&length(states)>=2&&!event_applied
+        if use_bdf2
+            previous_h=times[end]-times[end-1]; ratio=h/previous_h; α=(1+2ratio)/((1+ratio)*h)
+            history=((1+ratio) .* previous ./ h .- ratio^2 .* states[end-1] ./ ((1+ratio)*h)) ./ α
+            high,iterations,good=_newton(cc,z,history,next_time,α;reltol,abstol,maxiters)
+            low,low_iterations,low_good=_newton(cc,z,event_history,next_time,inv(h);reltol,abstol,maxiters)
+            iterations+=low_iterations; good&=low_good; error=_error_norm(high,low,previous,cc,reltol,abstol); candidate=high
+        else
+            full,iterations,good=_newton(cc,z,event_history,next_time,inv(h);reltol,abstol,maxiters)
+            midpoint=time+h/2
+            half,half_iterations,half_good=_newton(cc,z,previous,midpoint,2/h;reltol,abstol,maxiters)
+            second_history=copy(half); event_mode===:exact&&_apply_switch_events!(second_history,cc,midpoint,next_time)
+            refined,second_iterations,second_good=_newton(cc,half,second_history,next_time,2/h;reltol,abstol,maxiters)
+            iterations+=half_iterations+second_iterations; good&=half_good&second_good
+            error=_error_norm(refined,full,previous,cc,reltol,abstol); candidate=refined
+        end
+        total_iterations+=iterations
+        if good&&(error<=1||h<=minimum_step)
+            z=candidate; push!(times,next_time); push!(states,copy(z))
+            factor=error==0 ? 2. : clamp(.9*error^(-1/(use_bdf2 ? 3 : 2)),.25,2.)
+            dt=min(maximum_step,max(minimum_step,h*factor))
+        else
+            rejected+=1; dt=max(minimum_step,h*max(.1,min(.5,.9*max(error,1e-12)^(-1/(use_bdf2 ? 3 : 2)))))
+            if h<=minimum_step&&!good
+                z=candidate; push!(times,next_time); push!(states,copy(z)); push!(failed_steps,length(times))
+            end
+        end
+    end
+    values_matrix=hcat(states...); analysis=Transient(t0=>t1;saveat,max_step,method,adaptive=true)
+    stats=Dict{Symbol,Any}(:converged=>isempty(failed_steps),:iterations=>total_iterations,:failed_steps=>failed_steps,:rejected_steps=>rejected)
+    SimulationResult(cc,analysis,times,values_matrix,stats)
+end
+
+function _transient(c,p::Pair;saveat=nothing,max_step=nothing,method=:bdf2,adaptive=nothing,reltol=1e-6,abstol=1e-9,maxiters=120,initial=nothing,initialization=nothing,event_mode=nothing,kw...)
+    method in (:bdf1,:bdf2)||throw(ArgumentError("method must be :bdf1 or :bdf2"))
+    cc=compile(c); t0,t1=Float64(first(p)),Float64(last(p))
+    use_adaptive=adaptive===nothing ? saveat===nothing&&max_step===nothing : Bool(adaptive)
+    use_adaptive&&return _transient_adaptive(cc,t0,t1;saveat,max_step,method,reltol,abstol,maxiters,initial,event_mode)
+    dt=something(saveat,max_step,(t1-t0)/1000); max_step!==nothing&&(dt=min(dt,max_step))
+    nt=max(2,ceil(Int,(t1-t0)/dt)+1); ts=collect(range(t0,t1,length=nt))
+    event_mode===:exact&&(ts=_merge_time_grid(vcat(ts,_waveform_events(cc,t0,t1)),dt))
+    nt=length(ts); vals=zeros(cc.n,nt)
+    z=_initial_transient_state(cc,initial)
+    vals[:,1]=z; total=0; ok=true; failed_steps=Int[]; failed_residuals=Any[]
+    for j in 2:nt
+        h=ts[j]-ts[j-1]; prev=copy(z)
+        event_history=copy(prev); event_applied=event_mode===:exact&&_apply_switch_events!(event_history,cc,ts[j-1],ts[j])
+        if method===:bdf2&&j>2&&!event_applied
+            previous_h=ts[j-1]-ts[j-2]; ratio=h/previous_h
+            α=(1+2ratio)/((1+ratio)*h)
+            history=((1+ratio) .* prev ./ h .- ratio^2 .* vals[:,j-2] ./ ((1+ratio)*h)) ./ α
+        else
+            α=inv(h); history=event_history
+        end
+        z,it,good=_newton(cc,z,history,ts[j],α;reltol,abstol,maxiters)
+        vals[:,j]=z; total+=it; ok&=good
+        if !good
+            push!(failed_steps,j)
+            final_residual=residual(cc,z,α.*(z.-history),ts[j])
+            push!(failed_residuals,(row=argmax(abs.(final_residual)),norm=norm(final_residual,Inf)))
+        end
+    end
+    analysis=Transient(Float64(t0)=>Float64(t1);saveat,max_step,method,adaptive=false)
+    SimulationResult(cc,analysis,ts,vals,Dict{Symbol,Any}(:converged=>ok,:iterations=>total,:failed_steps=>failed_steps,:failed_residuals=>failed_residuals))
+end
+
+simulate(c,a::Transient)=transient(c,a.interval;saveat=a.saveat,max_step=a.max_step,method=a.method,adaptive=a.adaptive,overrides=a.overrides)

@@ -1,0 +1,6 @@
+@testset "noise" begin
+    result=noise(LowPass(),10Hz=>100kHz;output=voltage(:vout),referred_to=:V1,points=12)
+    @test length(output_noise_density(result))==12
+    @test all(>(0),output_noise_density(result))
+    @test all(isfinite,input_referred_noise_density(result))
+end
