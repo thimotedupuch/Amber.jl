@@ -8,3 +8,11 @@
     end
     @test voltage(operating_point(DCVersusWaveform()),:output)[1]≈2V
 end
+
+
+@testset "temperature-aware operating point" begin
+    cold=operating_point(BiasedNPN();temperature=250.)
+    hot=operating_point(BiasedNPN();temperature=350.)
+    @test cold.stats[:converged]&&hot.stats[:converged]
+    @test voltage(cold,:base)[1]!=voltage(hot,:base)[1]
+end

@@ -39,3 +39,10 @@
     @test length(unique(round.(diff(adaptive_result.axis);sigdigits=6)))>1
     @test voltage(adaptive_result,:vout)[end]>.9V
 end
+
+
+@testset "transient validation and save grid" begin
+    @test_throws AnalysisValidationError transient(LowPass(),1s=>0s)
+    result=transient(LowPass(),0s=>95μs;saveat=10μs)
+    @test result.axis==vcat(0.,collect(10μs:10μs:90μs),95μs)
+end

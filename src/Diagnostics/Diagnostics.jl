@@ -2,6 +2,15 @@ struct Diagnostic
     severity::Symbol
     message::String
 end
+struct CircuitValidationError <: Exception
+    diagnostics::Vector{Diagnostic}
+end
+Base.showerror(io::IO,error::CircuitValidationError)=print(io,join(getfield.(error.diagnostics,:message),'\n'))
+
+struct AnalysisValidationError <: Exception
+    message::String
+end
+Base.showerror(io::IO,error::AnalysisValidationError)=print(io,error.message)
 Base.show(io::IO,d::Diagnostic)=print(io,d.message)
 
 function check(c::Circuit)
@@ -10,10 +19,96 @@ function check(c::Circuit)
         push!(ds,Diagnostic(:error,"Circuit has no electrical reference. Add a ground to every electrical connected component."))
         return ds
     end
+    length(grounds)==1||push!(ds,Diagnostic(:error,"Circuit must contain exactly one ground node; found $(length(grounds))."))
+    node_names=map(node->node.name,c.nodes)
+    length(unique(node_names))==length(node_names)||push!(ds,Diagnostic(:error,"Node names must be unique within a circuit."))
+    component_names=map(component->component.name,c.components)
+    length(unique(component_names))==length(component_names)||push!(ds,Diagnostic(:error,"Component names must be unique within a circuit."))
+    circuit_nodes=IdSet()
+    foreach(node->push!(circuit_nodes,node),c.nodes)
+    for component in c.components
+        spec=get(_DEVICE_SPECS,component.kind,nothing)
+        if spec===nothing
+            push!(ds,Diagnostic(:error,"$(component.name) has unsupported device kind $(component.kind).")); continue
+        end
+        length(component.terminals)==spec.terminals||push!(ds,Diagnostic(:error,"$(component.name) ($(component.kind)) requires $(spec.terminals) terminals, but has $(length(component.terminals))."))
+        all(terminal->terminal in circuit_nodes,component.terminals)||push!(ds,Diagnostic(:error,"$(component.name) refers to a node that does not belong to this circuit."))
+        waveform=get(component.parameters,:waveform,nothing)
+        if waveform isa AbstractWaveform
+            try _validate_waveform(waveform) catch error
+                push!(ds,Diagnostic(:error,"$(component.name): $(sprint(showerror,error))"))
+            end
+        end
+        if component.kind in (:cccs,:ccvs)
+            control=get(component.parameters,:control,nothing)
+            control_index=findfirst(candidate->candidate.name===control,c.components)
+            if control_index===nothing
+                push!(ds,Diagnostic(:error,"$(component.name) refers to unknown controlling component $(control)."))
+            elseif !_DEVICE_SPECS[c.components[control_index].kind].branch
+                push!(ds,Diagnostic(:error,"$(component.name) requires a controlling component with an MNA branch current."))
+            end
+        end
+        if component.kind in (:resistor,:capacitor,:inductor)
+            value=get(component.parameters,:value,nothing)
+            (value isa Real&&isfinite(value)&&value>0)||push!(ds,Diagnostic(:error,"$(component.name) requires a finite, positive value."))
+        elseif component.kind===:conductance
+            value=get(component.parameters,:value,nothing)
+            (value isa Real&&isfinite(value)&&value>=0)||push!(ds,Diagnostic(:error,"$(component.name) requires a finite, non-negative conductance."))
+        elseif component.kind===:voltage_source
+            resistance=get(component.parameters,:series_resistance,0.)
+            (resistance isa Real&&isfinite(resistance)&&resistance>=0)||push!(ds,Diagnostic(:error,"$(component.name) requires a finite, non-negative series resistance."))
+        elseif component.kind===:diode
+            model=get(component.parameters,:model,nothing)
+            model isa JunctionDiode||push!(ds,Diagnostic(:error,"$(component.name) requires a JunctionDiode model."))
+            if model isa JunctionDiode
+                model.saturation_current>0||push!(ds,Diagnostic(:error,"$(component.name) saturation current must be positive."))
+                model.ideality>0||push!(ds,Diagnostic(:error,"$(component.name) ideality must be positive."))
+                model.series_resistance>=0||push!(ds,Diagnostic(:error,"$(component.name) series resistance must be non-negative."))
+                model.junction_capacitance>=0||push!(ds,Diagnostic(:error,"$(component.name) junction capacitance must be non-negative."))
+                model.breakdown_voltage>0||push!(ds,Diagnostic(:error,"$(component.name) breakdown voltage must be positive."))
+                model.breakdown_current>0||push!(ds,Diagnostic(:error,"$(component.name) breakdown current must be positive."))
+            end
+        elseif component.kind===:npn
+            model=get(component.parameters,:model,nothing)
+            model isa GummelPoonBJT||push!(ds,Diagnostic(:error,"$(component.name) requires a GummelPoonBJT model."))
+            if model isa GummelPoonBJT
+                model.saturation_current>0||push!(ds,Diagnostic(:error,"$(component.name) saturation current must be positive."))
+                model.forward_beta>0||push!(ds,Diagnostic(:error,"$(component.name) forward beta must be positive."))
+                model.reverse_beta>0||push!(ds,Diagnostic(:error,"$(component.name) reverse beta must be positive."))
+                model.early_voltage>0||push!(ds,Diagnostic(:error,"$(component.name) early voltage must be positive."))
+            end
+        elseif component.kind===:switch
+            model=get(component.parameters,:model,nothing)
+            if model isa Union{VoltageControlledSwitch,EventSwitch,SmoothSwitch}
+                model.ron>0&&model.roff>0||push!(ds,Diagnostic(:error,"$(component.name) switch resistances must be positive."))
+            else
+                push!(ds,Diagnostic(:error,"$(component.name) requires a switch model."))
+            end
+        elseif component.kind===:opamp
+            model=get(component.parameters,:model,nothing)
+            if model isa BehavioralOpAmp
+                model.dc_gain>0&&model.gain_bandwidth>0&&model.output_resistance>=0||push!(ds,Diagnostic(:error,"$(component.name) has invalid op-amp gain, bandwidth, or output resistance."))
+            else
+                push!(ds,Diagnostic(:error,"$(component.name) requires a BehavioralOpAmp model."))
+            end
+        end
+    end
+    circuit_components=IdSet(); foreach(component->push!(circuit_components,component),c.components)
+    for observable in vcat(c.observations,collect(values(get(c.metadata,:named_observations,Dict{Symbol,Any}()))))
+        observable isa Observable||continue
+        target=observable.target; extra=observable.extra
+        target isa AbstractNode&&!(target in circuit_nodes)&&push!(ds,Diagnostic(:error,"An observation refers to a node outside this circuit."))
+        target isa Component&&!(target in circuit_components)&&push!(ds,Diagnostic(:error,"An observation refers to a component outside this circuit."))
+        extra isa AbstractNode&&!(extra in circuit_nodes)&&push!(ds,Diagnostic(:error,"A differential observation refers to a node outside this circuit."))
+    end
+    for (name,terminal) in get(c.metadata,:ports,Dict{Symbol,Any}())
+        terminal isa AbstractNode&&terminal in circuit_nodes||push!(ds,Diagnostic(:error,"Port $(name) does not refer to a node owned by this circuit."))
+    end
     adjacency=Dict{Int,Vector{Int}}(n.id=>Int[] for n in c.nodes); adjacency[0]=get(adjacency,0,Int[])
-    dc_kinds=(:resistor,:conductance,:voltage_source,:inductor,:diode,:npn,:switch)
     for x in c.components
-        if x.kind in dc_kinds
+        spec=get(_DEVICE_SPECS,x.kind,nothing)
+        spec===nothing&&continue
+        if spec.dc_path&&x.kind ∉ (:vcvs,:ccvs,:opamp)
             ids=unique(n.id for n in x.terminals)
         elseif x.kind===:vcvs
             ids=unique(n.id for n in x.terminals[3:4])
@@ -88,4 +183,90 @@ function describe(c::Circuit)
     io=IOBuffer(); println(io,"Circuit: ",c.name); println(io,"Nodes: ",length(c.nodes)); println(io,"Components: ",length(c.components))
     for n in c.nodes; println(io,n.name,": ",join([x.name for x in c.components if n in x.terminals],", ")) end
     String(take!(io))
+end
+
+"""
+    explain(circuit)
+
+Return a concise structural explanation, including actionable corrections for
+every diagnostic currently found in the circuit.
+"""
+function explain(c::Circuit)
+    diagnostics = check(c)
+    io = IOBuffer()
+    println(io, "Circuit $(c.name): $(length(c.nodes)) nodes, $(length(c.components)) components, $(length(c.observations)) observations.")
+    kinds = Dict{Symbol,Int}()
+    for component in c.components
+        kinds[component.kind] = get(kinds, component.kind, 0) + 1
+    end
+    if !isempty(kinds)
+        summary = join(("$(kind)=$(count)" for (kind, count) in sort!(collect(kinds); by=x -> String(first(x)))), ", ")
+        println(io, "Device composition: ", summary, ".")
+    end
+    if isempty(diagnostics)
+        println(io, "Structural check: no errors detected; the circuit is ready to compile.")
+    else
+        println(io, "Structural check: $(count(d -> d.severity === :error, diagnostics)) error(s), $(count(d -> d.severity === :warning, diagnostics)) warning(s).")
+        for diagnostic in diagnostics
+            println(io, "- [$(uppercase(String(diagnostic.severity)))] ", diagnostic.message)
+        end
+    end
+    chomp(String(take!(io)))
+end
+
+function _unknown_label(compiled, row::Integer)
+    for (id, index) in compiled.node_index
+        index == row || continue
+        node = findfirst(candidate -> candidate.id == id, compiled.circuit.nodes)
+        return node === nothing ? "node $(id)" : "V($(compiled.circuit.nodes[node].name))"
+    end
+    for (component_index, index) in compiled.branches
+        index == row && return "I($(compiled.circuit.components[component_index].name))"
+    end
+    for ((component_index, state), index) in compiled.states
+        index == row && return "state($(compiled.circuit.components[component_index].name), $(state))"
+    end
+    "residual row $(row)"
+end
+
+"""
+    explain_failure(result)
+
+Explain solver convergence status and identify the residual equation that
+dominated each recorded failed transient step.
+"""
+function explain_failure(result)
+    stats = result.stats
+    converged = get(stats, :converged, false)
+    io = IOBuffer()
+    if converged
+        iterations = get(stats, :iterations, nothing)
+        print(io, "The simulation converged")
+        iterations === nothing || print(io, " after $(iterations) nonlinear iteration(s)")
+        rejected = get(stats, :rejected_steps, 0)
+        rejected > 0 && print(io, "; adaptive stepping rejected $(rejected) trial step(s)")
+        print(io, ".")
+        return String(take!(io))
+    end
+    failed = get(stats, :failed_steps, Int[])
+    if result.analysis isa Transient
+        println(io, "The simulation did not converge; $(length(failed)) accepted step(s) contain unresolved nonlinear residuals.")
+    else
+        println(io, "The simulation did not converge after $(get(stats, :iterations, "an unknown number of")) nonlinear iteration(s).")
+    end
+    residuals = get(stats, :failed_residuals, Any[])
+    if isempty(residuals) && haskey(stats, :dominant_residual)
+        residuals = [stats[:dominant_residual]]
+    end
+    for (index, detail) in enumerate(residuals)
+        label = _unknown_label(result.compiled, detail.row)
+        prefix = index <= length(failed) ? "Step $(failed[index]): " : ""
+        println(io, "- $(prefix)$(label) dominated the residual (infinity norm $(detail.norm)).")
+    end
+    if isempty(residuals)
+        println(io, "No per-equation residual was recorded. Inspect structural diagnostics with explain(result.compiled.circuit).")
+    else
+        println(io, "Try a smaller maximum step, looser initial tolerances, realistic parasitics, or inspect the named device/node above.")
+    end
+    chomp(String(take!(io)))
 end

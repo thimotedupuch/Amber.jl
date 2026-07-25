@@ -7,6 +7,7 @@
     end
     op=operating_point(TransconductanceStage())
     @test voltage(op,:output)[1]≈-1V
+    @test current(op,:G1)[1]≈1mA
     @circuit VoltageGainStage() begin
         gnd=ground(); input=node(); output=node(); Vin=voltage_source(input,gnd;dc=1V)
         E1=voltage_amplifier(input,gnd,output,gnd;gain=3.)
@@ -23,8 +24,9 @@
     controlled=operating_point(CurrentControlledStages())
     @test voltage(controlled,:current_output)[1]≈2V
     @test voltage(controlled,:voltage_output)[1]≈-1V
+    @test current(controlled,:F1)[1]≈-2mA
     invalid=Circuit(:InvalidControl); reference=ground!(invalid,:gnd); node=node!(invalid,:node)
     controller=add!(invalid,resistor(node,reference;value=1kΩ);name=:Rcontrol)
     add!(invalid,current_amplifier(controller,node,reference;gain=2.);name=:Fbad)
-    @test_throws ArgumentError compile(invalid)
+    @test_throws CircuitValidationError compile(invalid)
 end

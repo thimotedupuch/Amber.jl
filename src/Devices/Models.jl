@@ -22,12 +22,26 @@ function (w::Pulse)(t)
     w.low
 end
 
+function _validate_waveform(w::Pulse)
+    isfinite(w.frequency)&&w.frequency>0||throw(AnalysisValidationError("pulse frequency must be finite and positive"))
+    0<=w.duty_cycle<=1||throw(AnalysisValidationError("pulse duty cycle must lie in [0, 1]"))
+    w.rise>=0&&w.fall>=0||throw(AnalysisValidationError("pulse rise and fall times must be non-negative"))
+    w.rise+w.fall<=inv(w.frequency)||throw(AnalysisValidationError("pulse rise and fall times exceed its period"))
+    w
+end
+function _validate_waveform(w::Step)
+    isfinite(w.at)&&isfinite(w.rise)&&w.rise>=0||throw(AnalysisValidationError("step time and rise time must be finite, with non-negative rise")); w
+end
+function _validate_waveform(w::Sine)
+    isfinite(w.frequency)&&w.frequency>=0||throw(AnalysisValidationError("sine frequency must be finite and non-negative")); w
+end
+
 for (T,defaults) in ((:ThinFilm,:(;tc1=0.,temperature_coefficient=0.,voltage_coefficient=0.,excess_noise=false)),
     (:SMD0603,:(;series_inductance=0.,parallel_capacitance=0.,esr=0.,esl=0.)),
     (:C0G,:(;loss_tangent=0.)),
     (:DebyeBranches,:(;time_constants=Float64[],fractions=Float64[])),
-    (:JunctionDiode,:(;saturation_current=1e-12,ideality=1.2,series_resistance=0.,junction_capacitance=0.,junction_potential=.7,grading_coefficient=.5,transit_time=0.)),
-    (:GummelPoonBJT,:(;saturation_current=1e-14,forward_beta=100.,early_voltage=100.,base_resistance=0.,cbe_zero_bias=0.,cbc_zero_bias=0.,transit_time=0.,flicker_noise=false)),
+    (:JunctionDiode,:(;saturation_current=1e-12,ideality=1.2,series_resistance=0.,junction_capacitance=0.,junction_potential=.7,grading_coefficient=.5,transit_time=0.,breakdown_voltage=Inf,breakdown_current=1e-3)),
+    (:GummelPoonBJT,:(;saturation_current=1e-14,forward_beta=100.,reverse_beta=1.,early_voltage=100.,base_resistance=0.,cbe_zero_bias=0.,cbc_zero_bias=0.,transit_time=0.,flicker_noise=false)),
     (:BehavioralOpAmp,:(;dc_gain=1e5,gain_bandwidth=1e6,slew_rate=1e6,output_resistance=10.,output_current_limit=Inf,input_offset=0.,input_voltage_noise=0.,saturation_recovery=0.,input_bias_current=0.,input_capacitance=0.)),
     (:VoltageControlledSwitch,:(;threshold=.5,ron=1.,roff=1e12,charge_injection=0.,clock_feedthrough=0.)),
     (:EventSwitch,:(;threshold=.5,ron=1.,roff=1e12,charge_injection=0.,clock_feedthrough=0.)),

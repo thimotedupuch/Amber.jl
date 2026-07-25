@@ -73,9 +73,13 @@ function _apply_switch_events!(history,cc,previous_time,time)
     applied
 end
 
-function _initial_transient_state(cc,initial)
-    z=try operating_point(cc).values[:,1] catch; zeros(cc.n) end
-    initial===:discharged&&(z[collect(values(cc.node_index))].=0)
+function _initial_transient_state(cc,initial;temperature=300.)
+    if initial===:discharged
+        z=zeros(cc.n)
+    else
+        result=_require_converged(operating_point(cc;temperature),"transient operating point")
+        z=copy(result.values[:,1])
+    end
     _apply_initial_conditions!(z,cc)
 end
 
@@ -94,12 +98,12 @@ function _error_norm(high,low,previous,cc,reltol,abstol)
     maximum(abs(high[index]-low[index])/(abstol+reltol*max(abs(high[index]),abs(previous[index]),1e-12)) for index in indices)
 end
 
-function _transient_adaptive(cc,t0,t1;saveat,max_step,method,reltol,abstol,maxiters,initial,event_mode)
-    z=_initial_transient_state(cc,initial); times=Float64[t0]; states=Vector{Vector{Float64}}([copy(z)])
+function _transient_adaptive(cc,t0,t1;saveat,max_step,method,reltol,abstol,maxiters,initial,event_mode,temperature)
+    z=_initial_transient_state(cc,initial;temperature); times=Float64[t0]; states=Vector{Vector{Float64}}([copy(z)])
     mandatory=_mandatory_times(cc,t0,t1,saveat,event_mode); mandatory_index=1
     span=t1-t0; maximum_step=something(max_step,saveat,span/10); dt=min(maximum_step,span/100)
     minimum_step=max(eps(max(abs(t0),abs(t1),1.))*32,span*1e-12)
-    total_iterations=0; rejected=0; failed_steps=Int[]
+    total_iterations=0; rejected=0; failed_steps=Int[]; failed_residuals=Any[]; tolerance_failed_steps=Int[]
     while last(times)<t1
         time=last(times)
         while mandatory_index<=length(mandatory)&&mandatory[mandatory_index]<=time+minimum_step; mandatory_index+=1 end
@@ -110,45 +114,57 @@ function _transient_adaptive(cc,t0,t1;saveat,max_step,method,reltol,abstol,maxit
         if use_bdf2
             previous_h=times[end]-times[end-1]; ratio=h/previous_h; α=(1+2ratio)/((1+ratio)*h)
             history=((1+ratio) .* previous ./ h .- ratio^2 .* states[end-1] ./ ((1+ratio)*h)) ./ α
-            high,iterations,good=_newton(cc,z,history,next_time,α;reltol,abstol,maxiters)
-            low,low_iterations,low_good=_newton(cc,z,event_history,next_time,inv(h);reltol,abstol,maxiters)
+            high,iterations,good=_newton(cc,z,history,next_time,α;reltol,abstol,maxiters,temperature)
+            low,low_iterations,low_good=_newton(cc,z,event_history,next_time,inv(h);reltol,abstol,maxiters,temperature)
             iterations+=low_iterations; good&=low_good; error=_error_norm(high,low,previous,cc,reltol,abstol); candidate=high
         else
-            full,iterations,good=_newton(cc,z,event_history,next_time,inv(h);reltol,abstol,maxiters)
+            full,iterations,good=_newton(cc,z,event_history,next_time,inv(h);reltol,abstol,maxiters,temperature)
             midpoint=time+h/2
-            half,half_iterations,half_good=_newton(cc,z,previous,midpoint,2/h;reltol,abstol,maxiters)
+            half,half_iterations,half_good=_newton(cc,z,previous,midpoint,2/h;reltol,abstol,maxiters,temperature)
             second_history=copy(half); event_mode===:exact&&_apply_switch_events!(second_history,cc,midpoint,next_time)
-            refined,second_iterations,second_good=_newton(cc,half,second_history,next_time,2/h;reltol,abstol,maxiters)
+            refined,second_iterations,second_good=_newton(cc,half,second_history,next_time,2/h;reltol,abstol,maxiters,temperature)
             iterations+=half_iterations+second_iterations; good&=half_good&second_good
             error=_error_norm(refined,full,previous,cc,reltol,abstol); candidate=refined
         end
         total_iterations+=iterations
-        if good&&(error<=1||h<=minimum_step)
+        if good&&error<=1
             z=candidate; push!(times,next_time); push!(states,copy(z))
-            factor=error==0 ? 2. : clamp(.9*error^(-1/(use_bdf2 ? 3 : 2)),.25,2.)
+            factor=error==0 ? 2. : clamp(.9*error^(-1/2),.25,2.)
             dt=min(maximum_step,max(minimum_step,h*factor))
         else
-            rejected+=1; dt=max(minimum_step,h*max(.1,min(.5,.9*max(error,1e-12)^(-1/(use_bdf2 ? 3 : 2)))))
-            if h<=minimum_step&&!good
+            rejected+=1; dt=max(minimum_step,h*max(.1,min(.5,.9*max(error,1e-12)^(-1/2))))
+            if h<=minimum_step
                 z=candidate; push!(times,next_time); push!(states,copy(z)); push!(failed_steps,length(times))
+                final_residual=residual(cc,z,inv(h).*(z.-event_history),next_time;temperature)
+                push!(failed_residuals,(row=argmax(abs.(final_residual)),norm=norm(final_residual,Inf)))
+                error>1&&push!(tolerance_failed_steps,length(times))
             end
         end
     end
-    values_matrix=hcat(states...); analysis=Transient(t0=>t1;saveat,max_step,method,adaptive=true)
-    stats=Dict{Symbol,Any}(:converged=>isempty(failed_steps),:iterations=>total_iterations,:failed_steps=>failed_steps,:rejected_steps=>rejected)
+    values_matrix=hcat(states...)
+    if saveat!==nothing
+        requested=_merge_time_grid(vcat(t0,collect((t0+saveat):saveat:t1),t1),saveat)
+        indices=[findmin(abs.(times.-time))[2] for time in requested]
+        times=times[indices]; values_matrix=values_matrix[:,indices]
+    end
+    analysis=Transient(t0=>t1;saveat,max_step,method,adaptive=true,temperature)
+    stats=Dict{Symbol,Any}(:converged=>isempty(failed_steps),:iterations=>total_iterations,:failed_steps=>failed_steps,:failed_residuals=>failed_residuals,:tolerance_failed_steps=>tolerance_failed_steps,:rejected_steps=>rejected,:temperature=>Float64(temperature))
+    stats[:warnings]=isempty(failed_steps) ? String[] : ["one or more minimum-size steps were accepted without satisfying convergence or error tolerances"]
+    _finalize_stats!(stats;partial=true)
     SimulationResult(cc,analysis,times,values_matrix,stats)
 end
 
-function _transient(c,p::Pair;saveat=nothing,max_step=nothing,method=:bdf2,adaptive=nothing,reltol=1e-6,abstol=1e-9,maxiters=120,initial=nothing,initialization=nothing,event_mode=nothing,kw...)
-    method in (:bdf1,:bdf2)||throw(ArgumentError("method must be :bdf1 or :bdf2"))
+function _transient(c,p::Pair;saveat=nothing,max_step=nothing,method=:bdf2,adaptive=nothing,reltol=1e-6,abstol=1e-9,maxiters=120,initial=nothing,initialization=nothing,event_mode=nothing,temperature=300.,kw...)
+    _validate_transient(p;saveat,max_step,method,event_mode,reltol,abstol,maxiters)
     cc=compile(c); t0,t1=Float64(first(p)),Float64(last(p))
     use_adaptive=adaptive===nothing ? saveat===nothing&&max_step===nothing : Bool(adaptive)
-    use_adaptive&&return _transient_adaptive(cc,t0,t1;saveat,max_step,method,reltol,abstol,maxiters,initial,event_mode)
+    isfinite(temperature)&&temperature>0||throw(AnalysisValidationError("temperature must be finite and positive"))
+    use_adaptive&&return _transient_adaptive(cc,t0,t1;saveat,max_step,method,reltol,abstol,maxiters,initial,event_mode,temperature)
     dt=something(saveat,max_step,(t1-t0)/1000); max_step!==nothing&&(dt=min(dt,max_step))
-    nt=max(2,ceil(Int,(t1-t0)/dt)+1); ts=collect(range(t0,t1,length=nt))
+    ts=_merge_time_grid(vcat(t0,collect((t0+dt):dt:t1),t1),dt)
     event_mode===:exact&&(ts=_merge_time_grid(vcat(ts,_waveform_events(cc,t0,t1)),dt))
     nt=length(ts); vals=zeros(cc.n,nt)
-    z=_initial_transient_state(cc,initial)
+    z=_initial_transient_state(cc,initial;temperature)
     vals[:,1]=z; total=0; ok=true; failed_steps=Int[]; failed_residuals=Any[]
     for j in 2:nt
         h=ts[j]-ts[j-1]; prev=copy(z)
@@ -160,16 +176,19 @@ function _transient(c,p::Pair;saveat=nothing,max_step=nothing,method=:bdf2,adapt
         else
             α=inv(h); history=event_history
         end
-        z,it,good=_newton(cc,z,history,ts[j],α;reltol,abstol,maxiters)
+        z,it,good=_newton(cc,z,history,ts[j],α;reltol,abstol,maxiters,temperature)
         vals[:,j]=z; total+=it; ok&=good
         if !good
             push!(failed_steps,j)
-            final_residual=residual(cc,z,α.*(z.-history),ts[j])
+            final_residual=residual(cc,z,α.*(z.-history),ts[j];temperature)
             push!(failed_residuals,(row=argmax(abs.(final_residual)),norm=norm(final_residual,Inf)))
         end
     end
-    analysis=Transient(Float64(t0)=>Float64(t1);saveat,max_step,method,adaptive=false)
-    SimulationResult(cc,analysis,ts,vals,Dict{Symbol,Any}(:converged=>ok,:iterations=>total,:failed_steps=>failed_steps,:failed_residuals=>failed_residuals))
+    analysis=Transient(Float64(t0)=>Float64(t1);saveat,max_step,method,adaptive=false,temperature)
+    stats=Dict{Symbol,Any}(:converged=>ok,:iterations=>total,:failed_steps=>failed_steps,:failed_residuals=>failed_residuals,:temperature=>Float64(temperature),
+        :warnings=>isempty(failed_steps) ? String[] : ["one or more fixed-grid steps did not converge"])
+    _finalize_stats!(stats;partial=true)
+    SimulationResult(cc,analysis,ts,vals,stats)
 end
 
-simulate(c,a::Transient)=transient(c,a.interval;saveat=a.saveat,max_step=a.max_step,method=a.method,adaptive=a.adaptive,overrides=a.overrides)
+simulate(c,a::Transient)=transient(c,a.interval;saveat=a.saveat,max_step=a.max_step,method=a.method,adaptive=a.adaptive,temperature=a.temperature,overrides=a.overrides)

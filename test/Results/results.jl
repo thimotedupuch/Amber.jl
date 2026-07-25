@@ -28,4 +28,17 @@
     @test length(table)==length(result.axis)
     @test hasproperty(first(table),:frequency)
     @test hasproperty(first(table),:output)
+
+    unsupported=Circuit(:UnsupportedCurrent); reference=ground!(unsupported,:gnd); output=node!(unsupported,:output)
+    add!(unsupported,voltage_source(output,reference;dc=1V);name=:V1)
+    add!(unsupported,Component(:custom,Amber.AbstractNode[output,reference],Dict{Symbol,Any}(),:X1);name=:X1)
+    @test_throws CircuitValidationError operating_point(unsupported)
+end
+
+
+@testset "result snapshots" begin
+    circuit=LowPass(); result=operating_point(circuit); before=current(result,:R1)
+    resistor=only(filter(component->component.name===:R1,circuit.components)); resistor.parameters[:value]*=2
+    @test current(result,:R1)==before
+    @test provenance(result)[:parameters][:R1][:value]!=resistor.parameters[:value]
 end

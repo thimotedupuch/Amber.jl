@@ -4,3 +4,9 @@
     @test all(>(0),output_noise_density(result))
     @test all(isfinite,input_referred_noise_density(result))
 end
+
+
+@testset "noise bias convergence" begin
+    circuit=LowPass()
+    @test_throws ConvergenceError noise(circuit,10Hz=>1kHz;output=voltage(:vout),maxiters=0)
+end

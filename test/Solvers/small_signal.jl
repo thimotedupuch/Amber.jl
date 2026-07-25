@@ -11,3 +11,8 @@
     @test voltage(biased,:output)[1]≈.5V
     @test voltage(biased,:supply)[1]≈0V
 end
+
+
+@testset "small-signal bias convergence" begin
+    @test_throws ConvergenceError small_signal(LowPass(),10Hz=>1kHz;maxiters=0)
+end

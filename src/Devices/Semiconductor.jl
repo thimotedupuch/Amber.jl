@@ -14,14 +14,26 @@ function _junction_depletion(model::JunctionDiode,voltage)
     end
 end
 
-function charge(model::JunctionDiode,voltage::Real)
-    vt=.025852*model.ideality
+function charge(model::JunctionDiode,voltage::Real;temperature=300.)
+    vt=_thermal_voltage(temperature)*model.ideality
     _junction_depletion(model,voltage)+model.transit_time*model.saturation_current*expm1(clamp(voltage/vt,-80,40))
 end
 
-function differential_capacitance(model::JunctionDiode,voltage::Real)
+function differential_capacitance(model::JunctionDiode,voltage::Real;temperature=300.)
     potential=model.junction_potential; transition=.9*potential
     depletion=model.junction_capacitance==0 ? 0. : model.junction_capacitance*(1-min(voltage,transition)/potential)^(-model.grading_coefficient)
-    vt=.025852*model.ideality
-    depletion+model.transit_time*model.saturation_current*exp(clamp(voltage/vt,-80,40))/vt
+    vt=_thermal_voltage(temperature)*model.ideality; _,slope=_limited_exponential(voltage/vt)
+    depletion+model.transit_time*model.saturation_current*slope/vt
+end
+
+function _diode_conduction(model,voltage,temperature)
+    vt=_thermal_voltage(temperature)*model.ideality
+    forward,forward_slope=_limited_exponential(voltage/vt)
+    current=model.saturation_current*forward; conductance=model.saturation_current*forward_slope/vt
+    if isfinite(model.breakdown_voltage)
+        avalanche,avalanche_slope=_limited_exponential((-voltage-model.breakdown_voltage)/vt)
+        current-=model.breakdown_current*avalanche
+        conductance+=model.breakdown_current*avalanche_slope/vt
+    end
+    current,conductance
 end

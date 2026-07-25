@@ -1,16 +1,5 @@
 abstract type AbstractAnalysis end
 
-Base.@kwdef struct MatchedGroup
-    name::Symbol
-    sigma_vbe::Float64=0.
-    sigma_log_beta::Float64=0.
-    correlation::Float64=0.
-end
-matched_group(name::Symbol;kw...)=MatchedGroup(;name,kw...)
-struct Differential
-    positive::Symbol
-    negative::Symbol
-end
 struct OperatingPoint <: AbstractAnalysis end
 
 Base.@kwdef struct Transient <: AbstractAnalysis
@@ -19,9 +8,30 @@ Base.@kwdef struct Transient <: AbstractAnalysis
     max_step::Union{Nothing,Float64}=nothing
     method::Symbol=:bdf2
     adaptive::Union{Nothing,Bool}=nothing
+    temperature::Float64=300.
     overrides::Any=nothing
 end
 Transient(p::Pair;kw...)=Transient(interval=Float64(first(p))=>Float64(last(p));kw...)
+
+function _validate_transient(interval;saveat=nothing,max_step=nothing,method=:bdf2,event_mode=nothing,reltol=1e-6,abstol=1e-9,maxiters=120)
+    t0,t1=Float64(first(interval)),Float64(last(interval))
+    isfinite(t0)&&isfinite(t1)&&t1>t0||throw(AnalysisValidationError("transient interval must be finite and increasing"))
+    saveat===nothing||(isfinite(saveat)&&saveat>0)||throw(AnalysisValidationError("saveat must be finite and positive"))
+    max_step===nothing||(isfinite(max_step)&&max_step>0)||throw(AnalysisValidationError("max_step must be finite and positive"))
+    method in (:bdf1,:bdf2)||throw(AnalysisValidationError("method must be :bdf1 or :bdf2"))
+    event_mode in (nothing,:exact)||throw(AnalysisValidationError("event_mode must be nothing or :exact"))
+    isfinite(reltol)&&reltol>0||throw(AnalysisValidationError("reltol must be finite and positive"))
+    isfinite(abstol)&&abstol>0||throw(AnalysisValidationError("abstol must be finite and positive"))
+    maxiters>0||throw(AnalysisValidationError("maxiters must be positive"))
+end
+
+function _validate_frequency_range(range,points,scale)
+    low,high=Float64(first(range)),Float64(last(range))
+    isfinite(low)&&isfinite(high)&&high>=low||throw(AnalysisValidationError("frequency range must be finite and increasing"))
+    scale in (:log,:linear)||throw(AnalysisValidationError("frequency scale must be :log or :linear"))
+    scale===:log&&low<=0&&throw(AnalysisValidationError("logarithmic frequencies must be positive"))
+    points>=1||throw(AnalysisValidationError("frequency point count must be positive"))
+end
 
 Base.@kwdef struct SmallSignal <: AbstractAnalysis
     frequencies::Pair{Float64,Float64}

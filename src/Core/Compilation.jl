@@ -1,27 +1,101 @@
-struct CompiledCircuit
-    circuit::Circuit
+struct CompiledTopology
     node_index::Dict{Int,Int}
     branches::Dict{Int,Int}
     states::Dict{Tuple{Int,Symbol},Int}
     n::Int
     fingerprint::String
+    jacobian_pattern::SparseMatrixCSC{Float64,Int}
 end
+
+struct CompiledCircuit
+    circuit::Circuit
+    topology::CompiledTopology
+    fingerprint::String
+end
+
+function Base.getproperty(compiled::CompiledCircuit,name::Symbol)
+    name in (:circuit,:topology,:fingerprint)&&return getfield(compiled,name)
+    name in (:node_index,:branches,:states,:n,:jacobian_pattern)&&return getproperty(getfield(compiled,:topology),name)
+    getfield(compiled,name)
+end
+Base.propertynames(::CompiledCircuit,private=false)=(:circuit,:topology,:fingerprint,:node_index,:branches,:states,:n,:jacobian_pattern)
+
+function _jacobian_pattern(circuit,node_index,branches,states,n)
+    entries=Set{Tuple{Int,Int}}()
+    add(i,j)=(i>0&&j>0&&push!(entries,(i,j));nothing)
+    idx(node)=node.id==0 ? 0 : node_index[node.id]
+    for (ci,component) in enumerate(circuit.components)
+        q=idx.(component.terminals); kind=component.kind
+        if kind in (:resistor,:conductance,:capacitor,:diode)
+            for i in q[1:2],j in q[1:2]; add(i,j) end
+        elseif kind in (:voltage_source,:inductor)
+            branch=branches[ci]; for i in q[1:2]; add(i,branch); add(branch,i) end; add(branch,branch)
+        elseif kind===:vccs
+            for i in q[3:4],j in q[1:2]; add(i,j) end
+        elseif kind===:vcvs
+            branch=branches[ci]; for i in q[3:4]; add(i,branch); add(branch,i) end; for j in q[1:2]; add(branch,j) end
+        elseif kind===:cccs
+            for i in q; add(i,_control_branch_index(circuit,branches,component)) end
+        elseif kind===:ccvs
+            branch=branches[ci]; control=_control_branch_index(circuit,branches,component)
+            for i in q; add(i,branch); add(branch,i) end; add(branch,control)
+        elseif kind===:npn
+            for i in q,j in q; add(i,j) end
+        elseif kind===:switch
+            for i in q[1:2],j in q; add(i,j) end
+        elseif kind===:opamp
+            branch=branches[ci]; state=states[(ci,:dominant_pole)]
+            add(q[3],branch); add(branch,q[3]); add(branch,branch); add(branch,state); add(branch,q[4]); add(branch,q[5])
+            add(state,state); add(state,q[1]); add(state,q[2])
+        end
+    end
+    for index in values(node_index); add(index,index) end
+    ordered=sort!(collect(entries)); rows=first.(ordered); columns=last.(ordered)
+    pattern=sparse(rows,columns,ones(Float64,length(rows)),n,n); fill!(pattern.nzval,0.); pattern
+end
+
+function _control_branch_index(circuit,branches,component)
+    index=findfirst(candidate->candidate.name===component.parameters[:control],circuit.components)
+    branches[index]
+end
+
+"""Create an isolated compiled-circuit snapshot for a simulation result."""
+function _snapshot_compiled(cc::CompiledCircuit)
+    CompiledCircuit(deepcopy(cc.circuit),cc.topology,cc.fingerprint)
+end
+
+_topology_signature(circuit)=string(circuit.name,[(component.kind,getfield.(component.terminals,:id),get(component.parameters,:control,nothing)) for component in circuit.components])
 
 function compile(c::Circuit)
     errors=filter(d->d.severity===:error,check(c))
-    isempty(errors)||throw(ArgumentError(join(getfield.(errors,:message),'\n')))
-    graph=equation_graph(c)
-    signature=string(c.name,[(x.kind,map(n->n.id,x.terminals),get(x.parameters,:control,nothing)) for x in c.components])
-    compiled=CompiledCircuit(c,graph.node_index,graph.branches,graph.states,graph.unknown_count,bytes2hex(sha1(signature)))
-    for component in c.components
+    isempty(errors)||throw(CircuitValidationError(errors))
+    frozen=deepcopy(c)
+    graph=equation_graph(frozen)
+    signature=serialize_circuit(frozen)
+    topology_signature=_topology_signature(frozen)
+    pattern=_jacobian_pattern(frozen,graph.node_index,graph.branches,graph.states,graph.unknown_count)
+    topology=CompiledTopology(graph.node_index,graph.branches,graph.states,graph.unknown_count,bytes2hex(sha1(topology_signature)),pattern)
+    compiled=CompiledCircuit(frozen,topology,bytes2hex(sha1(signature)))
+    for component in frozen.components
         component.kind in (:cccs,:ccvs)&&_control_branch(compiled,component)
     end
     compiled
 end
-compile(c::CompiledCircuit)=c
+function compile(compiled::CompiledCircuit)
+    errors=filter(d->d.severity===:error,check(compiled.circuit)); isempty(errors)||throw(CircuitValidationError(errors))
+    frozen=deepcopy(compiled.circuit); topology_hash=bytes2hex(sha1(_topology_signature(frozen)))
+    topology_hash==compiled.topology.fingerprint||return compile(frozen)
+    CompiledCircuit(frozen,compiled.topology,bytes2hex(sha1(serialize_circuit(frozen))))
+end
 
 _idx(cc,n)=n.id==0 ? 0 : cc.node_index[n.id]
 _v(z,i)=i==0 ? zero(eltype(z)) : z[i]
+_thermal_voltage(temperature)=1.380649e-23*Float64(temperature)/1.602176634e-19
+function _limited_exponential(argument)
+    limited=clamp(argument,-80.,40.)
+    expvalue=exp(limited)
+    expvalue-1, (-80.0 < argument < 40.0) ? expvalue : zero(expvalue)
+end
 function _source_value(p,t,mode)
     mode===:dc&&return get(p,:dc,0.)
     waveform=get(p,:waveform,nothing)
@@ -70,7 +144,7 @@ function _control_branch(cc,component)
     branch
 end
 
-function residual(cc::CompiledCircuit,z,zd,t;mode=:time,source_scale=1.,gmin=0.)
+function residual(cc::CompiledCircuit,z,zd,t;mode=:time,source_scale=1.,gmin=0.,temperature=300.)
     r=zeros(eltype(z),cc.n)
     if gmin!=0
         for index in values(cc.node_index); r[index]+=gmin*z[index] end
@@ -106,13 +180,16 @@ function residual(cc::CompiledCircuit,z,zd,t;mode=:time,source_scale=1.,gmin=0.)
             bi=cc.branches[ci]; i=z[bi]; q[1]>0&&(r[q[1]]+=i); q[2]>0&&(r[q[2]]-=i)
             r[bi]+=_v(z,q[1])-_v(z,q[2])-Float64(p[:value])*zd[bi]
         elseif k===:diode
-            md=p[:model]; vd=_v(z,q[1])-_v(z,q[2]); vt=.025852*md.ideality
-            id=md.saturation_current*expm1(clamp(vd/vt,-80,40)); q[1]>0&&(r[q[1]]+=id); q[2]>0&&(r[q[2]]-=id)
-            capacitance=differential_capacitance(md,vd)
+            md=p[:model]; vd=_v(z,q[1])-_v(z,q[2]); id,_=_diode_conduction(md,vd,temperature); q[1]>0&&(r[q[1]]+=id); q[2]>0&&(r[q[2]]-=id)
+            capacitance=differential_capacitance(md,vd;temperature)
             capacitance!=0&&_stampg!(r,zd,q[1],q[2],capacitance)
         elseif k===:npn
-            md=p[:model]; vc,vb,ve=_v(z,q[1]),_v(z,q[2]),_v(z,q[3])
-            ic=md.saturation_current*expm1(clamp((vb-ve)/.025852,-80,40))*(1+(vc-ve)/max(md.early_voltage,1e-9)); ib=ic/md.forward_beta
+            md=p[:model]; vc,vb,ve=_v(z,q[1]),_v(z,q[2]),_v(z,q[3]); vt=_thermal_voltage(temperature)
+            forward,_=_limited_exponential((vb-ve)/vt); reverse,_=_limited_exponential((vb-vc)/vt)
+            forward_current=md.saturation_current*forward; reverse_current=md.saturation_current*reverse
+            αf=md.forward_beta/(md.forward_beta+1); αr=md.reverse_beta/(md.reverse_beta+1)
+            ic=αf*forward_current*(1+(vc-ve)/md.early_voltage)-reverse_current
+            ib=(1-αf)*forward_current+(1-αr)*reverse_current
             q[1]>0&&(r[q[1]]+=ic); q[2]>0&&(r[q[2]]+=ib); q[3]>0&&(r[q[3]]-=ic+ib)
             md.cbe_zero_bias!=0&&_stampg!(r,zd,q[2],q[3],md.cbe_zero_bias)
             md.cbc_zero_bias!=0&&_stampg!(r,zd,q[2],q[1],md.cbc_zero_bias)
@@ -152,10 +229,10 @@ function _stamp_conductance!(J,a,b,g)
 end
 
 """Assemble the residual and sparse Newton matrix for `zd = α*(z-previous)`."""
-function residual_jacobian(cc::CompiledCircuit,z,previous,t,α;mode=:time,source_scale=1.,gmin=0.)
+function residual_jacobian(cc::CompiledCircuit,z,previous,t,α;mode=:time,source_scale=1.,gmin=0.,temperature=300.)
     zd=α==0 ? zero(z) : α.*(z.-previous)
-    r=residual(cc,z,zd,t;mode,source_scale,gmin)
-    J=spzeros(eltype(z),cc.n,cc.n)
+    r=residual(cc,z,zd,t;mode,source_scale,gmin,temperature)
+    J=SparseMatrixCSC{eltype(z),Int}(cc.jacobian_pattern)
     if gmin!=0
         for index in values(cc.node_index); J[index,index]+=gmin end
     end
@@ -189,21 +266,18 @@ function residual_jacobian(cc::CompiledCircuit,z,previous,t,α;mode=:time,source
             _add!(J,branch,q[1],1); _add!(J,branch,q[2],-1)
             _add!(J,branch,branch,-α*Float64(p[:value]))
         elseif k===:diode
-            md=p[:model]; vd=_v(z,q[1])-_v(z,q[2]); vt=.025852*md.ideality
-            gd=md.saturation_current*exp(clamp(vd/vt,-80,40))/vt+α*differential_capacitance(md,vd)
+            md=p[:model]; vd=_v(z,q[1])-_v(z,q[2]); _,conduction=_diode_conduction(md,vd,temperature); gd=conduction+α*differential_capacitance(md,vd;temperature)
             _stamp_conductance!(J,q[1],q[2],gd)
         elseif k===:npn
-            md=p[:model]; vc,vb,ve=_v(z,q[1]),_v(z,q[2]),_v(z,q[3]); vt=.025852
-            ev=exp(clamp((vb-ve)/vt,-80,40)); transport=md.saturation_current*(ev-1)
-            early=1+(vc-ve)/max(md.early_voltage,1e-9)
-            dvc=transport/max(md.early_voltage,1e-9)
-            dvb=md.saturation_current*ev/vt*early
-            dve=-dvb-dvc
-            β=md.forward_beta
-            for (column,derivative) in zip(q,(dvc,dvb,dve))
-                _add!(J,q[1],column,derivative)
-                _add!(J,q[2],column,derivative/β)
-                _add!(J,q[3],column,-derivative*(1+inv(β)))
+            md=p[:model]; vc,vb,ve=_v(z,q[1]),_v(z,q[2]),_v(z,q[3]); vt=_thermal_voltage(temperature)
+            forward,forward_slope=_limited_exponential((vb-ve)/vt); reverse,reverse_slope=_limited_exponential((vb-vc)/vt)
+            If=md.saturation_current*forward; Ir=md.saturation_current*reverse
+            gf=md.saturation_current*forward_slope/vt; gr=md.saturation_current*reverse_slope/vt
+            αf=md.forward_beta/(md.forward_beta+1); αr=md.reverse_beta/(md.reverse_beta+1); early=1+(vc-ve)/md.early_voltage
+            dic=(αf*If/md.early_voltage+gr, αf*gf*early-gr, αf*(-gf*early-If/md.early_voltage))
+            dib=(-(1-αr)*gr, (1-αf)*gf+(1-αr)*gr, -(1-αf)*gf)
+            for index in eachindex(q)
+                _add!(J,q[1],q[index],dic[index]); _add!(J,q[2],q[index],dib[index]); _add!(J,q[3],q[index],-dic[index]-dib[index])
             end
             md.cbe_zero_bias!=0&&_stamp_conductance!(J,q[2],q[3],α*md.cbe_zero_bias)
             md.cbc_zero_bias!=0&&_stamp_conductance!(J,q[2],q[1],α*md.cbc_zero_bias)

@@ -1,3 +1,6 @@
+IMPORTANT : Don't do extensions for now
+
+---
 Proposition d’architecture pour un simulateur électronique analogique natif Julia
 
 Nom de travail : Amber.jl.
@@ -89,7 +92,7 @@ Les intégrations suivantes doivent être optionnelles :
 Unitful ;
 SciML ;
 ForwardDiff ;
-Makie ou Plots ;
+Makie ;
 Graphviz ;
 Tables ;
 Arrow ou JLD2.
@@ -1061,3 +1064,6 @@ des extensions optionnelles pour SciML, Unitful et la visualisation.
 Le premier objectif technique ne devrait pas être la performance maximale ni le nombre de composants disponibles. Il devrait être la stabilisation d’un contrat de modélisation permettant d’écrire un composant réaliste de manière concise, testable et sans dépendre d’un système symbolique généraliste.
 
 Si ce contrat est réussi, les solveurs, les modèles, les outils d’analyse et les interfaces graphiques éventuelles pourront évoluer indépendamment.
+
+---
+IMPORTANT : Don't do extensions for now

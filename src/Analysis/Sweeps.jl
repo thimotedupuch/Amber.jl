@@ -4,10 +4,12 @@ function sweep(c,p::Pair;analysis=OperatingPoint(),metric=identity)
     component=findfirst(x->x.name===component_name,cc.circuit.components)
     component===nothing&&throw(KeyError(first(p))); key=length(path)>1 ? Symbol(path[end]) : :value
     old=cc.circuit.components[component].parameters[key]
-    output=map(last(p)) do value
-        cc.circuit.components[component].parameters[key]=value
-        metric(simulate(cc,analysis))
+    try
+        map(last(p)) do value
+            cc.circuit.components[component].parameters[key]=value
+            metric(simulate(cc,analysis))
+        end
+    finally
+        cc.circuit.components[component].parameters[key]=old
     end
-    cc.circuit.components[component].parameters[key]=old
-    output
 end

@@ -4,6 +4,9 @@ struct SimulationResult{T,A<:AbstractAnalysis}
     axis::Vector{Float64}
     values::Matrix{T}
     stats::Dict{Symbol,Any}
+    function SimulationResult(compiled::CompiledCircuit, analysis::A, axis::Vector{Float64}, values::Matrix{T}, stats::Dict{Symbol,Any}) where {T,A<:AbstractAnalysis}
+        new{T,A}(_snapshot_compiled(compiled), analysis, axis, values, stats)
+    end
 end
 
 frequencies(r::SimulationResult{<:Any,<:SmallSignal})=r.axis
@@ -45,22 +48,35 @@ function current(r::SimulationResult,name::Union{Symbol,String},branch=nothing)
         waveform=get(x.parameters,:waveform,nothing)
         return waveform===nothing ? fill(Float64(get(x.parameters,:dc,0.)),length(r.axis)) : waveform.(r.axis)
     elseif x.kind===:diode
-        model=x.parameters[:model]; v=va-vb; vt=.025852*model.ideality
-        conductive=model.saturation_current.*expm1.(clamp.(v./vt,-80,40))
-        return conductive.+differential_capacitance.(Ref(model),real.(v)).*_derivative(r,v)
+        model=x.parameters[:model]; v=va-vb; temperature=get(r.stats,:temperature,300.)
+        conductive=map(value->_diode_conduction(model,real(value),temperature)[1],v)
+        capacitance=map(value->differential_capacitance(model,real(value);temperature),v)
+        return conductive.+capacitance.*_derivative(r,v)
     elseif x.kind===:npn
         collector,base,emitter=x.terminals
         vc=voltage(r,collector.name); vb=voltage(r,base.name); ve=voltage(r,emitter.name); model=x.parameters[:model]
-        ic=model.saturation_current.*expm1.(clamp.((vb.-ve)./.025852,-80,40)).*(1 .+(vc.-ve)./max(model.early_voltage,1e-9))
-        branch===:base&&return ic./model.forward_beta
-        branch===:emitter&&return .-ic.*(1+inv(model.forward_beta))
+        vt=_thermal_voltage(get(r.stats,:temperature,300.)); If=model.saturation_current.*expm1.(clamp.((vb.-ve)./vt,-80,40)); Ir=model.saturation_current.*expm1.(clamp.((vb.-vc)./vt,-80,40))
+        αf=model.forward_beta/(model.forward_beta+1); αr=model.reverse_beta/(model.reverse_beta+1)
+        ic=αf.*If.*(1 .+(vc.-ve)./model.early_voltage).-Ir; ib=(1-αf).*If.+(1-αr).*Ir
+        branch===:base&&return ib
+        branch===:emitter&&return .-ic.-ib
         return ic
     elseif x.kind===:switch
         control=voltage(r,x.terminals[3].name)-voltage(r,x.terminals[4].name); model=x.parameters[:model]
         conductance=_switch_conductance.(Ref(model),real.(control))
         return (va-vb).*conductance
+    elseif x.kind===:vccs
+        control_positive,control_negative=x.terminals[1:2]
+        return x.parameters[:gm].*voltage(r,control_positive.name,control_negative.name)
+    elseif x.kind===:cccs
+        control_name=x.parameters[:control]
+        control_index=_findcomponent(r.compiled,control_name)
+        control_index===nothing&&throw(ArgumentError("$(x.name) refers to unknown controlling component $(control_name)"))
+        control_branch=get(r.compiled.branches,control_index,nothing)
+        control_branch===nothing&&throw(ArgumentError("$(x.name) requires branch current from $(control_name), but that current is unavailable"))
+        return x.parameters[:gain].*vec(r.values[control_branch,:])
     end
-    fill(NaN,length(r.axis))
+    throw(ArgumentError("current is not implemented for component $(x.name) of kind $(x.kind)"))
 end
 
 function _findcomponent(cc,name)
@@ -92,7 +108,7 @@ function charge(r::SimulationResult,name::Union{Symbol,String})
     ci=_findcomponent(r.compiled,name); ci===nothing&&throw(KeyError(name)); x=r.compiled.circuit.components[ci]
     v=voltage(r,x.terminals[1].name,x.terminals[2].name)
     x.kind===:capacitor&&return x.parameters[:value].*v
-    x.kind===:diode&&return charge.(Ref(x.parameters[:model]),real.(v))
+    x.kind===:diode&&return map(value->charge(x.parameters[:model],real(value);temperature=get(r.stats,:temperature,300.)),v)
     throw(ArgumentError("charge is not available for component $(name)"))
 end
 
@@ -126,7 +142,7 @@ end
 function provenance(r)
     parameters=Dict(component.name=>Dict(key=>_snapshot_value(value) for (key,value) in component.parameters if key!==:external_terminals) for component in r.compiled.circuit.components)
     Dict(:amber_version=>v"0.1.0",:topology_fingerprint=>r.compiled.fingerprint,:analysis=>string(typeof(r.analysis)),
-        :parameters=>parameters,:unit_system=>:SI,:statistics=>copy(r.stats),:warnings=>String[])
+        :parameters=>parameters,:unit_system=>:SI,:statistics=>copy(r.stats),:warnings=>copy(get(r.stats,:warnings,String[])))
 end
 
 function report(r::SimulationResult)
@@ -157,4 +173,7 @@ function validity_report(r::SimulationResult)
     end
     Dict(:devices=>devices,:warnings=>warnings)
 end
-available_observables(x::Component)=x.kind in (:capacitor,:diode) ? (:voltage,:current,:power,:charge) : (:voltage,:current,:power)
+function available_observables(x::Component)
+    contract=device_contract(x.kind); contract===nothing&&throw(ArgumentError("unsupported device kind $(x.kind)"))
+    contract.observables
+end

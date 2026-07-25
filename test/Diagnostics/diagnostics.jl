@@ -16,4 +16,19 @@
         L1=inductor(gnd,a;value=1mH); L2=inductor(a,b;value=1mH); L3=inductor(b,gnd;value=1mH)
     end
     @test any(d->occursin("ideal voltage-constraint loop",d.message),check(IdealInductorLoop()))
+    bad_explanation=explain(Bad())
+    @test occursin("Structural check",bad_explanation)
+    @test occursin("Conflicting ideal voltage constraints",bad_explanation)
+    @test occursin("ready to compile",explain(LowPass()))
+
+    converged=transient(LowPass(),0s=>20μs;saveat=10μs)
+    @test occursin("converged",explain_failure(converged))
+    failed_stats=copy(converged.stats)
+    failed_stats[:converged]=false
+    failed_stats[:failed_steps]=[2]
+    failed_stats[:failed_residuals]=[(row=first(values(converged.compiled.node_index)),norm=1.25)]
+    failed=SimulationResult(converged.compiled,converged.analysis,converged.axis,converged.values,failed_stats)
+    failure_explanation=explain_failure(failed)
+    @test occursin("did not converge",failure_explanation)
+    @test occursin("dominated the residual",failure_explanation)
 end

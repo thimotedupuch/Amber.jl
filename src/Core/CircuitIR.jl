@@ -1,3 +1,16 @@
+Base.@kwdef struct MatchedGroup
+    name::Symbol
+    sigma_vbe::Float64=0.
+    sigma_log_beta::Float64=0.
+    correlation::Float64=0.
+end
+matched_group(name::Symbol;kw...)=MatchedGroup(;name,kw...)
+
+struct Differential
+    positive::Symbol
+    negative::Symbol
+end
+
 mutable struct Component
     kind::Symbol
     terminals::Vector{AbstractNode}
@@ -17,11 +30,20 @@ Circuit(name::Symbol=:anonymous)=Circuit(name,AbstractNode[],Component[],Any[],D
 circuit(f::Function,name::Symbol=:anonymous)=f(Circuit(name))
 circuit(name::Symbol,f::Function)=f(Circuit(name))
 
+function _unique_name(existing,name::Symbol)
+    all(!=(name),existing)&&return name
+    suffix=2
+    while Symbol(name,suffix) in existing; suffix+=1 end
+    Symbol(name,suffix)
+end
+
 function node!(c::Circuit,name::Symbol=Symbol(:n,length(c.nodes)+1))
+    name=_unique_name(map(node->node.name,c.nodes),name)
     id=maximum((n.id for n in c.nodes);init=0)+1
     n=Node(c,id,name); push!(c.nodes,n); n
 end
 function ground!(c::Circuit,name::Symbol=:gnd)
+    name=_unique_name(map(node->node.name,c.nodes),name)
     n=Ground(c,0,name); push!(c.nodes,n); n
 end
 node()=error("node() is available inside @circuit; use node!(c, name) in builder code")
