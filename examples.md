@@ -12,6 +12,9 @@ Les exemples officiels d’Amber.jl ne devraient pas seulement enseigner l’él
 | Échantillonneur-bloqueur | Commutation, événements, injection de charge        |
 | Ligne RLGC générée       | Génération programmatique, grandes matrices creuses |
 | Circuit incorrect        | Diagnostics topologiques explicites                 |
+| Convertisseur buck       | Électronique de puissance, commutation, événements  |
+| Filtre actif hiérarchique| Sous-circuits réutilisables, OP, AC et transitoire  |
+| Pont de précision        | Faibles signaux, corrélation et rendement statistique|
 
 ---
 
@@ -1359,3 +1362,64 @@ end
 Le message est alors immédiatement compréhensible :
 
 > Amber.jl permet de commencer avec un circuit académique simple, puis d’augmenter progressivement le réalisme sans changer de langage, de représentation ni de moteur.
+
+---
+
+# 15. Convertisseur buck asynchrone
+
+`examples/09_buck_converter` combine une source PWM, un interrupteur non idéal,
+une diode de roue libre avec claquage inverse, une inductance résistive et un
+condensateur à ESR. Le même objet expose les tensions de commutation, le courant
+d'inductance et les puissances utiles :
+
+```julia
+converter = BuckConverter()
+startup = transient(converter, 0s => 2ms;
+    initial = :discharged,
+    event_mode = :exact,
+    max_step = 100ns,
+    saveat = 1μs,
+)
+```
+
+Cet exemple montre que les événements PWM sont insérés exactement sans masquer
+la dynamique LC entre deux fronts.
+
+# 16. Filtre actif hiérarchique du quatrième ordre
+
+`examples/10_hierarchical_active_filter` définit une cellule Sallen–Key comme
+un véritable sous-circuit Julia, puis l'instancie deux fois avec des paramètres
+différents. La hiérarchie reste visible dans les noms (`First.R1`,
+`Second.Buffer`) et la même construction sert au point de repos, à l'AC et à la
+réponse indicielle.
+
+```julia
+filter = HierarchicalActiveFilter()
+response = small_signal(filter, 10Hz => 1MHz; source = :Source)
+step = transient(filter, 0s => 1ms; saveat = 1μs)
+```
+
+# 17. Pont résistif et amplificateur d'instrumentation
+
+`examples/11_precision_bridge` transforme le déséquilibre sub-millivolt d'un
+pont de Wheatstone avec un amplificateur d'instrumentation à trois AOP. Son
+analyse Monte-Carlo applique directement une matrice de covariance aux quatre
+résistances du pont, exécute les essais en parallèle et calcule le rendement
+avec son intervalle de confiance :
+
+```julia
+variation = CorrelatedVariation(paths, means, covariance)
+offsets = monte_carlo(PrecisionBridge();
+    samples = 1_000,
+    seed = 0xA8B3_2026,
+    correlated = variation,
+    parallel = true,
+    metric = result -> voltage(result, :output)[1],
+)
+
+yield_rate(offsets, offset -> abs(offset) < 10mV)
+yield_confidence_interval(offsets, offset -> abs(offset) < 10mV)
+```
+
+Ces trois exemples sont volontairement complémentaires : puissance commutée,
+composition hiérarchique et précision statistique.

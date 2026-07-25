@@ -19,4 +19,5 @@ include("fixtures/circuits.jl")
     include("Diagnostics/diagnostics.jl")
     include("reference/examples.jl")
     include("reference/gallery.jl")
+    include("verification/runtests.jl")
 end

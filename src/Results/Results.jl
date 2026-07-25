@@ -89,8 +89,18 @@ function _derivative(r::SimulationResult,values)
     elseif length(r.axis)==1
         return zero(values)
     end
-    output=similar(values); output[1]=(values[2]-values[1])/(r.axis[2]-r.axis[1])
-    for i in 2:length(values); output[i]=(values[i]-values[i-1])/(r.axis[i]-r.axis[i-1]) end
+    output=similar(values)
+    if length(values)==2
+        output.=((values[2]-values[1])/(r.axis[2]-r.axis[1])); return output
+    end
+    h0=r.axis[2]-r.axis[1]; h1=r.axis[3]-r.axis[2]
+    output[1]=-(2h0+h1)/(h0*(h0+h1))*values[1]+(h0+h1)/(h0*h1)*values[2]-h0/(h1*(h0+h1))*values[3]
+    for i in 2:length(values)-1
+        left=r.axis[i]-r.axis[i-1]; right=r.axis[i+1]-r.axis[i]
+        output[i]=-right/(left*(left+right))*values[i-1]+(right-left)/(left*right)*values[i]+left/(right*(left+right))*values[i+1]
+    end
+    h0=r.axis[end-1]-r.axis[end-2]; h1=r.axis[end]-r.axis[end-1]
+    output[end]=h1/(h0*(h0+h1))*values[end-2]-(h0+h1)/(h0*h1)*values[end-1]+(h0+2h1)/(h1*(h0+h1))*values[end]
     output
 end
 

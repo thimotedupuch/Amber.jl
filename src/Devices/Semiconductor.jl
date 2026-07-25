@@ -31,9 +31,12 @@ function _diode_conduction(model,voltage,temperature)
     forward,forward_slope=_limited_exponential(voltage/vt)
     current=model.saturation_current*forward; conductance=model.saturation_current*forward_slope/vt
     if isfinite(model.breakdown_voltage)
-        avalanche,avalanche_slope=_limited_exponential((-voltage-model.breakdown_voltage)/vt)
-        current-=model.breakdown_current*avalanche
-        conductance+=model.breakdown_current*avalanche_slope/vt
+        avalanche_argument=(-voltage-model.breakdown_voltage)/vt
+        if avalanche_argument>0
+            avalanche,avalanche_slope=_limited_exponential(avalanche_argument)
+            current-=model.breakdown_current*avalanche
+            conductance+=model.breakdown_current*avalanche_slope/vt
+        end
     end
     current,conductance
 end
