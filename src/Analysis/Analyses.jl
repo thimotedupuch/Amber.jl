@@ -33,13 +33,26 @@ function _validate_frequency_range(range,points,scale)
     points>=1||throw(AnalysisValidationError("frequency point count must be positive"))
 end
 
-Base.@kwdef struct SmallSignal <: AbstractAnalysis
-    frequencies::Pair{Float64,Float64}
-    points::Int=100
-    scale::Symbol=:log
-    source::Union{Nothing,Symbol}=nothing
+function _validate_frequency_grid(frequencies::AbstractVector)
+    isempty(frequencies)&&throw(AnalysisValidationError("frequency grid must not be empty"))
+    fs=Float64.(frequencies)
+    all(isfinite,fs)||throw(AnalysisValidationError("frequencies must be finite"))
+    all(>=(0),fs)||throw(AnalysisValidationError("frequencies must be non-negative"))
+    all(diff(fs).>0)||throw(AnalysisValidationError("frequency grid must be strictly increasing"))
+    fs
 end
-SmallSignal(p::Pair;kw...)=SmallSignal(frequencies=Float64(first(p))=>Float64(last(p));kw...)
+
+Base.@kwdef struct SmallSignal <: AbstractAnalysis
+    frequencies::Vector{Float64}
+    source::Union{Nothing,Symbol}=nothing
+    temperature::Float64=300.
+end
+SmallSignal(frequencies::AbstractVector;kw...)=SmallSignal(frequencies=_validate_frequency_grid(frequencies);kw...)
+function SmallSignal(range::Pair;points=100,scale=:log,kw...)
+    _validate_frequency_range(range,points,scale)
+    frequencies=first(range)==last(range) ? [Float64(first(range))] : scale===:log ? collect(10 .^ Base.range(log10(first(range)),log10(last(range)),length=points)) : collect(Base.range(first(range),last(range),length=points))
+    SmallSignal(frequencies;kw...)
+end
 
 function _override_pairs(overrides)
     overrides===nothing&&return Pair{Symbol,Any}[]

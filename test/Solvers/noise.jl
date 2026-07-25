@@ -3,6 +3,7 @@
     @test length(output_noise_density(result))==12
     @test all(>(0),output_noise_density(result))
     @test all(isfinite,input_referred_noise_density(result))
+    @test integrated_noise(result,10Hz=>100kHz)>0
 end
 
 

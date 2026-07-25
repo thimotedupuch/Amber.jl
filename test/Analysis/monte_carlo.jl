@@ -29,6 +29,8 @@ using Statistics
     @test sample_values(restored)==sample_values(process_run)
     @test sample_parameters(restored)==sample_parameters(process_run)
     @test restored.seeds==process_run.seeds
+    obsolete=replace(serialized,"schema_version = 2"=>"schema_version = 1";count=1)
+    @test_throws CircuitSerializationError deserialize_monte_carlo(obsolete)
     correlated=CorrelatedVariation([Symbol("R1.value"),Symbol("C1.value")],[10kΩ,10nF],[100.0^2 0.;0. (1nF)^2])
     correlated_run=monte_carlo(LowPass();samples=4,seed=11,correlated,metric)
     @test all(correlated_run.converged)

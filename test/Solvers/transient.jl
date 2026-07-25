@@ -1,4 +1,5 @@
 @testset "transient" begin
+    @test_throws MethodError transient(LowPass(),0s=>1ms;initialization=:consistent)
     result=transient(LowPass(),0s=>1ms;saveat=10μs)
     @test result.stats[:converged]; @test voltage(result,:vout)[end]>.9V
     first_order=transient(LowPass(),0s=>200μs;saveat=10μs,method=:bdf1)

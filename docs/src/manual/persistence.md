@@ -14,6 +14,6 @@ restored = deserialize_circuit(text)
 voltage(operating_point(restored), :o)[1]
 ```
 
-The format is for Amber data interchange, review, and reproducible experiments. It is not a SPICE netlist and cannot encode arbitrary Julia closures. Unsupported user-defined models or callbacks must be reconstructed in code. Version tags permit explicit compatibility decisions instead of best-effort guessing.
+The format is for Amber data interchange, review, and reproducible experiments. It is not a SPICE netlist and cannot encode arbitrary Julia closures. Unsupported user-defined models or callbacks must be reconstructed in code. Schema versions are checked exactly; older data must be regenerated with its matching Amber version.
 
 For durable studies, preserve Amber and Julia versions, source revision, input artifact, solver settings, and result provenance together.

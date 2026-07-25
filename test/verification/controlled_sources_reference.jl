@@ -5,10 +5,10 @@
         RSense=resistor(control,gnd;value=1kΩ)
         G=transconductance(control,gnd,vccs_output,gnd;gm=3mA/V)
         RG=resistor(vccs_output,gnd;value=500Ω)
-        E=voltage_amplifier(control,gnd,vcvs_output,gnd;gain=4.)
-        F=current_amplifier(Sense,cccs_output,gnd;gain=5.)
+        E=voltage_controlled_voltage_source(control,gnd,vcvs_output,gnd;gain=4.)
+        F=current_controlled_current_source(Sense,cccs_output,gnd;gain=5.)
         RF=resistor(cccs_output,gnd;value=100Ω)
-        H=transresistance(Sense,ccvs_output,gnd;value=2kΩ)
+        H=current_controlled_voltage_source(Sense,ccvs_output,gnd;transresistance=2kΩ)
     end
     result=operating_point(ControlledReference())
     sense_current=-2mA

@@ -12,6 +12,40 @@
     @test voltage(biased,:supply)[1]≈0V
 end
 
+@testset "explicit frequency grids and response metrics" begin
+    grid=[10Hz,100Hz,1kHz,10kHz]
+    result=small_signal(LowPass(),grid;source=:V1)
+    @test frequencies(result)==grid
+    @test result.analysis.frequencies==grid
+    @test length(db20(voltage(result,:vout)))==length(grid)
+    @test phase(ComplexF64[-1-im,-1+im];unwrap=true)[2]<phase(ComplexF64[-1-im,-1+im];unwrap=true)[1]
+    @test all(isfinite,group_delay(grid,voltage(result,:vout)))
+    @test_throws AnalysisValidationError small_signal(LowPass(),[1kHz,100Hz])
+
+    multiple=LowPass()
+    input=only(component for component in multiple.components if component.name===:V1)
+    input.parameters[:ac]=1+1im
+    serialized=deserialize_circuit(serialize_circuit(multiple))
+    @test only(component for component in serialized.components if component.name===:V1).parameters[:ac]==1+1im
+end
+
+@testset "single canonical small-signal API" begin
+    analysis=SmallSignal(10Hz=>1kHz;points=3,source=:V1)
+    @test analysis.frequencies≈[10Hz,100Hz,1kHz]
+    @test !hasproperty(analysis,:points)
+    @test !hasproperty(analysis,:scale)
+
+    @circuit MultipleACSources() begin
+        gnd=ground(); first=node(); second=node()
+        V1=voltage_source(first,gnd;ac=1V)
+        V2=voltage_source(second,gnd;ac=1V)
+        R1=resistor(first,gnd;value=1kΩ)
+        R2=resistor(second,gnd;value=1kΩ)
+    end
+    @test_throws ArgumentError small_signal(MultipleACSources(),[1kHz])
+    @test small_signal(MultipleACSources(),[1kHz];source=:V1).stats[:converged]
+end
+
 
 @testset "small-signal bias convergence" begin
     @test_throws ConvergenceError small_signal(LowPass(),10Hz=>1kHz;maxiters=0)

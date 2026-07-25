@@ -12,4 +12,14 @@ Amber.run
 sweep
 noise
 NoiseResult
+PeriodicSteadyState
+PSSResult
+periodic_steady_state
+LinearizedModel
+linearize
+frequency_response
+port_response
+spectrum
+harmonic_analysis
+loop_gain
 ```

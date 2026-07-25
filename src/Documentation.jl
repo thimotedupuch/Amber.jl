@@ -34,13 +34,9 @@
 @doc """Construct a five-terminal behavioral op amp.""" opamp
 @doc """Construct a voltage-controlled analog switch.""" analog_switch
 @doc """Construct a voltage-controlled current source with gain in siemens.""" transconductance
-@doc """Alias for `transconductance`.""" voltage_controlled_current_source
 @doc """Construct a voltage-controlled voltage source.""" voltage_controlled_voltage_source
-@doc """Alias for `voltage_controlled_voltage_source`.""" voltage_amplifier
 @doc """Construct a current-controlled current source.""" current_controlled_current_source
-@doc """Alias for `current_controlled_current_source`.""" current_amplifier
 @doc """Construct a current-controlled voltage source with gain in ohms.""" current_controlled_voltage_source
-@doc """Alias for `current_controlled_voltage_source`.""" transresistance
 
 @doc """A transient waveform that changes from `initial` to `final` at a specified time.""" Step
 @doc """A sinusoidal transient waveform with amplitude, frequency, phase, offset, and delay.""" Sine
@@ -74,7 +70,7 @@
 @doc """Integrate a circuit over a time span using implicit BDF methods.""" transient
 @doc """Linearize at the operating point and solve at the requested frequencies.""" small_signal
 @doc """Execute an Amber analysis descriptor on a circuit.""" simulate
-@doc """Alias for `simulate`.""" run
+@doc """Run a sequence of analysis descriptors and return their results in order.""" run
 @doc """Evaluate an analysis across a deterministic parameter grid.""" sweep
 @doc """Compute small-signal output and optionally input-referred noise spectral density.""" noise
 @doc """Frequency-indexed noise-analysis result including density, transfer, warnings, and provenance.""" NoiseResult
@@ -82,6 +78,83 @@
 @doc """Return the frequency vector of a frequency-domain result.""" frequencies
 @doc """Return a named observable trace from a result.""" trace
 @doc """Return a complex small-signal transfer trace.""" transfer
+@doc """Convert an amplitude-like value or array to decibels using `20log10(abs(x))`.""" db20
+@doc """Convert a power-like value or array to decibels using `10log10(abs(x))`.""" db10
+@doc """Compute group delay from an unwrapped complex frequency response.""" group_delay
+@doc """Compute phase delay from a complex frequency response.""" phase_delay
+@doc """Find interpolated level crossings on a frequency grid.""" crossings
+@doc """Find interpolated cutoff frequencies relative to a reference response.""" cutoff_frequencies
+@doc """A contiguous frequency interval satisfying a response threshold.""" FrequencyBand
+@doc """Find threshold-qualified passbands in a frequency response.""" passbands
+@doc """Return the width of a frequency band or selected response passband.""" bandwidth
+@doc """A sampled local maximum in a frequency response.""" Resonance
+@doc """Find local maxima in a sampled frequency response.""" resonances
+@doc """Estimate resonance Q from interpolated half-power crossings.""" quality_factor
+@doc """Return maximum response gain above a reference, in decibels.""" peaking
+@doc """Return the deepest response attenuation below a reference, in decibels.""" notch_depth
+@doc """Integrate a noise density over a sampled frequency band and return RMS noise.""" integrated_noise
+
+@doc """An oriented small-signal port with current positive into its positive terminal.""" Port
+@doc """Frequency-indexed multiport impedance data and port metadata.""" NetworkResult
+@doc """Excite oriented ports and compute a bias-linearized network response.""" port_response
+@doc """Return Z, Y, S, hybrid, or ABCD matrices from a network result.""" network_parameters
+@doc """Return the impedance matrix of a network result.""" impedance
+@doc """Return the admittance matrix of a network result.""" admittance
+@doc """Return a network result with new positive real reference impedances.""" renormalize
+
+@doc """Calibrated one-sided FFT, RMS-amplitude, and power-spectral-density data.""" SpectrumResult
+@doc """A measured harmonic with order, frequency, RMS amplitude, phase, and bin.""" HarmonicComponent
+@doc """Fundamental, harmonic table, and standard distortion metrics.""" HarmonicResult
+@doc """Compute a calibrated spectrum from a transient result.""" spectrum
+@doc """Measure a fundamental, harmonics, distortion, noise, and dynamic range.""" harmonic_analysis
+@doc """Return total harmonic distortion.""" thd
+@doc """Return total harmonic distortion plus noise.""" thdn
+@doc """Return signal-to-noise ratio in decibels.""" snr
+@doc """Return signal-to-noise-and-distortion ratio in decibels.""" sinad
+@doc """Return spurious-free dynamic range in decibels.""" sfdr
+@doc """Estimate effective number of bits from SINAD.""" enob
+@doc """Return waveform peak divided by RMS value.""" crest_factor
+@doc """Integrate a spectrum PSD over a frequency band.""" band_power
+
+@doc """Native descriptor-system linearization of an Amber circuit.""" LinearizedModel
+@doc """MIMO frequency response of a native descriptor model.""" LinearFrequencyResponse
+@doc """MIMO time response of a native descriptor model.""" TimeResponse
+@doc """Linearize a circuit into `E*x' = A*x + B*u`, `y = C*x + D*u`.""" linearize
+@doc """Evaluate a descriptor model on a frequency grid.""" frequency_response
+@doc """Return the descriptor model's DC gain matrix.""" dcgain
+@doc """Return finite generalized poles, optionally including infinite modes.""" poles
+@doc """Return SISO transmission zeros from the Rosenbrock pencil.""" transmission_zeros
+@doc """Return natural frequencies of finite descriptor poles.""" natural_frequencies
+@doc """Return damping ratios of finite descriptor poles.""" damping_ratios
+@doc """Test whether every finite descriptor pole lies in the open left half-plane.""" isstable
+@doc """Find unity-gain crossover frequencies.""" gain_crossovers
+@doc """Find negative-180-degree phase crossover frequencies.""" phase_crossovers
+@doc """SISO gain margin, phase margin, and associated crossover frequencies.""" StabilityMargins
+@doc """Compute classical SISO stability margins.""" stability_margins
+@doc """Return the classical gain margin.""" gain_margin
+@doc """Return the classical phase margin.""" phase_margin
+@doc """Compute `1/(1+L)` from loop-gain values.""" sensitivity
+@doc """Compute `L/(1+L)` from loop-gain values.""" complementary_sensitivity
+@doc """Compute a BDF step response of a descriptor model.""" step_response
+@doc """Compute a BDF impulse response of a descriptor model.""" impulse_response
+@doc """Measure fractional-level rise time.""" rise_time
+@doc """Measure final-value settling time.""" settling_time
+@doc """Return the sampled response peak time.""" peak_time
+@doc """Return target minus final response value.""" steady_state_error
+@doc """Compute closed-loop generalized poles over a gain vector.""" root_locus
+
+@doc """Abstract zero-DC feedback injection specification.""" AbstractLoopProbe
+@doc """Voltage-source feedback injection and oriented return observable.""" VoltageLoopProbe
+@doc """Current-source feedback injection and oriented return observable.""" CurrentLoopProbe
+@doc """Loop-gain samples, margins, probe, and bias-preservation metadata.""" LoopGainResult
+@doc """Compute loop gain through an explicit zero-DC injection source.""" loop_gain
+@doc """Return sensitivity from a loop-gain result.""" loop_sensitivity
+@doc """Return complementary sensitivity from a loop-gain result.""" closed_loop_response
+
+@doc """Fixed-period shooting-analysis descriptor.""" PeriodicSteadyState
+@doc """Converged periodic orbit, shooting residual, monodromy, and Floquet data.""" PSSResult
+@doc """Solve a driven circuit's fixed-period steady state by Newton shooting.""" periodic_steady_state
+@doc """Return the Floquet multipliers of a periodic steady-state result.""" floquet_multipliers
 @doc """Return the magnitude of a complex result trace.""" magnitude
 @doc """Return the phase of a complex result trace in radians.""" phase
 @doc """Classify the operating region of a supported nonlinear device.""" region
@@ -96,7 +169,6 @@
 @doc """Convert a result to a Tables.jl-compatible table.""" result_table
 @doc """Compare compatible simulation results with structured numeric differences.""" compare
 @doc """Return the maximum minus minimum of a trace or selected window.""" peak_to_peak
-@doc """Compute steady-period metrics such as mean and ripple.""" periodic_metrics
 @doc """Compute acquisition and hold errors for sampled waveforms.""" sampling_metrics
 @doc """Measure threshold-crossing delay between two waveforms.""" propagation_delay
 @doc """Measure excursion beyond a specified final or reference value.""" overshoot

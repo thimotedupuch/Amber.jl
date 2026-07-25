@@ -42,7 +42,7 @@ result=transient(rectifier,0s=>500ms;reltol=1e-6,max_step=100μs)
 validity_report(result)
 ```
 
-Measure ripple only after discarding startup, with `periodic_metrics` or
+Measure ripple only after discarding startup, with `harmonic_analysis` or
 `peak_to_peak` on the final period. Refine the maximum step near conduction
 peaks: their width, not the 20 ms line period, controls the demanding time
 scale.

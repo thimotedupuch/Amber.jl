@@ -612,14 +612,14 @@ result = transient(
 Analyse du régime établi :
 
 ```julia
-metrics = periodic_metrics(
+metrics = harmonic_analysis(
     result;
     signal = voltage(:output),
-    window = 15ms => 20ms,
+    interval = 15ms => 20ms,
 )
 
-metrics.frequency
-metrics.amplitude
+metrics.fundamental.frequency
+metrics.fundamental.amplitude_rms
 metrics.thd
 ```
 
@@ -1167,10 +1167,7 @@ compiled = compile(amplifier)
 experiments = [
     OperatingPoint(),
 
-    SmallSignal(
-        frequencies = 10Hz => 100MHz,
-        source = :Input,
-    ),
+    SmallSignal(10Hz => 100MHz; source = :Input),
 
     Transient(
         interval = 0s => 10ms,
@@ -1275,7 +1272,7 @@ examples/
 ├── 05_wien_oscillator/
 │   ├── circuit.jl
 │   ├── startup.jl
-│   └── periodic_metrics.jl
+│   └── harmonic_analysis.jl
 ├── 06_sample_and_hold/
 │   ├── circuit.jl
 │   ├── event_simulation.jl
@@ -1314,7 +1311,7 @@ using Amber
     vin  = node()
     vout = node()
 
-    source(vin, gnd; ac = 1V)
+    voltage_source(vin, gnd; ac = 1V)
     resistor(vin, vout; value = R)
     capacitor(vout, gnd; value = C)
 
@@ -1337,7 +1334,7 @@ Puis une seconde version peut révéler la profondeur du logiciel :
     vin  = node()
     vout = node()
 
-    source(vin, gnd; ac = 1V)
+    voltage_source(vin, gnd; ac = 1V)
 
     resistor(
         vin,

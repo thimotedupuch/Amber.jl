@@ -149,7 +149,25 @@ trace(r,x)=x isa Observable ? _observable(r,x) : voltage(r,x)
 _observable(r,o::Observable)=o.kind===:voltage ? (o.extra===nothing ? voltage(r,o.target isa AbstractNode ? o.target.name : o.target) : voltage(r,o.target.name,o.extra.name)) : current(r,o.target isa Component ? o.target.name : o.target,o.extra)
 transfer(r::SimulationResult;input,output)=_observable(r,output)./_observable(r,input)
 magnitude(x)=abs.(x)
-phase(x)=angle.(x)
+function _unwrap_phase(values)
+    isempty(values)&&return Float64[]
+    raw=Float64.(values); output=copy(raw); offset=0.
+    for index in 2:length(output)
+        jump=raw[index]-raw[index-1]
+        if jump>π
+            offset-=2π
+        elseif jump < -π
+            offset+=2π
+        end
+        output[index]=raw[index]+offset
+    end
+    output
+end
+function phase(x;unwrap=false,degrees=false)
+    values=angle.(x)
+    unwrap&&(values=_unwrap_phase(values))
+    degrees ? rad2deg.(values) : values
+end
 
 @enum DeviceRegion Cutoff ForwardActive Saturation Triode
 function region(r::SimulationResult,name::Union{Symbol,String})

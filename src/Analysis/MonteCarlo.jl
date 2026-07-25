@@ -263,8 +263,8 @@ function _encode_analysis(analysis::Transient)
         "temperature"=>analysis.temperature,"overrides"=>_encode_value(analysis.overrides))
 end
 function _encode_analysis(analysis::SmallSignal)
-    Dict("kind"=>"small_signal","frequencies"=>[first(analysis.frequencies),last(analysis.frequencies)],
-        "points"=>analysis.points,"scale"=>String(analysis.scale),"source"=>_encode_value(analysis.source))
+    Dict("kind"=>"small_signal","frequency_grid"=>_encode_value(analysis.frequencies),
+        "source"=>_encode_value(analysis.source),"temperature"=>analysis.temperature)
 end
 
 function _decode_analysis(encoded)
@@ -276,14 +276,14 @@ function _decode_analysis(encoded)
             method=Symbol(encoded["method"]),adaptive=_decode_value(encoded["adaptive"],Dict(),Dict()),temperature=Float64(encoded["temperature"]),
             overrides=_decode_value(encoded["overrides"],Dict(),Dict()))
     elseif kind=="small_signal"
-        frequencies=Float64(encoded["frequencies"][1])=>Float64(encoded["frequencies"][2])
-        return SmallSignal(frequencies;points=Int(encoded["points"]),scale=Symbol(encoded["scale"]),source=_decode_value(encoded["source"],Dict(),Dict()))
+        frequencies=Float64.(_decode_value(encoded["frequency_grid"],Dict(),Dict()))
+        return SmallSignal(frequencies;source=_decode_value(encoded["source"],Dict(),Dict()),temperature=Float64(encoded["temperature"]))
     end
     throw(CircuitSerializationError("unsupported serialized Monte Carlo analysis $(kind)"))
 end
 
 function serialize_monte_carlo(result::MonteCarloResult)
-    snapshot=Dict{String,Any}("schema"=>"amber-monte-carlo","schema_version"=>1,
+    snapshot=Dict{String,Any}("schema"=>"amber-monte-carlo","schema_version"=>2,
         "analysis"=>_encode_analysis(result.analysis),"values"=>_encode_value(result.values),
         "parameters"=>_encode_value(result.parameters),"seeds"=>string.(result.seeds),
         "converged"=>collect(result.converged),"failures"=>[Dict("sample"=>failure.sample,"seed"=>string(failure.seed),
@@ -296,7 +296,7 @@ function deserialize_monte_carlo(text::AbstractString;max_bytes=64*1024*1024,max
     sizeof(text)<=max_bytes||throw(CircuitSerializationError("serialized Monte Carlo result exceeds the byte limit"))
     snapshot=try TOML.parse(text) catch error; throw(CircuitSerializationError("invalid Monte Carlo serialization: $(sprint(showerror,error))")) end
     get(snapshot,"schema",nothing)=="amber-monte-carlo"||throw(CircuitSerializationError("not an Amber Monte Carlo serialization"))
-    get(snapshot,"schema_version",nothing)==1||throw(CircuitSerializationError("unsupported Monte Carlo schema version"))
+    get(snapshot,"schema_version",nothing)==2||throw(CircuitSerializationError("unsupported Monte Carlo schema version"))
     converged=BitVector(snapshot["converged"]); length(converged)<=max_samples||throw(CircuitSerializationError("serialized Monte Carlo result exceeds the sample limit"))
     decoded_values=_decode_value(snapshot["values"],Dict(),Dict()); raw_values=Any[decoded_values...]
     successful_values=Any[raw_values[index] for index in eachindex(raw_values) if converged[index]]

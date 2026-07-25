@@ -76,6 +76,10 @@ end
 function _initial_transient_state(cc,initial;temperature=300.)
     if initial===:discharged
         z=zeros(cc.n)
+    elseif initial isa AbstractVector
+        length(initial)==cc.n||throw(DimensionMismatch("initial state does not match the compiled circuit"))
+        all(isfinite,initial)||throw(ArgumentError("initial state must be finite"))
+        z=Float64.(initial)
     else
         result=_require_converged(operating_point(cc;temperature),"transient operating point")
         z=copy(result.values[:,1])
@@ -154,7 +158,7 @@ function _transient_adaptive(cc,t0,t1;saveat,max_step,method,reltol,abstol,maxit
     SimulationResult(cc,analysis,times,values_matrix,stats)
 end
 
-function _transient(c,p::Pair;saveat=nothing,max_step=nothing,method=:bdf2,adaptive=nothing,reltol=1e-6,abstol=1e-9,maxiters=120,initial=nothing,initialization=nothing,event_mode=nothing,temperature=300.,kw...)
+function _transient(c,p::Pair;saveat=nothing,max_step=nothing,method=:bdf2,adaptive=nothing,reltol=1e-6,abstol=1e-9,maxiters=120,initial=nothing,event_mode=nothing,temperature=300.)
     _validate_transient(p;saveat,max_step,method,event_mode,reltol,abstol,maxiters)
     cc=compile(c); t0,t1=Float64(first(p)),Float64(last(p))
     use_adaptive=adaptive===nothing ? saveat===nothing&&max_step===nothing : Bool(adaptive)

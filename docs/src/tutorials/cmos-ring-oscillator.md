@@ -70,8 +70,8 @@ event mode is needed because this is an autonomous continuous-time circuit.
 
 ```@example cmos_ring
 startup=transient(oscillator,0s=>1μs;max_step=1ns,saveat=1ns)
-metrics=periodic_metrics(startup;signal=voltage(:stage5),window=.5μs=>1μs)
-(metrics.frequency,metrics.amplitude,metrics.thd)
+metrics=harmonic_analysis(startup;signal=voltage(:stage5),interval=.5μs=>1μs)
+(metrics.fundamental.frequency,metrics.fundamental.amplitude_rms,metrics.thd)
 ```
 
 The oscillation frequency is an outcome, not an imposed parameter. Repeat with

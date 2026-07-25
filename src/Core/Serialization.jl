@@ -1,6 +1,5 @@
 const _CIRCUIT_SCHEMA = "amber-circuit"
 const _CIRCUIT_SCHEMA_VERSION = 1
-const _CIRCUIT_MIGRATIONS = Dict{Int,Function}()
 
 struct CircuitSerializationError <: Exception
     message::String
@@ -22,6 +21,7 @@ _encode_value(::Nothing) = Dict("type" => "nothing")
 _encode_value(value::Bool) = Dict("type" => "bool", "value" => value)
 _encode_value(value::Integer) = Dict("type" => "integer", "value" => string(value), "unsigned" => value isa Unsigned)
 _encode_value(value::AbstractFloat) = Dict("type" => "float", "value" => Float64(value))
+_encode_value(value::Complex) = Dict("type" => "complex", "real" => Float64(real(value)), "imag" => Float64(imag(value)))
 _encode_value(value::AbstractString) = Dict("type" => "string", "value" => String(value))
 _encode_value(value::Symbol) = Dict("type" => "symbol", "value" => String(value))
 _encode_value(value::AbstractNode) = Dict("type" => "node", "id" => value.id)
@@ -47,6 +47,7 @@ function _decode_value(encoded,nodes,components,depth::Int=0,max_depth::Int=64)
     kind = encoded["type"]
     kind == "nothing" && return nothing
     kind in ("bool", "float", "string") && return encoded["value"]
+    kind == "complex" && return ComplexF64(encoded["real"],encoded["imag"])
     if kind=="integer"
         value=encoded["value"]
         value isa Integer&&return value
@@ -135,9 +136,6 @@ function _deserialize_circuit(text::AbstractString;max_nodes,max_components,max_
     end
     get(snapshot, "schema", nothing) == _CIRCUIT_SCHEMA || throw(ArgumentError("not an Amber circuit serialization"))
     version = get(snapshot, "schema_version", nothing)
-    while version != _CIRCUIT_SCHEMA_VERSION&&haskey(_CIRCUIT_MIGRATIONS,version)
-        snapshot=_CIRCUIT_MIGRATIONS[version](snapshot); version=snapshot["schema_version"]
-    end
     version == _CIRCUIT_SCHEMA_VERSION || throw(CircuitSerializationError("unsupported Amber circuit schema version $(version)"))
     nodes_snapshot=get(snapshot,"nodes",nothing); components_snapshot=get(snapshot,"components",nothing)
     nodes_snapshot isa AbstractVector||throw(CircuitSerializationError("serialized circuit nodes must be an array"))

@@ -53,8 +53,8 @@
     @test isempty(check(ring))
     @test count(x->x.kind in (:nmos,:pmos),ring.components)==10
     ring_start=transient(ring,0s=>300ns;max_step=1ns,saveat=1ns)
-    ring_metrics=periodic_metrics(ring_start;signal=voltage(:stage5),window=100ns=>300ns)
+    ring_metrics=harmonic_analysis(ring_start;signal=voltage(:stage5),interval=100ns=>300ns)
     @test ring_start.stats[:converged]
-    @test ring_metrics.frequency>10MHz
-    @test ring_metrics.amplitude>2V
+    @test ring_metrics.fundamental.frequency>10MHz
+    @test ring_metrics.fundamental.amplitude_rms>1V
 end

@@ -25,32 +25,6 @@ function (metric::PeakToPeakMetric)(result::SimulationResult)
     maximum(real.(values[indices]))-minimum(real.(values[indices]))
 end
 
-struct PeriodicMetrics
-    frequency::Float64
-    amplitude::Float64
-    thd::Float64
-end
-function periodic_metrics(result::SimulationResult;signal,window=first(result.axis)=>last(result.axis))
-    indices=findall(t->first(window)<=t<=last(window),result.axis); length(indices)>=4||throw(ArgumentError("periodic window is too short"))
-    t=result.axis[indices]; y=Float64.(real.(_signal(result,signal)[indices])); y.-=sum(y)/length(y)
-    crossings=Float64[]
-    for i in 2:length(y)
-        if y[i-1]<=0<y[i]
-            fraction=-y[i-1]/(y[i]-y[i-1]); push!(crossings,t[i-1]+fraction*(t[i]-t[i-1]))
-        end
-    end
-    frequency=length(crossings)>=2 ? inv(sum(diff(crossings))/length(diff(crossings))) : 0.
-    amplitude=(maximum(y)-minimum(y))/2
-    if frequency==0
-        thd=NaN
-    else
-        duration=t[end]-t[1]; fundamental=2/length(t)*abs(sum(y.*exp.(-im*2π*frequency.*t)))
-        harmonics=sum((2/length(t)*abs(sum(y.*exp.(-im*2π*k*frequency.*t))))^2 for k in 2:5)
-        thd=fundamental==0 ? NaN : sqrt(harmonics)/fundamental
-    end
-    PeriodicMetrics(frequency,amplitude,thd)
-end
-
 struct SamplingMetrics
     acquisition_time::Float64
     hold_droop::Float64

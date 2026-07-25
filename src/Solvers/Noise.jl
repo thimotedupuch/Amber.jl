@@ -73,8 +73,13 @@ function noise(c,range::Pair;output,referred_to=nothing,points=100,scale=:log,te
             gain[frequency_index]=abs(dot(selector,response))
         end
     end
+    warnings=String[]
+    if referred_to!==nothing
+        threshold=sqrt(eps(Float64))*max(maximum(gain),1.)
+        any(<=(threshold),gain)&&push!(warnings,"input-referred noise is singular or unreliable near a transfer null")
+    end
     referred=referred_to===nothing ? nothing : density./gain
-    stats=_finalize_stats!(Dict{Symbol,Any}(:converged=>true,:temperature=>Float64(temperature),:points=>length(fs)))
+    stats=_finalize_stats!(Dict{Symbol,Any}(:converged=>true,:temperature=>Float64(temperature),:points=>length(fs),:warnings=>warnings))
     NoiseResult(cc,Float64.(fs),density,referred,output,stats)
 end
 

@@ -12,7 +12,7 @@ using Amber
     gnd = ground()
     vin = node()
     vout = node()
-    source(vin, gnd; ac = 1V)
+    voltage_source(vin, gnd; ac = 1V)
     resistor(vin, vout; value = R)
     capacitor(vout, gnd; value = C)
     observe(vout)
