@@ -1,5 +1,45 @@
 diode(a,b;model=JunctionDiode(),kw...)=_component(:diode,a,b;model,kw...)
 npn(c,b,e;model=GummelPoonBJT(),kw...)=_component(:npn,c,b,e;model,kw...)
+nmos(d,g,s,b;model=Level1MOSFET(),kw...)=_component(:nmos,d,g,s,b;model,kw...)
+pmos(d,g,s,b;model=Level1MOSFET(),kw...)=_component(:pmos,d,g,s,b;model,kw...)
+
+"""Channel current leaving the drain and its derivatives with respect to d, g, s, b."""
+function _mosfet_channel(model::Level1MOSFET,kind::Symbol,vd,vg,vs,vb)
+    polarity=kind===:nmos ? 1. : -1.
+    ud,ug,us,ub=polarity.*(vd,vg,vs,vb)
+    reverse=ud<us
+    high,low=reverse ? (us,ud) : (ud,us)
+    twice_phi=2*model.surface_potential
+    root_argument=max(twice_phi+low-ub,eps(Float64))
+    root=sqrt(root_argument)
+    body_slope=root_argument>eps(Float64) ? model.body_effect/(2root) : 0.
+    threshold=model.threshold_voltage+model.body_effect*(root-sqrt(twice_phi))
+    overdrive=ug-low-threshold
+    overdrive<=0&&return (zero(promote_type(typeof(vd),Float64)),(0.,0.,0.,0.))
+    vds=high-low; β=model.transconductance; λ=model.channel_length_modulation
+    if vds<overdrive
+        base=β*(overdrive*vds-vds^2/2)
+        current=base*(1+λ*vds)
+        d_overdrive=β*vds*(1+λ*vds)
+        d_vds=β*((overdrive-vds)*(1+λ*vds)+λ*(overdrive*vds-vds^2/2))
+    else
+        current=β*overdrive^2/2*(1+λ*vds)
+        d_overdrive=β*overdrive*(1+λ*vds)
+        d_vds=β*overdrive^2*λ/2
+    end
+    d_high=d_vds
+    d_gate=d_overdrive
+    d_low=-d_vds-d_overdrive*(1+body_slope)
+    d_bulk=d_overdrive*body_slope
+    if reverse
+        normalized=-current
+        derivatives=(-d_low,-d_gate,-d_high,-d_bulk)
+    else
+        normalized=current
+        derivatives=(d_high,d_gate,d_low,d_bulk)
+    end
+    polarity*normalized,derivatives
+end
 
 function _junction_depletion(model::JunctionDiode,voltage)
     capacitance=model.junction_capacitance; potential=model.junction_potential; grading=model.grading_coefficient

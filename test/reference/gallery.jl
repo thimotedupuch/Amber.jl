@@ -12,6 +12,8 @@
         "09_buck_converter/circuit.jl",
         "10_hierarchical_active_filter/circuit.jl",
         "11_precision_bridge/circuit.jl",
+        "12_cmos_inverter/circuit.jl",
+        "13_cmos_ring_oscillator/circuit.jl",
     ]
     modules=Module[]
     for file in files
@@ -45,4 +47,14 @@
     bridge_result=operating_point(bridge)
     @test bridge_result.stats[:converged]
     @test isfinite(voltage(bridge_result,:output)[1])
+    inverter=getfield(modules[12],:CMOSInverter)()
+    @test isempty(check(inverter))
+    ring=getfield(modules[13],:CMOSRingOscillator)()
+    @test isempty(check(ring))
+    @test count(x->x.kind in (:nmos,:pmos),ring.components)==10
+    ring_start=transient(ring,0s=>300ns;max_step=1ns,saveat=1ns)
+    ring_metrics=periodic_metrics(ring_start;signal=voltage(:stage5),window=100ns=>300ns)
+    @test ring_start.stats[:converged]
+    @test ring_metrics.frequency>10MHz
+    @test ring_metrics.amplitude>2V
 end

@@ -10,7 +10,7 @@ Base.showerror(io::IO,error::CircuitSerializationError)=print(io,error.message)
 const _SERIALIZABLE_STRUCTS = Dict{String,DataType}(
     String(nameof(type)) => type for type in (
         Step, Sine, Pulse, ThinFilm, SMD0603, C0G, DebyeBranches,
-        JunctionDiode, GummelPoonBJT, BehavioralOpAmp,
+        JunctionDiode, GummelPoonBJT, Level1MOSFET, BehavioralOpAmp,
         VoltageControlledSwitch, EventSwitch, SmoothSwitch,
         IdealResistor, IdealCapacitor, MatchedGroup, Differential,
     )

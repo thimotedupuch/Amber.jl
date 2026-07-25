@@ -41,6 +41,8 @@ function _jacobian_pattern(circuit,node_index,branches,states,n)
             for i in q; add(i,branch); add(branch,i) end; add(branch,control)
         elseif kind===:npn
             for i in q,j in q; add(i,j) end
+        elseif kind in (:nmos,:pmos)
+            for i in q,j in q; add(i,j) end
         elseif kind===:switch
             for i in q[1:2],j in q; add(i,j) end
         elseif kind===:opamp
@@ -193,6 +195,13 @@ function residual(cc::CompiledCircuit,z,zd,t;mode=:time,source_scale=1.,gmin=0.,
             q[1]>0&&(r[q[1]]+=ic); q[2]>0&&(r[q[2]]+=ib); q[3]>0&&(r[q[3]]-=ic+ib)
             md.cbe_zero_bias!=0&&_stampg!(r,zd,q[2],q[3],md.cbe_zero_bias)
             md.cbc_zero_bias!=0&&_stampg!(r,zd,q[2],q[1],md.cbc_zero_bias)
+        elseif k in (:nmos,:pmos)
+            md=p[:model]; vd,vg,vs,vb=_v(z,q[1]),_v(z,q[2]),_v(z,q[3]),_v(z,q[4])
+            channel,_=_mosfet_channel(md,k,vd,vg,vs,vb)
+            q[1]>0&&(r[q[1]]+=channel); q[3]>0&&(r[q[3]]-=channel)
+            md.gate_source_capacitance!=0&&_stampg!(r,zd,q[2],q[3],md.gate_source_capacitance)
+            md.gate_drain_capacitance!=0&&_stampg!(r,zd,q[2],q[1],md.gate_drain_capacitance)
+            md.gate_bulk_capacitance!=0&&_stampg!(r,zd,q[2],q[4],md.gate_bulk_capacitance)
         elseif k===:switch
             md=p[:model]; ctrl=_switch_control(cc,x,z,q,t,mode); _stampg!(r,z,q[1],q[2],_switch_conductance(md,ctrl))
         elseif k===:opamp
@@ -281,6 +290,16 @@ function residual_jacobian(cc::CompiledCircuit,z,previous,t,α;mode=:time,source
             end
             md.cbe_zero_bias!=0&&_stamp_conductance!(J,q[2],q[3],α*md.cbe_zero_bias)
             md.cbc_zero_bias!=0&&_stamp_conductance!(J,q[2],q[1],α*md.cbc_zero_bias)
+        elseif k in (:nmos,:pmos)
+            md=p[:model]; vd,vg,vs,vb=_v(z,q[1]),_v(z,q[2]),_v(z,q[3]),_v(z,q[4])
+            _,derivatives=_mosfet_channel(md,k,vd,vg,vs,vb)
+            for index in eachindex(q)
+                _add!(J,q[1],q[index],derivatives[index])
+                _add!(J,q[3],q[index],-derivatives[index])
+            end
+            _stamp_conductance!(J,q[2],q[3],α*md.gate_source_capacitance)
+            _stamp_conductance!(J,q[2],q[1],α*md.gate_drain_capacitance)
+            _stamp_conductance!(J,q[2],q[4],α*md.gate_bulk_capacitance)
         elseif k===:switch
             md=p[:model]; control=_switch_control(cc,x,z,q,t,mode)
             conductance=_switch_conductance(md,control); _stamp_conductance!(J,q[1],q[2],conductance)

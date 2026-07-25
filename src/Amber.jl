@@ -15,7 +15,7 @@ export circuit, node!, ground!, add!, observe!, observe, compile, check, describ
 export explain, explain_failure
 export circuit_snapshot, serialize_circuit, deserialize_circuit, save_circuit, load_circuit
 export node, ground, resistor, capacitor, inductor, conductance
-export voltage_source, current_source, source, diode, npn, opamp, analog_switch
+export voltage_source, current_source, source, diode, npn, nmos, pmos, opamp, analog_switch
 export transconductance, voltage_controlled_current_source, voltage_controlled_voltage_source, voltage_amplifier
 export current_controlled_current_source, current_controlled_voltage_source, current_amplifier, transresistance
 export voltage, current, power, charge, state, initial_voltage
@@ -28,12 +28,12 @@ export Gaussian, LogNormal, UniformVariation, ProcessVariation, CorrelatedVariat
 export monte_carlo, replay_sample, sample_values, sample_parameters, successful, failure_rate, yield_rate, confidence_interval
 export yield_confidence_interval
 export serialize_monte_carlo, deserialize_monte_carlo, save_monte_carlo, load_monte_carlo
-export magnitude, phase, region, ForwardActive, Saturation, Cutoff
+export magnitude, phase, region, ForwardActive, Saturation, Cutoff, Triode
 export provenance, report, validity_report, available_observables
 export result_table
 export compare, peak_to_peak, periodic_metrics, sampling_metrics, propagation_delay, overshoot
 export Step, Sine, Pulse, ThinFilm, SMD0603, C0G, DebyeBranches
-export JunctionDiode, GummelPoonBJT, BehavioralOpAmp, VoltageControlledSwitch
+export JunctionDiode, GummelPoonBJT, Level1MOSFET, BehavioralOpAmp, VoltageControlledSwitch
 export SmoothSwitch, EventSwitch, IdealResistor, IdealCapacitor
 export @circuit
 export Ω, kΩ, MΩ, GΩ, TΩ, mΩ, V, mV, μV, nV, A, mA, μA, nA, pA, fA

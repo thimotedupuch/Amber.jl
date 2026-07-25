@@ -29,6 +29,8 @@
 @doc """Construct a source in the circuit DSL, dispatching from its specification.""" source
 @doc """Construct a junction diode.""" diode
 @doc """Construct an NPN bipolar transistor with collector, base, and emitter terminals.""" npn
+@doc """Construct a four-terminal NMOS transistor with drain, gate, source, and bulk terminals.""" nmos
+@doc """Construct a four-terminal PMOS transistor with drain, gate, source, and bulk terminals.""" pmos
 @doc """Construct a five-terminal behavioral op amp.""" opamp
 @doc """Construct a voltage-controlled analog switch.""" analog_switch
 @doc """Construct a voltage-controlled current source with gain in siemens.""" transconductance
@@ -49,6 +51,7 @@
 @doc """A sum of Debye relaxation branches used to model dielectric absorption.""" DebyeBranches
 @doc """Junction-diode compact-model parameters.""" JunctionDiode
 @doc """NPN compact-model parameters for transport, Early effect, charge, and base resistance.""" GummelPoonBJT
+@doc """Level-1 MOSFET parameters for threshold/body effect, channel current, gate capacitance, and thermal noise.""" Level1MOSFET
 @doc """Behavioral op-amp parameters for gain, bandwidth, rails, offsets, and impedances.""" BehavioralOpAmp
 @doc """Voltage-controlled switch parameters including resistance, threshold, and parasitics.""" VoltageControlledSwitch
 @doc """Smooth continuously differentiable switch transition mode.""" SmoothSwitch
@@ -85,6 +88,7 @@
 @doc """BJT forward-active operating-region marker.""" ForwardActive
 @doc """BJT saturation operating-region marker.""" Saturation
 @doc """BJT cutoff operating-region marker.""" Cutoff
+@doc """MOSFET linear/triode operating-region marker.""" Triode
 @doc """Return result-generation metadata and solver settings.""" provenance
 @doc """Create a readable summary of a circuit or result.""" report
 @doc """Return physical-validity findings recorded for a result.""" validity_report

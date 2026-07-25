@@ -12,6 +12,8 @@ current_source
 source
 diode
 npn
+nmos
+pmos
 opamp
 analog_switch
 transconductance
@@ -36,6 +38,7 @@ C0G
 DebyeBranches
 JunctionDiode
 GummelPoonBJT
+Level1MOSFET
 BehavioralOpAmp
 VoltageControlledSwitch
 SmoothSwitch
@@ -44,4 +47,3 @@ IdealResistor
 IdealCapacitor
 differential_capacitance
 ```
-

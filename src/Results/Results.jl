@@ -61,6 +61,18 @@ function current(r::SimulationResult,name::Union{Symbol,String},branch=nothing)
         branch===:base&&return ib
         branch===:emitter&&return .-ic.-ib
         return ic
+    elseif x.kind in (:nmos,:pmos)
+        drain,gate,source,bulk=x.terminals
+        vd=voltage(r,drain.name); vg=voltage(r,gate.name)
+        vs=voltage(r,source.name); vb=voltage(r,bulk.name); model=x.parameters[:model]
+        channel=map((d,g,s,b)->_mosfet_channel(model,x.kind,real(d),real(g),real(s),real(b))[1],vd,vg,vs,vb)
+        igs=model.gate_source_capacitance.*_derivative(r,vg.-vs)
+        igd=model.gate_drain_capacitance.*_derivative(r,vg.-vd)
+        igb=model.gate_bulk_capacitance.*_derivative(r,vg.-vb)
+        branch===:gate&&return igs.+igd.+igb
+        branch===:source&&return .-channel.-igs
+        branch===:bulk&&return .-igb
+        return channel.-igd
     elseif x.kind===:switch
         control=voltage(r,x.terminals[3].name)-voltage(r,x.terminals[4].name); model=x.parameters[:model]
         conductance=_switch_conductance.(Ref(model),real.(control))
@@ -109,6 +121,11 @@ function power(r::SimulationResult,name::Union{Symbol,String})
     if x.kind===:npn
         collector,base,emitter=get(x.parameters,:external_terminals,(x.terminals[1],x.terminals[2],x.terminals[3]))
         return voltage(r,collector.name,emitter.name).*current(r,name,:collector).+voltage(r,base.name,emitter.name).*current(r,name,:base)
+    elseif x.kind in (:nmos,:pmos)
+        drain,gate,source,bulk=x.terminals
+        return voltage(r,drain.name,source.name).*current(r,name,:drain).+
+            voltage(r,gate.name,source.name).*current(r,name,:gate).+
+            voltage(r,bulk.name,source.name).*current(r,name,:bulk)
     end
     terminals=get(x.parameters,:external_terminals,(x.terminals[1],x.terminals[2]))
     voltage(r,terminals[1].name,terminals[2].name).*current(r,name)
@@ -134,19 +151,28 @@ transfer(r::SimulationResult;input,output)=_observable(r,output)./_observable(r,
 magnitude(x)=abs.(x)
 phase(x)=angle.(x)
 
-@enum BJTRegion Cutoff ForwardActive Saturation
+@enum DeviceRegion Cutoff ForwardActive Saturation Triode
 function region(r::SimulationResult,name::Union{Symbol,String})
     ci=_findcomponent(r.compiled,name)
     ci===nothing&&throw(KeyError(name)); x=r.compiled.circuit.components[ci]
-    x.kind===:npn||throw(ArgumentError("region is only defined for BJT devices"))
-    c,b,e=x.terminals; vb=voltage(r,b.name)[1]; ve=voltage(r,e.name)[1]; vc=voltage(r,c.name)[1]
-    vb-ve<.45 ? Cutoff : vb>vc ? Saturation : ForwardActive
+    if x.kind===:npn
+        c,b,e=x.terminals; vb=voltage(r,b.name)[1]; ve=voltage(r,e.name)[1]; vc=voltage(r,c.name)[1]
+        return vb-ve<.45 ? Cutoff : vb>vc ? Saturation : ForwardActive
+    elseif x.kind in (:nmos,:pmos)
+        d,g,s,b=x.terminals; polarity=x.kind===:nmos ? 1. : -1.
+        vd,vg,vs,vb=polarity.*(voltage(r,d.name)[1],voltage(r,g.name)[1],voltage(r,s.name)[1],voltage(r,b.name)[1])
+        if vd<vs; vd,vs=vs,vd end
+        threshold=x.parameters[:model].threshold_voltage+x.parameters[:model].body_effect*(sqrt(max(2x.parameters[:model].surface_potential+vs-vb,eps()))-sqrt(2x.parameters[:model].surface_potential))
+        overdrive=vg-vs-threshold
+        return overdrive<=0 ? Cutoff : vd-vs<overdrive ? Triode : Saturation
+    end
+    throw(ArgumentError("region is only defined for BJT and MOSFET devices"))
 end
 
 _snapshot_value(value)=value
 _snapshot_value(value::AbstractWaveform)=string(typeof(value),NamedTuple{fieldnames(typeof(value))}(Tuple(getfield(value,key) for key in fieldnames(typeof(value)))))
 _snapshot_value(value::NamedTuple)=Dict(key=>_snapshot_value(item) for (key,item) in pairs(value))
-function _snapshot_value(value::Union{ThinFilm,SMD0603,C0G,DebyeBranches,JunctionDiode,GummelPoonBJT,BehavioralOpAmp,VoltageControlledSwitch,SmoothSwitch,EventSwitch})
+function _snapshot_value(value::Union{ThinFilm,SMD0603,C0G,DebyeBranches,JunctionDiode,GummelPoonBJT,Level1MOSFET,BehavioralOpAmp,VoltageControlledSwitch,SmoothSwitch,EventSwitch})
     Dict(:model=>string(typeof(value)),:parameters=>_snapshot_value(getfield(value,:data)))
 end
 function provenance(r)

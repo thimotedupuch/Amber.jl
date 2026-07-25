@@ -36,6 +36,8 @@ makedocs(
         "Tutorials"=>[
             "Diode rectifier"=>"tutorials/diode-rectifier.md",
             "Common-emitter amplifier"=>"tutorials/common-emitter.md",
+            "CMOS inverter"=>"tutorials/cmos-inverter.md",
+            "CMOS ring oscillator"=>"tutorials/cmos-ring-oscillator.md",
             "Sample and hold"=>"tutorials/sample-and-hold.md",
             "Buck converter"=>"tutorials/buck-converter.md",
             "Hierarchical active filter"=>"tutorials/hierarchical-filter.md",

@@ -45,6 +45,11 @@ function _noise_sources(cc,op;temperature=300.)
             αf=model.forward_beta/(model.forward_beta+1); collector_current=αf*If*(1+(vc-ve)/model.early_voltage)-Ir
             push!(sources,(c,e,2*elementary_charge*abs(collector_current)))
             push!(sources,(base,e,2*elementary_charge*abs(collector_current/model.forward_beta)))
+        elseif x.kind in (:nmos,:pmos)
+            model=x.parameters[:model]; d,g,s,b=map(n->_idx(cc,n),x.terminals)
+            _,derivatives=_mosfet_channel(model,x.kind,_v(op,d),_v(op,g),_v(op,s),_v(op,b))
+            gm=abs(derivatives[2])
+            push!(sources,(d,s,4*boltzmann*temperature*model.noise_coefficient*gm))
         end
     end
     sources

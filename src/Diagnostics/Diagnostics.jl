@@ -77,6 +77,18 @@ function check(c::Circuit)
                 model.reverse_beta>0||push!(ds,Diagnostic(:error,"$(component.name) reverse beta must be positive."))
                 model.early_voltage>0||push!(ds,Diagnostic(:error,"$(component.name) early voltage must be positive."))
             end
+        elseif component.kind in (:nmos,:pmos)
+            model=get(component.parameters,:model,nothing)
+            model isa Level1MOSFET||push!(ds,Diagnostic(:error,"$(component.name) requires a Level1MOSFET model."))
+            if model isa Level1MOSFET
+                model.threshold_voltage>0||push!(ds,Diagnostic(:error,"$(component.name) threshold voltage must be positive."))
+                model.transconductance>0||push!(ds,Diagnostic(:error,"$(component.name) transconductance parameter must be positive."))
+                model.channel_length_modulation>=0||push!(ds,Diagnostic(:error,"$(component.name) channel-length modulation must be non-negative."))
+                model.body_effect>=0||push!(ds,Diagnostic(:error,"$(component.name) body-effect coefficient must be non-negative."))
+                model.surface_potential>0||push!(ds,Diagnostic(:error,"$(component.name) surface potential must be positive."))
+                all(value->value>=0,(model.gate_source_capacitance,model.gate_drain_capacitance,model.gate_bulk_capacitance))||push!(ds,Diagnostic(:error,"$(component.name) gate capacitances must be non-negative."))
+                model.noise_coefficient>=0||push!(ds,Diagnostic(:error,"$(component.name) noise coefficient must be non-negative."))
+            end
         elseif component.kind===:switch
             model=get(component.parameters,:model,nothing)
             if model isa Union{VoltageControlledSwitch,EventSwitch,SmoothSwitch}

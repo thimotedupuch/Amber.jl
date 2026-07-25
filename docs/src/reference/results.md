@@ -17,6 +17,7 @@ region
 ForwardActive
 Saturation
 Cutoff
+Triode
 provenance
 report
 validity_report
@@ -32,4 +33,3 @@ output_noise_density
 input_referred_noise_density
 Differential
 ```
-

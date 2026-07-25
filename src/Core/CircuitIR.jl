@@ -223,14 +223,14 @@ function _macro_rewrite(ex,c)
         name=ex.args[1]; call=ex.args[2]; f=call.args[1]
         f===:node&&return :($name=node!($c,$(QuoteNode(name))))
         f===:ground&&return :($name=ground!($c,$(QuoteNode(name))))
-        if f in (:resistor,:capacitor,:inductor,:conductance,:voltage_source,:source,:current_source,:transconductance,:voltage_controlled_current_source,:voltage_controlled_voltage_source,:voltage_amplifier,:current_controlled_current_source,:current_controlled_voltage_source,:current_amplifier,:transresistance,:diode,:npn,:opamp,:analog_switch)
+        if f in (:resistor,:capacitor,:inductor,:conductance,:voltage_source,:source,:current_source,:transconductance,:voltage_controlled_current_source,:voltage_controlled_voltage_source,:voltage_amplifier,:current_controlled_current_source,:current_controlled_voltage_source,:current_amplifier,:transresistance,:diode,:npn,:nmos,:pmos,:opamp,:analog_switch)
             return :($name=add!($c,$call;name=$(QuoteNode(name))))
         end
         attach=GlobalRef(@__MODULE__,:_attach!)
         return :($name=$attach($c,$call;name=$(QuoteNode(name))))
     elseif ex.head===:call&&ex.args[1]===:observe
         return Expr(:call,:observe!,c,ex.args[2:end]...)
-    elseif ex.head===:call&&ex.args[1] in (:resistor,:capacitor,:inductor,:conductance,:voltage_source,:source,:current_source,:transconductance,:voltage_controlled_current_source,:voltage_controlled_voltage_source,:voltage_amplifier,:current_controlled_current_source,:current_controlled_voltage_source,:current_amplifier,:transresistance,:diode,:npn,:opamp,:analog_switch)
+    elseif ex.head===:call&&ex.args[1] in (:resistor,:capacitor,:inductor,:conductance,:voltage_source,:source,:current_source,:transconductance,:voltage_controlled_current_source,:voltage_controlled_voltage_source,:voltage_amplifier,:current_controlled_current_source,:current_controlled_voltage_source,:current_amplifier,:transresistance,:diode,:npn,:nmos,:pmos,:opamp,:analog_switch)
         return :(add!($c,$ex))
     elseif ex.head===:call
         attach=GlobalRef(@__MODULE__,:_attach!)
