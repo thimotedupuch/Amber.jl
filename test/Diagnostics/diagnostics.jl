@@ -31,4 +31,7 @@
     failure_explanation=explain_failure(failed)
     @test occursin("did not converge",failure_explanation)
     @test occursin("dominated the residual",failure_explanation)
+
+    validation_error = CircuitValidationError(check(c))
+    @test occursin("no finite DC path", explain_failure(validation_error))
 end

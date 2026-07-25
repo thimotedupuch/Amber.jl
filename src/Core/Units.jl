@@ -1,4 +1,3 @@
-"""SI scale constants accepted by Amber's unit-stripping input layer."""
 const Ω=1.0; const kΩ=1e3; const MΩ=1e6; const GΩ=1e9; const TΩ=1e12; const mΩ=1e-3
 const V=1.0; const mV=1e-3; const μV=1e-6; const nV=1e-9
 const A=1.0; const mA=1e-3; const μA=1e-6; const nA=1e-9; const pA=1e-12; const fA=1e-15

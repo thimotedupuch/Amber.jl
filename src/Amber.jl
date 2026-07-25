@@ -65,5 +65,6 @@ include("Solvers/Noise.jl")
 include("Analysis/Sweeps.jl")
 include("Analysis/MonteCarlo.jl")
 include("Analysis/Metrics.jl")
+include("Documentation.jl")
 
 end

@@ -235,6 +235,8 @@ end
 Explain solver convergence status and identify the residual equation that
 dominated each recorded failed transient step.
 """
+explain_failure(error::Exception) = sprint(showerror, error)
+
 function explain_failure(result)
     stats = result.stats
     converged = get(stats, :converged, false)
