@@ -1,6 +1,11 @@
 # Verification strategy
 
-Amber's `test/verification` directory checks circuits with closed-form or textbook results. These tests cover divider laws, Thévenin/Norton equivalence, RC/RL time constants, RLC resonance, AC filters, noise identities, diode bias, conservation, and numerical refinement.
+Amber's test suite checks circuits with closed-form or textbook results,
+including focused references under `test/verification`. These tests cover
+divider laws, Thévenin/Norton equivalence,
+RC/RL time constants, RLC resonance, AC filters, Johnson/Norton and ``kT/C``
+noise identities, covariance, stochastic reproducibility, periodic LTI
+reduction, diode bias, conservation, and numerical refinement.
 
 This provides strong evidence that assembly and analyses agree with known mathematics across independent mechanisms. It is especially valuable because the expected values are transparent and reviewable.
 
@@ -11,4 +16,3 @@ It does not prove correctness for every topology or parameter regime. Shared mis
 3. time-step, tolerance, and frequency-grid refinement;
 4. regression tests for discovered failures;
 5. selective independent comparison when the cost is justified.
-

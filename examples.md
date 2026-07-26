@@ -53,7 +53,7 @@ using Amber
         material = ThinFilm(
             tc1 = 15e-6 / K,
             voltage_coefficient = 0.05e-6 / V,
-            excess_noise = true,
+            excess_noise_coefficient = 1e-18,
         ),
         package = SMD0603(
             series_inductance = 0.6nH,
@@ -303,7 +303,7 @@ Cet exemple montre qu’un circuit unique peut servir au calcul :
             cbe_zero_bias = 20pF,
             cbc_zero_bias = 4pF,
             transit_time = 300ps,
-            flicker_noise = true,
+            flicker_coefficient = 1e-18,
         ),
     )
 
@@ -371,7 +371,7 @@ noise_result = noise(
     amplifier,
     10Hz => 1MHz;
     output = voltage(:out),
-    referred_to = :Input,
+    input = :Input,
 )
 ```
 
@@ -578,7 +578,7 @@ Il met en jeu :
             output_resistance = 20Ω,
             output_current_limit = 25mA,
             input_offset = 100μV,
-            input_voltage_noise = 8nV / sqrt(Hz),
+            input_voltage_noise_density = 8nV / sqrt(Hz),
             saturation_recovery = 2μs,
         ),
     )

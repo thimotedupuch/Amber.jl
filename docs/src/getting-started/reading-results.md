@@ -6,14 +6,22 @@ accessors over indexing the matrix directly.
 
 ```@example reading_results
 using Amber
+
 @circuit ResultExample() begin
-    gnd=ground(); input=node(); output=node()
-    V1=voltage_source(input,gnd;dc=2V)
-    R1=resistor(input,output;value=1kΩ)
-    R2=resistor(output,gnd;value=1kΩ)
+    gnd = ground()
+    input = node()
+    output = node()
+    V1 = voltage_source(input, gnd; dc=2V)
+    R1 = resistor(input, output; value=1kΩ)
+    R2 = resistor(output, gnd; value=1kΩ)
 end
-result=operating_point(ResultExample())
-(voltage=voltage(result,:output)[1],current=current(result,:R1)[1],power=power(result,:R1)[1])
+
+result = operating_point(ResultExample())
+(
+    voltage=voltage(result, :output)[1],
+    current=current(result, :R1)[1],
+    power=power(result, :R1)[1],
+)
 ```
 
 Voltage is measured from the named node to ground unless a second node is
@@ -36,4 +44,3 @@ node, branch, or state.
 analysis type, units, statistics, and warnings. [`result_table`](@ref) exposes
 results through the Tables.jl-compatible row interface without introducing a
 mandatory dataframe dependency.
-

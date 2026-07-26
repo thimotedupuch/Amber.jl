@@ -41,14 +41,14 @@
 @doc """A transient waveform that changes from `initial` to `final` at a specified time.""" Step
 @doc """A sinusoidal transient waveform with amplitude, frequency, phase, offset, and delay.""" Sine
 @doc """A periodic pulse waveform with explicit rise, fall, frequency, and duty cycle.""" Pulse
-@doc """Thin-film resistor technology metadata.""" ThinFilm
+@doc """Thin-film resistor metadata including explicit power-law excess-noise parameters.""" ThinFilm
 @doc """0603 surface-mount resistor technology metadata.""" SMD0603
 @doc """C0G/NP0 capacitor technology metadata.""" C0G
 @doc """A sum of Debye relaxation branches used to model dielectric absorption.""" DebyeBranches
-@doc """Junction-diode compact-model parameters.""" JunctionDiode
-@doc """NPN compact-model parameters for transport, Early effect, charge, and base resistance.""" GummelPoonBJT
-@doc """Level-1 MOSFET parameters for threshold/body effect, channel current, gate capacitance, and thermal noise.""" Level1MOSFET
-@doc """Behavioral op-amp parameters for gain, bandwidth, rails, offsets, and impedances.""" BehavioralOpAmp
+@doc """Junction-diode compact-model parameters including carrier, avalanche, and power-law noise.""" JunctionDiode
+@doc """NPN compact-model parameters for transport, charge, resistance, shot noise, and power-law noise.""" GummelPoonBJT
+@doc """Level-1 MOSFET parameters for channel equations and correlated channel/gate/power-law noise.""" Level1MOSFET
+@doc """Behavioral op-amp parameters for gain, impedances, and voltage/current noise spectra.""" BehavioralOpAmp
 @doc """Voltage-controlled switch parameters including resistance, threshold, and parasitics.""" VoltageControlledSwitch
 @doc """Smooth continuously differentiable switch transition mode.""" SmoothSwitch
 @doc """Event-oriented switch transition mode.""" EventSwitch
@@ -73,7 +73,13 @@
 @doc """Run a sequence of analysis descriptors and return their results in order.""" run
 @doc """Evaluate an analysis across a deterministic parameter grid.""" sweep
 @doc """Compute small-signal output and optionally input-referred noise spectral density.""" noise
-@doc """Frequency-indexed noise-analysis result including density, transfer, warnings, and provenance.""" NoiseResult
+@doc """Frequency-indexed stationary noise result containing PSDs and physical-source contributions.""" NoiseResult
+@doc """Run seeded fixed-grid stochastic backward-Euler noise simulation.""" transient_noise
+@doc """Descriptor retained by a fixed-grid stochastic transient result.""" TransientNoise
+@doc """Propagate periodically time-varying noise through a converged PSS orbit.""" periodic_noise
+@doc """Sideband-folded periodically time-varying noise result.""" PeriodicNoiseResult
+@doc """Compute autonomous-oscillator single-sideband phase noise.""" phase_noise
+@doc """Autonomous-oscillator phase and amplitude noise result.""" PhaseNoiseResult
 
 @doc """Return the frequency vector of a frequency-domain result.""" frequencies
 @doc """Return a named observable trace from a result.""" trace
@@ -92,7 +98,7 @@
 @doc """Estimate resonance Q from interpolated half-power crossings.""" quality_factor
 @doc """Return maximum response gain above a reference, in decibels.""" peaking
 @doc """Return the deepest response attenuation below a reference, in decibels.""" notch_depth
-@doc """Integrate a noise density over a sampled frequency band and return RMS noise.""" integrated_noise
+@doc """Integrate noise PSD over an exact sampled band and return RMS noise or variance.""" integrated_noise
 
 @doc """An oriented small-signal port with current positive into its positive terminal.""" Port
 @doc """Frequency-indexed multiport impedance data and port metadata.""" NetworkResult
@@ -153,7 +159,7 @@
 
 @doc """Fixed-period shooting-analysis descriptor.""" PeriodicSteadyState
 @doc """Converged periodic orbit, shooting residual, monodromy, and Floquet data.""" PSSResult
-@doc """Solve a driven circuit's fixed-period steady state by Newton shooting.""" periodic_steady_state
+@doc """Solve driven or autonomous periodic steady state with variational Floquet data.""" periodic_steady_state
 @doc """Return the Floquet multipliers of a periodic steady-state result.""" floquet_multipliers
 @doc """Return the magnitude of a complex result trace.""" magnitude
 @doc """Return the phase of a complex result trace in radians.""" phase
@@ -172,8 +178,12 @@
 @doc """Compute acquisition and hold errors for sampled waveforms.""" sampling_metrics
 @doc """Measure threshold-crossing delay between two waveforms.""" propagation_delay
 @doc """Measure excursion beyond a specified final or reference value.""" overshoot
-@doc """Return output amplitude spectral density from a `NoiseResult`.""" output_noise_density
-@doc """Return input-referred amplitude spectral density from a `NoiseResult`.""" input_referred_noise_density
+@doc """Return the one-sided output noise power spectral density.""" noise_psd
+@doc """Return the square root of the one-sided output noise PSD.""" noise_density
+@doc """Return the one-sided input-referred noise power spectral density.""" input_referred_noise_psd
+@doc """Return the square root of the input-referred noise PSD.""" input_referred_noise_density
+@doc """Filter physical-source contributions by component or mechanism.""" noise_contributions
+@doc """Return linear noise factor relative to a thermal source resistance.""" noise_figure
 @doc """A differential small-signal excitation or observation specification.""" Differential
 
 @doc """Independent normally distributed parameter variation.""" Gaussian

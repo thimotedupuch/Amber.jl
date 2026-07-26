@@ -82,11 +82,53 @@ function quality_factor(frequencies,response;resonance=argmax(abs.(response)))
     isempty(lower)||isempty(upper) ? NaN : frequencies[resonance]/(first(upper)-last(lower))
 end
 
-function integrated_noise(result::NoiseResult,band::Pair;referred=:output)
-    low,high=Float64(first(band)),Float64(last(band)); high>low||throw(ArgumentError("noise integration band must be increasing"))
-    density=referred===:output ? output_noise_density(result) : referred===:input ? input_referred_noise_density(result) : throw(ArgumentError("referred must be :output or :input"))
-    density===nothing&&throw(ArgumentError("input-referred noise was not computed"))
-    indices=findall(f->low<=f<=high,result.frequencies); length(indices)>=2||throw(ArgumentError("noise band contains fewer than two sampled frequencies"))
-    fs=result.frequencies[indices]; psd=abs2.(density[indices])
-    sqrt(sum((psd[index]+psd[index+1])*(fs[index+1]-fs[index])/2 for index in 1:length(fs)-1))
+function _noise_band_samples(frequencies,psd,low,high;interpolate_edges)
+    first(frequencies)<=low<high<=last(frequencies)||throw(ArgumentError(
+        "noise integration band must lie within the evaluated frequency range"))
+    inside=findall(frequency->low<frequency<high,frequencies)
+    edge_value(edge)=begin
+        exact=findfirst(==(edge),frequencies)
+        exact!==nothing&&return psd[exact]
+        interpolate_edges||throw(ArgumentError(
+            "noise band edge $(edge) Hz is not an evaluated frequency"))
+        upper=searchsortedfirst(frequencies,edge)
+        lower=upper-1
+        fraction=(edge-frequencies[lower])/(frequencies[upper]-frequencies[lower])
+        psd[lower]+fraction*(psd[upper]-psd[lower])
+    end
+    fs=vcat(low,frequencies[inside],high)
+    values=vcat(edge_value(low),psd[inside],edge_value(high))
+    fs,values
+end
+
+function _integrate_noise_psd(frequencies,psd,low,high;interpolate_edges)
+    fs,values=_noise_band_samples(frequencies,psd,low,high;interpolate_edges)
+    sum((values[index]+values[index+1])*(fs[index+1]-fs[index])/2
+        for index in 1:length(fs)-1)
+end
+
+function integrated_noise(result::NoiseResult,band::Pair;referred=:output,
+        interpolate_edges=true,quantity=:rms,contributions=false)
+    low,high=Float64(first(band)),Float64(last(band))
+    high>low||throw(ArgumentError("noise integration band must be increasing"))
+    psd=referred===:output ? noise_psd(result) :
+        referred===:input ? input_referred_noise_psd(result) :
+        throw(ArgumentError("referred must be :output or :input"))
+    psd===nothing&&throw(ArgumentError("input-referred noise was not computed"))
+    quantity in (:rms,:variance)||throw(ArgumentError(
+        "noise integration quantity must be :rms or :variance"))
+    convert_value(value)=quantity===:rms ? sqrt(max(value,0.)) : value
+    total=convert_value(_integrate_noise_psd(result.frequencies,psd,low,high;
+        interpolate_edges))
+    contributions||return total
+    by_source=Dict{Symbol,Float64}()
+    for contribution in result.contributions
+        source_psd=referred===:output ? contribution.output_psd :
+            contribution.input_referred_psd
+        source_psd===nothing&&continue
+        variance=_integrate_noise_psd(result.frequencies,source_psd,low,high;
+            interpolate_edges)
+        by_source[contribution.source]=convert_value(variance)
+    end
+    (total=total,contributions=by_source)
 end

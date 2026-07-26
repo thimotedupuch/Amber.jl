@@ -1,88 +1,475 @@
+const _BOLTZMANN = 1.380649e-23
+const _ELEMENTARY_CHARGE = 1.602176634e-19
+
+"""
+A physical noise generator and its sparse-equivalent MNA injection vector.
+`psd` returns a one-sided source PSD in SI units.
+"""
+struct NoiseSource
+    id::Symbol
+    owner::Symbol
+    mechanism::Symbol
+    injection::Vector{ComplexF64}
+    psd::Function
+    correlation_group::Union{Nothing,Symbol}
+end
+
+"""A group of noise sources described by a complex correlation matrix."""
+struct NoiseCorrelationGroup
+    id::Symbol
+    source_ids::Vector{Symbol}
+    correlation::Function
+end
+
+"""Frequency-resolved contribution of one physical source to a noise result."""
+struct NoiseSourceContribution
+    source::Symbol
+    component::Symbol
+    mechanism::Symbol
+    output_psd::Vector{Float64}
+    input_referred_psd::Union{Nothing,Vector{Float64}}
+end
+
 struct NoiseResult
-    compiled::CompiledCircuit
     frequencies::Vector{Float64}
-    output_noise_density::Vector{Float64}
-    input_referred_noise_density::Union{Nothing,Vector{Float64}}
     output::Observable
+    input_source::Union{Nothing,Symbol}
+    output_psd::Vector{Float64}
+    input_referred_psd::Union{Nothing,Vector{Float64}}
+    contributions::Vector{NoiseSourceContribution}
+    compiled::CompiledCircuit
     stats::Dict{Symbol,Any}
-    function NoiseResult(compiled::CompiledCircuit, frequencies::Vector{Float64}, output_noise_density::Vector{Float64}, input_referred_noise_density::Union{Nothing,Vector{Float64}}, output::Observable,stats::Dict{Symbol,Any})
-        new(_snapshot_compiled(compiled), frequencies, output_noise_density, input_referred_noise_density, deepcopy(output),stats)
+    function NoiseResult(frequencies,output,input_source,output_psd,input_referred_psd,
+            contributions,compiled,stats)
+        new(Float64.(frequencies),deepcopy(output),input_source,Float64.(output_psd),
+            input_referred_psd===nothing ? nothing : Float64.(input_referred_psd),
+            contributions,_snapshot_compiled(compiled),stats)
     end
 end
 
-output_noise_density(result::NoiseResult)=result.output_noise_density
-input_referred_noise_density(result::NoiseResult)=result.input_referred_noise_density
+frequencies(result::NoiseResult)=result.frequencies
+noise_psd(result::NoiseResult)=result.output_psd
+noise_density(result::NoiseResult)=sqrt.(max.(result.output_psd,0.))
+input_referred_noise_psd(result::NoiseResult)=result.input_referred_psd
+input_referred_noise_density(result::NoiseResult)=result.input_referred_psd===nothing ?
+    nothing : sqrt.(max.(result.input_referred_psd,0.))
 
-function _voltage_selector(cc,observable::Observable)
-    observable.kind===:voltage||throw(ArgumentError("noise output must be a voltage observable"))
-    selector=zeros(ComplexF64,cc.n)
-    target=observable.target isa AbstractNode ? observable.target.name : observable.target
-    first_node=_findnode(cc,target); first_node===nothing&&throw(KeyError(target)); a=cc.circuit.nodes[first_node]
-    a.id!=0&&(selector[cc.node_index[a.id]]+=1)
-    if observable.extra!==nothing
-        other=observable.extra isa AbstractNode ? observable.extra.name : observable.extra
-        second_node=_findnode(cc,other); second_node===nothing&&throw(KeyError(other)); b=cc.circuit.nodes[second_node]
-        b.id!=0&&(selector[cc.node_index[b.id]]-=1)
+function noise_contributions(result::NoiseResult;component=nothing,mechanism=nothing)
+    filter(result.contributions) do contribution
+        (component===nothing||contribution.component===Symbol(component))&&
+            (mechanism===nothing||contribution.mechanism===Symbol(mechanism))
     end
-    selector
 end
 
-function _noise_sources(cc,op;temperature=300.)
-    boltzmann=1.380649e-23; elementary_charge=1.602176634e-19
-    sources=Tuple{Int,Int,Float64}[]
-    for (index,x) in enumerate(cc.circuit.components)
-        contract=device_contract(x.kind); (contract===nothing||!contract.noise)&&continue
-        a,b=map(n->_idx(cc,n),x.terminals[1:2])
-        if x.kind===:resistor
-            push!(sources,(a,b,4*boltzmann*temperature/Float64(x.parameters[:value])))
-        elseif x.kind===:diode
-            model=x.parameters[:model]; voltage_drop=_v(op,a)-_v(op,b); diode_current,_=_diode_conduction(model,voltage_drop,temperature)
-            push!(sources,(a,b,2*elementary_charge*abs(diode_current)))
-        elseif x.kind===:npn
-            model=x.parameters[:model]; c,base,e=map(n->_idx(cc,n),x.terminals)
-            vc,vb,ve=_v(op,c),_v(op,base),_v(op,e)
-            vt=_thermal_voltage(temperature); If=model.saturation_current*expm1(clamp((vb-ve)/vt,-80,40)); Ir=model.saturation_current*expm1(clamp((vb-vc)/vt,-80,40))
-            αf=model.forward_beta/(model.forward_beta+1); collector_current=αf*If*(1+(vc-ve)/model.early_voltage)-Ir
-            push!(sources,(c,e,2*elementary_charge*abs(collector_current)))
-            push!(sources,(base,e,2*elementary_charge*abs(collector_current/model.forward_beta)))
-        elseif x.kind in (:nmos,:pmos)
-            model=x.parameters[:model]; d,g,s,b=map(n->_idx(cc,n),x.terminals)
-            _,derivatives=_mosfet_channel(model,x.kind,_v(op,d),_v(op,g),_v(op,s),_v(op,b))
-            gm=abs(derivatives[2])
-            push!(sources,(d,s,4*boltzmann*temperature*model.noise_coefficient*gm))
+function _noise_injection(cc,positive,negative)
+    vector=zeros(ComplexF64,cc.n)
+    positive>0&&(vector[positive]-=1)
+    negative>0&&(vector[negative]+=1)
+    vector
+end
+
+function _noise_injection(cc,weights::Pair{Int,<:Number}...)
+    vector=zeros(ComplexF64,cc.n)
+    for (index,weight) in weights
+        index>0&&(vector[index]+=weight)
+    end
+    vector
+end
+
+_power_law(coefficient,current,current_exponent,frequency,frequency_exponent,reference)=
+    coefficient==0 ? 0. : coefficient*abs(current)^current_exponent*
+        (reference/frequency)^frequency_exponent
+
+function _noise_source_psd(source,frequency,bias,time)
+    value=real(source.psd(frequency,bias,time))
+    isfinite(value)||throw(AnalysisValidationError(
+        "noise source $(source.id) produced a non-finite PSD at $(frequency) Hz"))
+    value>=0||throw(AnalysisValidationError(
+        "noise source $(source.id) produced a negative PSD at $(frequency) Hz"))
+    value
+end
+
+function _push_source!(sources,id,owner,mechanism,injection,psd;group=nothing)
+    push!(sources,NoiseSource(Symbol(owner,".",id),owner,mechanism,injection,psd,group))
+end
+
+function _noise_parent_name(name::Symbol)
+    text=String(name)
+    suffixes=(".esr",".winding_resistance",".series_resistance",
+        ".base_resistance",".leakage_resistance",".package_resistance")
+    for suffix in suffixes
+        endswith(text,suffix)&&return Symbol(text[1:end-length(suffix)])
+    end
+    occursin(r"\.da\d+_resistor$",text)&&return Symbol(replace(text,
+        r"\.da\d+_resistor$"=>""))
+    name
+end
+
+function _device_noise_sources(cc,component_index,op;temperature=300.)
+    component=cc.circuit.components[component_index]
+    kind=component.kind
+    parameters=component.parameters
+    terminals=map(node->_idx(cc,node),component.terminals)
+    owner=component.name
+    sources=NoiseSource[]
+    groups=NoiseCorrelationGroup[]
+
+    if kind in (:resistor,:conductance)
+        conductance=kind===:resistor ? inv(Float64(parameters[:value])) :
+            Float64(parameters[:value])
+        injection=_noise_injection(cc,terminals[1],terminals[2])
+        _push_source!(sources,:thermal,owner,:thermal,injection,
+            (_frequency,_bias,_time)->4*_BOLTZMANN*temperature*conductance)
+        material=get(parameters,:material,nothing)
+        if material isa ThinFilm&&material.excess_noise_coefficient>0
+            current=conductance*(_v(op,terminals[1])-_v(op,terminals[2]))
+            _push_source!(sources,:excess,owner,:flicker,injection,
+                (frequency,_bias,_time)->_power_law(material.excess_noise_coefficient,
+                    current,material.excess_current_exponent,frequency,
+                    material.excess_frequency_exponent,material.excess_reference_frequency))
+        end
+    elseif kind===:voltage_source
+        resistance=Float64(get(parameters,:series_resistance,0.))
+        if resistance>0
+            branch=cc.branches[component_index]
+            _push_source!(sources,:series_resistance,owner,:thermal,
+                _noise_injection(cc,branch=>1),
+                (_frequency,_bias,_time)->4*_BOLTZMANN*temperature*resistance)
+        end
+    elseif kind===:diode
+        model=parameters[:model]
+        voltage=_v(op,terminals[1])-_v(op,terminals[2])
+        vt=_thermal_voltage(temperature)*model.ideality
+        forward=max(model.saturation_current*exp(clamp(voltage/vt,-80,40)),0.)
+        reverse=model.saturation_current
+        avalanche=0.
+        if isfinite(model.breakdown_voltage)
+            argument=(-voltage-model.breakdown_voltage)/vt
+            argument>0&&(avalanche=model.breakdown_current*exp(clamp(argument,-80,40)))
+        end
+        injection=_noise_injection(cc,terminals[1],terminals[2])
+        _push_source!(sources,:forward_shot,owner,:shot,injection,
+            (_frequency,_bias,_time)->2*_ELEMENTARY_CHARGE*forward)
+        _push_source!(sources,:reverse_shot,owner,:shot,injection,
+            (_frequency,_bias,_time)->2*_ELEMENTARY_CHARGE*reverse)
+        isfinite(model.breakdown_voltage)&&_push_source!(sources,:avalanche_shot,
+            owner,:avalanche,injection,
+            (_frequency,_bias,_time)->2*_ELEMENTARY_CHARGE*avalanche)
+        current=forward-reverse-avalanche
+        model.flicker_coefficient>0&&_push_source!(sources,:flicker,owner,:flicker,injection,
+            (frequency,_bias,_time)->_power_law(model.flicker_coefficient,current,
+                model.flicker_current_exponent,frequency,model.flicker_frequency_exponent,
+                model.flicker_reference_frequency))
+    elseif kind===:npn
+        model=parameters[:model]
+        collector,base,emitter=terminals
+        vc,vb,ve=_v(op,collector),_v(op,base),_v(op,emitter)
+        vt=_thermal_voltage(temperature)
+        forward=max(model.saturation_current*exp(clamp((vb-ve)/vt,-80,40)),0.)
+        reverse=max(model.saturation_current*exp(clamp((vb-vc)/vt,-80,40)),0.)
+        αf=model.forward_beta/(model.forward_beta+1)
+        αr=model.reverse_beta/(model.reverse_beta+1)
+        forward_injection=_noise_injection(cc,collector=>-αf,base=>-(1-αf),emitter=>1)
+        reverse_injection=_noise_injection(cc,collector=>1,base=>-(1-αr),emitter=>-αr)
+        _push_source!(sources,:forward_transport,owner,:shot,forward_injection,
+            (_frequency,_bias,_time)->2*_ELEMENTARY_CHARGE*forward)
+        _push_source!(sources,:reverse_transport,owner,:shot,reverse_injection,
+            (_frequency,_bias,_time)->2*_ELEMENTARY_CHARGE*reverse)
+        base_current=(1-αf)*forward+(1-αr)*reverse
+        model.flicker_coefficient>0&&_push_source!(sources,:base_flicker,owner,:flicker,
+            _noise_injection(cc,base,emitter),
+            (frequency,_bias,_time)->_power_law(model.flicker_coefficient,base_current,
+                model.flicker_current_exponent,frequency,model.flicker_frequency_exponent,
+                model.flicker_reference_frequency))
+    elseif kind in (:nmos,:pmos)
+        model=parameters[:model]
+        drain,gate,source,bulk=terminals
+        channel,derivatives=_mosfet_channel(model,kind,_v(op,drain),_v(op,gate),
+            _v(op,source),_v(op,bulk))
+        gm=abs(derivatives[2])
+        channel_id=Symbol(owner,".channel_thermal")
+        gate_id=Symbol(owner,".induced_gate")
+        group=model.induced_gate_noise_coefficient>0 ? Symbol(owner,".channel_gate") : nothing
+        _push_source!(sources,:channel_thermal,owner,:thermal,
+            _noise_injection(cc,drain,source),
+            (_frequency,_bias,_time)->4*_BOLTZMANN*temperature*
+                model.channel_thermal_coefficient*gm;group)
+        if model.induced_gate_noise_coefficient>0
+            _push_source!(sources,:induced_gate,owner,:gate,
+                _noise_injection(cc,gate,source),
+                (frequency,_bias,_time)->4*_BOLTZMANN*temperature*
+                    model.induced_gate_noise_coefficient*gm;group)
+            correlation=model.gate_channel_correlation
+            push!(groups,NoiseCorrelationGroup(group,[channel_id,gate_id],
+                (_frequency,_bias,_time)->ComplexF64[1 correlation;conj(correlation) 1]))
+        end
+        model.flicker_coefficient>0&&_push_source!(sources,:flicker,owner,:flicker,
+            _noise_injection(cc,drain,source),
+            (frequency,_bias,_time)->_power_law(model.flicker_coefficient,channel,
+                model.flicker_current_exponent,frequency,model.flicker_frequency_exponent,
+                model.flicker_reference_frequency))
+    elseif kind===:switch
+        model=parameters[:model]
+        control=_switch_control(cc,component,op,terminals,0.,:dc)
+        conductance=_switch_conductance(model,control)
+        _push_source!(sources,:channel_thermal,owner,:thermal,
+            _noise_injection(cc,terminals[1],terminals[2]),
+            (_frequency,_bias,_time)->4*_BOLTZMANN*temperature*conductance)
+    elseif kind===:opamp
+        model=parameters[:model]
+        positive,negative,output,positive_rail,negative_rail=terminals
+        branch=cc.branches[component_index]
+        state=cc.states[(component_index,:dominant_pole)]
+        pole=2π*model.gain_bandwidth/max(model.dc_gain,1.)
+        voltage_group=abs(model.voltage_current_noise_correlation)>0 ?
+            Symbol(owner,".input_noise") : nothing
+        voltage_id=Symbol(owner,".input_voltage")
+        positive_id=Symbol(owner,".positive_input_current")
+        model.input_voltage_noise_density>0&&_push_source!(sources,:input_voltage,owner,
+            :opamp_voltage,_noise_injection(cc,state=>pole*model.dc_gain),
+            (_frequency,_bias,_time)->model.input_voltage_noise_density^2;
+            group=voltage_group)
+        model.input_voltage_noise_density>0&&model.input_voltage_flicker_corner>0&&
+            _push_source!(sources,:input_voltage_flicker,owner,:flicker,
+                _noise_injection(cc,state=>pole*model.dc_gain),
+                (frequency,_bias,_time)->model.input_voltage_noise_density^2*
+                    (model.input_voltage_flicker_corner/frequency)^
+                        model.input_voltage_flicker_exponent)
+        model.positive_input_current_noise_density>0&&_push_source!(sources,
+            :positive_input_current,owner,:opamp_current,_noise_injection(cc,positive,negative_rail),
+            (_frequency,_bias,_time)->model.positive_input_current_noise_density^2;
+            group=voltage_group)
+        model.positive_input_current_noise_density>0&&
+                model.input_current_flicker_corner>0&&_push_source!(sources,
+            :positive_input_current_flicker,owner,:flicker,
+            _noise_injection(cc,positive,negative_rail),
+            (frequency,_bias,_time)->model.positive_input_current_noise_density^2*
+                (model.input_current_flicker_corner/frequency)^
+                    model.input_current_flicker_exponent)
+        model.negative_input_current_noise_density>0&&_push_source!(sources,
+            :negative_input_current,owner,:opamp_current,_noise_injection(cc,negative,negative_rail),
+            (_frequency,_bias,_time)->model.negative_input_current_noise_density^2)
+        model.negative_input_current_noise_density>0&&
+                model.input_current_flicker_corner>0&&_push_source!(sources,
+            :negative_input_current_flicker,owner,:flicker,
+            _noise_injection(cc,negative,negative_rail),
+            (frequency,_bias,_time)->model.negative_input_current_noise_density^2*
+                (model.input_current_flicker_corner/frequency)^
+                    model.input_current_flicker_exponent)
+        if voltage_group!==nothing&&model.input_voltage_noise_density>0&&
+                model.positive_input_current_noise_density>0
+            correlation=model.voltage_current_noise_correlation
+            push!(groups,NoiseCorrelationGroup(voltage_group,[voltage_id,positive_id],
+                (_frequency,_bias,_time)->ComplexF64[1 correlation;conj(correlation) 1]))
+        end
+        if model.output_resistance>0
+            _push_source!(sources,:output_resistance,owner,:thermal,
+                _noise_injection(cc,branch=>1),
+                (_frequency,_bias,_time)->4*_BOLTZMANN*temperature*model.output_resistance)
         end
     end
-    sources
+    physical_owner=_noise_parent_name(owner)
+    if physical_owner!==owner
+        sources=[NoiseSource(source.id,physical_owner,source.mechanism,
+            source.injection,source.psd,source.correlation_group) for source in sources]
+    end
+    sources,groups
 end
 
-function noise(c,range::Pair;output,referred_to=nothing,points=100,scale=:log,temperature=300.,kw...)
-    _validate_frequency_range(range,points,scale); isfinite(temperature)&&temperature>0||throw(AnalysisValidationError("noise temperature must be finite and positive"))
-    cc=compile(c); operating_point_result=_require_converged(operating_point(cc;temperature,kw...),"noise operating point"); op=operating_point_result.values[:,1]
-    fs=scale===:log ? collect(10 .^ Base.range(log10(first(range)),log10(last(range)),length=points)) : collect(Base.range(first(range),last(range),length=points))
-    _,Jz=residual_jacobian(cc,op,op,0.,0.;mode=:dc,temperature); _,combined=residual_jacobian(cc,op,op,0.,1.;mode=:dc,temperature); Jd=combined-Jz
-    selector=_voltage_selector(cc,output); sources=_noise_sources(cc,op;temperature); density=zeros(Float64,length(fs)); gain=ones(Float64,length(fs))
-    for (frequency_index,frequency) in enumerate(fs)
-        system=Jz+im*2π*frequency*Jd; adjoint_solution=_solve_linear(system',selector,"noise adjoint matrix is singular at $(frequency) Hz"); spectral=0.
-        for (a,b,source_density) in sources
-            transfer=(a==0 ? 0 : conj(adjoint_solution[a]))-(b==0 ? 0 : conj(adjoint_solution[b]))
-            spectral+=abs2(transfer)*source_density
+function noise_sources(cc,op;temperature=300.)
+    sources=NoiseSource[]
+    groups=NoiseCorrelationGroup[]
+    for component_index in eachindex(cc.circuit.components)
+        local_sources,local_groups=_device_noise_sources(cc,component_index,op;temperature)
+        append!(sources,local_sources)
+        append!(groups,local_groups)
+    end
+    sources,groups
+end
+
+function _validate_correlation(matrix,group_id;atol=1e-10)
+    size(matrix,1)==size(matrix,2)||throw(AnalysisValidationError(
+        "noise correlation group $(group_id) is not square"))
+    all(isfinite,real.(matrix))&&all(isfinite,imag.(matrix))||
+        throw(AnalysisValidationError("noise correlation group $(group_id) is not finite"))
+    norm(matrix-matrix',Inf)<=atol*max(norm(matrix,Inf),1.)||
+        throw(AnalysisValidationError("noise correlation group $(group_id) is not Hermitian"))
+    minimum(eigvals(Hermitian((matrix+matrix')/2)))>=-atol*max(norm(matrix,Inf),1.)||
+        throw(AnalysisValidationError("noise correlation group $(group_id) is not positive semidefinite"))
+    nothing
+end
+
+function _frequency_grid(specification;points=100,scale=:log)
+    specification isa AbstractVector&&return _validate_frequency_grid(specification)
+    _validate_frequency_range(specification,points,scale)
+    first(specification)==last(specification) ? [Float64(first(specification))] :
+        scale===:log ? collect(10 .^ Base.range(log10(first(specification)),
+            log10(last(specification)),length=points)) :
+        collect(Base.range(first(specification),last(specification),length=points))
+end
+
+function _noise_output_direct(cc,observable,source)
+    observable.kind===:current||return 0.
+    target=observable.target isa Component ? observable.target.name :
+        Symbol(observable.target)
+    component_index=_findcomponent(cc,target)
+    component_index===nothing&&return 0.
+    component=cc.circuit.components[component_index]
+    component.kind in (:resistor,:conductance)||return 0.
+    startswith(String(source.id),String(component.name)*".") ? 1. : 0.
+end
+
+function noise(c,frequency_specification;output,input=nothing,points=100,scale=:log,
+        temperature=300.,contributions=true,bias=nothing,operating_point_options...)
+    isfinite(temperature)&&temperature>0||
+        throw(AnalysisValidationError("noise temperature must be finite and positive"))
+    frequencies=_frequency_grid(frequency_specification;points,scale)
+    any(iszero,frequencies)&&throw(AnalysisValidationError(
+        "stationary noise frequencies must be positive because power-law noise is undefined at DC"))
+    cc=compile(c)
+    diagnostics=filter(diagnostic->diagnostic.severity===:error,check(cc.circuit))
+    isempty(diagnostics)||throw(CircuitValidationError(diagnostics))
+    if bias===nothing
+        point=_require_converged(
+            operating_point(cc;temperature,operating_point_options...),
+            "noise operating point").values[:,1]
+    elseif bias isa SimulationResult
+        _require_converged(bias,"supplied noise bias")
+        bias.compiled.fingerprint==cc.fingerprint||throw(ArgumentError(
+            "supplied noise bias belongs to a different compiled circuit"))
+        point=bias.values[:,1]
+    else
+        point=Float64.(bias)
+    end
+    length(point)==cc.n||throw(DimensionMismatch("noise bias point does not match the compiled circuit"))
+    all(isfinite,point)||throw(ArgumentError("noise bias point must be finite"))
+    output_observable=_as_observable(output)
+    selector=ComplexF64.(_linear_output_selector(cc,output_observable))
+    sources,groups=noise_sources(cc,point;temperature)
+    source_index=Dict(source.id=>index for (index,source) in enumerate(sources))
+    grouped_ids=Set(id for group in groups for id in group.source_ids)
+    output_psd=zeros(Float64,length(frequencies))
+    source_output=[zeros(Float64,length(frequencies)) for _ in sources]
+    gains=input===nothing ? nothing : zeros(Float64,length(frequencies))
+    corrections=0
+    _,Jz=residual_jacobian(cc,point,point,0.,0.;mode=:dc,temperature)
+    _,combined=residual_jacobian(cc,point,point,0.,1.;mode=:dc,temperature)
+    Jd=combined-Jz
+    excitation=input===nothing ? nothing : _unit_source_excitation(cc,Symbol(input))
+    for (frequency_index,frequency) in enumerate(frequencies)
+        system=Jz+im*2π*frequency*Jd
+        adjoint=_solve_linear(system',selector,
+            "noise adjoint matrix is singular at $(frequency) Hz")
+        transfers=ComplexF64[dot(adjoint,source.injection)+
+            _noise_output_direct(cc,output_observable,source) for source in sources]
+        densities=Float64[_noise_source_psd(source,frequency,point,0.)
+            for source in sources]
+        total=0.
+        for index in eachindex(sources)
+            sources[index].id in grouped_ids&&continue
+            value=abs2(transfers[index])*densities[index]
+            source_output[index][frequency_index]+=value
+            total+=value
         end
-        density[frequency_index]=sqrt(max(spectral,0.))
-        if referred_to!==nothing
-            excitation=ac_excitation(cc;source=Symbol(referred_to)); response=_solve_linear(system,excitation,"noise gain matrix is singular at $(frequency) Hz")
-            gain[frequency_index]=abs(dot(selector,response))
+        for group in groups
+            indices=[source_index[id] for id in group.source_ids]
+            correlation=ComplexF64.(group.correlation(frequency,point,0.))
+            _validate_correlation(correlation,group.id)
+            scales=sqrt.(densities[indices])
+            covariance=Diagonal(scales)*correlation*Diagonal(scales)
+            group_transfers=transfers[indices]
+            value=real(dot(conj.(group_transfers),
+                covariance*conj.(group_transfers)))
+            tolerance=eps(Float64)*max(sum(abs,covariance)*sum(abs2,group_transfers),1.)
+            if value < -tolerance
+                throw(AnalysisValidationError("noise group $(group.id) produced a negative output PSD"))
+            elseif value<0
+                value=0.; corrections+=1
+            end
+            allocations=real.(group_transfers.*(covariance*conj.(group_transfers)))
+            for (local_index,index) in enumerate(indices)
+                source_output[index][frequency_index]+=allocations[local_index]
+            end
+            total+=value
+        end
+        output_psd[frequency_index]=total
+        if input!==nothing
+            response=_solve_linear(system,ComplexF64.(excitation),
+                "noise gain matrix is singular at $(frequency) Hz")
+            gains[frequency_index]=abs(dot(selector,response))
         end
     end
     warnings=String[]
-    if referred_to!==nothing
-        threshold=sqrt(eps(Float64))*max(maximum(gain),1.)
-        any(<=(threshold),gain)&&push!(warnings,"input-referred noise is singular or unreliable near a transfer null")
+    input_psd=nothing
+    if input!==nothing
+        threshold=sqrt(eps(Float64))*max(maximum(gains),1.)
+        nulls=gains.<=threshold
+        any(nulls)&&push!(warnings,
+            "input-referred noise is infinite at one or more transfer nulls")
+        input_psd=similar(output_psd)
+        for index in eachindex(output_psd)
+            input_psd[index]=nulls[index] ? Inf : output_psd[index]/gains[index]^2
+        end
     end
-    referred=referred_to===nothing ? nothing : density./gain
-    stats=_finalize_stats!(Dict{Symbol,Any}(:converged=>true,:temperature=>Float64(temperature),:points=>length(fs),:warnings=>warnings))
-    NoiseResult(cc,Float64.(fs),density,referred,output,stats)
+    contribution_values=NoiseSourceContribution[]
+    if contributions
+        for (index,source) in enumerate(sources)
+            referred=input_psd===nothing ? nothing :
+                [isfinite(input_psd[j]) ? source_output[index][j]/gains[j]^2 : Inf
+                    for j in eachindex(frequencies)]
+            push!(contribution_values,NoiseSourceContribution(source.id,source.owner,
+                source.mechanism,source_output[index],referred))
+        end
+    end
+    stats=_finalize_stats!(Dict{Symbol,Any}(
+        :converged=>true,:temperature=>Float64(temperature),:points=>length(frequencies),
+        :source_count=>length(sources),:correlation_group_count=>length(groups),
+        :roundoff_psd_corrections=>corrections,:bias_source=>bias===nothing ? :operating_point : :provided,
+        :warnings=>warnings))
+    NoiseResult(frequencies,output_observable,input===nothing ? nothing : Symbol(input),
+        output_psd,input_psd,contribution_values,cc,stats)
 end
 
-provenance(result::NoiseResult)=Dict(:amber_version=>v"0.1.0",:topology_fingerprint=>result.compiled.fingerprint,
-    :analysis=>"Noise",:statistics=>copy(result.stats),:unit_system=>:SI,:warnings=>String[])
-report(result::NoiseResult)=Dict(:analysis=>"Noise",:statistics=>copy(result.stats))
+function noise_figure(result::NoiseResult;source_resistance)
+    result.input_referred_psd===nothing&&throw(ArgumentError(
+        "noise figure requires an input-referred noise result"))
+    resistance=Float64(source_resistance)
+    resistance>0&&isfinite(resistance)||throw(ArgumentError(
+        "source resistance must be finite and positive"))
+    input_index=_findcomponent(result.compiled,result.input_source)
+    input_index!==nothing&&
+        result.compiled.circuit.components[input_index].kind===:voltage_source||
+        throw(ArgumentError("noise figure with source_resistance requires a voltage input source"))
+    temperature=Float64(result.stats[:temperature])
+    source_psd=4*_BOLTZMANN*temperature*resistance
+    result.input_referred_psd./source_psd
+end
+
+provenance(result::NoiseResult)=Dict(
+    :amber_version=>v"0.1.0",
+    :topology_fingerprint=>result.compiled.fingerprint,
+    :analysis=>"Noise",
+    :statistics=>copy(result.stats),
+    :unit_system=>:SI,
+    :warnings=>copy(result.stats[:warnings]),
+)
+
+report(result::NoiseResult)=Dict(
+    :analysis=>"Noise",
+    :statistics=>copy(result.stats),
+    :source_count=>result.stats[:source_count],
+)
+
+function _noise_validity_warnings(compiled,initial=String[])
+    warnings=copy(initial)
+    for component in compiled.circuit.components
+        component.kind in (:nmos,:pmos)||continue
+        push!(warnings,"$(component.name): Level1MOSFET noise excludes body-diode, junction, substrate, and foundry BSIM mechanisms")
+    end
+    warnings
+end
+
+function validity_report(result::NoiseResult)
+    warnings=_noise_validity_warnings(result.compiled,result.stats[:warnings])
+    Dict(:devices=>Dict{Symbol,Any}(),:warnings=>warnings)
+end

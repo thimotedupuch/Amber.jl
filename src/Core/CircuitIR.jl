@@ -102,7 +102,12 @@ function _elaborate_capacitor!(c,x,name)
         _hidden_component!(c,:inductor,(terminal,next),(:value=>esl,),Symbol(name,".esl")); terminal=next
     end
     x.parameters[:external_terminals]=(external_p,external_n)
+    leakage=Float64(get(x.parameters,:leakage_resistance,Inf))
+    delete!(x.parameters,:leakage_resistance)
+    isfinite(leakage)&&(x.parameters[:external_leakage_resistance]=leakage)
     x.terminals=AbstractNode[terminal,external_n]; push!(c.components,x)
+    isfinite(leakage)&&leakage>0&&_hidden_component!(c,:resistor,(terminal,external_n),
+        (:value=>leakage,),Symbol(name,".leakage_resistance"))
     absorption=get(x.parameters,:dielectric_absorption,nothing)
     if absorption isa DebyeBranches
         length(absorption.time_constants)==length(absorption.fractions)||throw(ArgumentError("Debye time_constants and fractions must have equal lengths"))

@@ -262,6 +262,14 @@ function _encode_analysis(analysis::Transient)
         "method"=>String(analysis.method),"adaptive"=>_encode_value(analysis.adaptive),
         "temperature"=>analysis.temperature,"overrides"=>_encode_value(analysis.overrides))
 end
+function _encode_analysis(analysis::TransientNoise)
+    Dict("kind"=>"transient_noise",
+        "interval"=>[first(analysis.interval),last(analysis.interval)],
+        "timestep"=>analysis.timestep,"saveat"=>analysis.saveat,
+        "seed"=>string(analysis.seed),"temperature"=>analysis.temperature,
+        "low_frequency_cutoff"=>analysis.low_frequency_cutoff,
+        "event_mode"=>_encode_value(analysis.event_mode))
+end
 function _encode_analysis(analysis::SmallSignal)
     Dict("kind"=>"small_signal","frequency_grid"=>_encode_value(analysis.frequencies),
         "source"=>_encode_value(analysis.source),"temperature"=>analysis.temperature)
@@ -275,6 +283,13 @@ function _decode_analysis(encoded)
         return Transient(interval;saveat=_decode_value(encoded["saveat"],Dict(),Dict()),max_step=_decode_value(encoded["max_step"],Dict(),Dict()),
             method=Symbol(encoded["method"]),adaptive=_decode_value(encoded["adaptive"],Dict(),Dict()),temperature=Float64(encoded["temperature"]),
             overrides=_decode_value(encoded["overrides"],Dict(),Dict()))
+    elseif kind=="transient_noise"
+        interval=Float64(encoded["interval"][1])=>Float64(encoded["interval"][2])
+        return TransientNoise(interval=interval,
+            timestep=Float64(encoded["timestep"]),saveat=Float64(encoded["saveat"]),
+            seed=parse(UInt64,encoded["seed"]),temperature=Float64(encoded["temperature"]),
+            low_frequency_cutoff=Float64(encoded["low_frequency_cutoff"]),
+            event_mode=_decode_value(encoded["event_mode"],Dict(),Dict()))
     elseif kind=="small_signal"
         frequencies=Float64.(_decode_value(encoded["frequency_grid"],Dict(),Dict()))
         return SmallSignal(frequencies;source=_decode_value(encoded["source"],Dict(),Dict()),temperature=Float64(encoded["temperature"]))

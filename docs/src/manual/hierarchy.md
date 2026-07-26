@@ -9,8 +9,10 @@ function rc_section!(c, prefix, input, output, gnd; r, capacitance)
     add!(c, capacitor(output, gnd; value=capacitance); name=Symbol(prefix, ".c"))
     output
 end
+
 c = Circuit(:two_pole_ladder)
-vin, mid, out = (node!(c, n) for n in (:vin, :mid, :out)); gnd = ground!(c)
+vin, mid, out = (node!(c, n) for n in (:vin, :mid, :out))
+gnd = ground!(c)
 add!(c, voltage_source(vin, gnd; dc=1.0); name=:drive)
 rc_section!(c, "stage1", vin, mid, gnd; r=1e3, capacitance=1e-6)
 rc_section!(c, "stage2", mid, out, gnd; r=1e3, capacitance=1e-6)

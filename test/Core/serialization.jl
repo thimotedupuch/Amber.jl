@@ -34,6 +34,6 @@
     end
 
     @test_throws CircuitSerializationError deserialize_circuit("schema = \"other\"")
-    bad=replace(text,"schema_version = 1"=>"schema_version = 999";count=1)
+    bad=replace(text,"schema_version = 2"=>"schema_version = 999";count=1)
     @test_throws CircuitSerializationError deserialize_circuit(bad)
 end

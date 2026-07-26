@@ -1,6 +1,9 @@
 @testset "device models" begin
     @test compile(RealisticRC()).n>0
     @test JunctionDiode(ideality=1.7).ideality==1.7
+    @test_throws ArgumentError Level1MOSFET(noise_coefficient=2/3)
+    @test_throws ArgumentError GummelPoonBJT(flicker_noise=true)
+    @test_throws ArgumentError BehavioralOpAmp(input_voltage_noise=1e-9)
     @test Sine(amplitude=2V,frequency=1kHz)(0.25ms)≈2V
     @test 120dB≈1e6
     @test 180°≈π

@@ -53,7 +53,7 @@ using LinearAlgebra: norm
     @test all(isfinite,voltage(response,:output))
     @test real(voltage(response,:output)[1])<0
     noise_result=noise(CMOSInverter(),1kHz=>10kHz;output=voltage(:output),points=3)
-    @test all(>(0),output_noise_density(noise_result))
+    @test all(>(0),noise_density(noise_result))
 
     serialized=serialize_circuit(CMOSInverter())
     restored=deserialize_circuit(serialized)

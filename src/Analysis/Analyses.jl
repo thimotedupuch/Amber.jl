@@ -2,6 +2,16 @@ abstract type AbstractAnalysis end
 
 struct OperatingPoint <: AbstractAnalysis end
 
+Base.@kwdef struct TransientNoise <: AbstractAnalysis
+    interval::Pair{Float64,Float64}
+    timestep::Float64
+    saveat::Float64
+    seed::UInt64
+    temperature::Float64=300.
+    low_frequency_cutoff::Float64
+    event_mode::Union{Nothing,Symbol}=nothing
+end
+
 Base.@kwdef struct Transient <: AbstractAnalysis
     interval::Pair{Float64,Float64}
     saveat::Union{Nothing,Float64}=nothing

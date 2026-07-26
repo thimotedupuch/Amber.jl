@@ -27,6 +27,8 @@ makedocs(
             "Transient analysis"=>"manual/transient.md",
             "Small-signal AC"=>"manual/small-signal.md",
             "Noise analysis"=>"manual/noise.md",
+            "Stochastic transient noise"=>"manual/transient-noise.md",
+            "Periodic and phase noise"=>"manual/periodic-noise.md",
             "Results and observables"=>"manual/observables-and-results.md",
             "Diagnostics"=>"manual/diagnostics.md",
             "Sweeps"=>"manual/sweeps.md",

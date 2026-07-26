@@ -1,5 +1,5 @@
 const _CIRCUIT_SCHEMA = "amber-circuit"
-const _CIRCUIT_SCHEMA_VERSION = 1
+const _CIRCUIT_SCHEMA_VERSION = 2
 
 struct CircuitSerializationError <: Exception
     message::String
@@ -136,7 +136,8 @@ function _deserialize_circuit(text::AbstractString;max_nodes,max_components,max_
     end
     get(snapshot, "schema", nothing) == _CIRCUIT_SCHEMA || throw(ArgumentError("not an Amber circuit serialization"))
     version = get(snapshot, "schema_version", nothing)
-    version == _CIRCUIT_SCHEMA_VERSION || throw(CircuitSerializationError("unsupported Amber circuit schema version $(version)"))
+    version == _CIRCUIT_SCHEMA_VERSION || throw(CircuitSerializationError(
+        "unsupported Amber circuit schema version $(version); noise-model fields changed in schema 2, so regenerate the circuit definition with explicit spectral-density parameters"))
     nodes_snapshot=get(snapshot,"nodes",nothing); components_snapshot=get(snapshot,"components",nothing)
     nodes_snapshot isa AbstractVector||throw(CircuitSerializationError("serialized circuit nodes must be an array"))
     components_snapshot isa AbstractVector||throw(CircuitSerializationError("serialized circuit components must be an array"))

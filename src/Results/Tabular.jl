@@ -7,7 +7,8 @@ This is the dependency-free tabular core consumed by optional Tables/Arrow
 integrations.
 """
 function result_table(result::SimulationResult)
-    axis_name=result.analysis isa SmallSignal ? :frequency : result.analysis isa Transient ? :time : :point
+    axis_name=result.analysis isa SmallSignal ? :frequency :
+        result.analysis isa Union{Transient,TransientNoise} ? :time : :point
     nodes=[node for node in result.compiled.circuit.nodes if !(node isa Ground)]
     names=Tuple(vcat(axis_name,[node.name for node in nodes]))
     columns=Any[result.axis]

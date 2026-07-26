@@ -12,25 +12,36 @@ larger reproducible experiment.
 using Amber
 
 @circuit LowPass(; R=10kΩ, C=10nF) begin
-    gnd=ground(); input=node(); output=node()
-    Source=voltage_source(input,gnd;dc=0V,ac=1V,
-        waveform=Step(low=0V,high=1V,at=100μs))
-    R1=resistor(input,output;value=R)
-    C1=capacitor(output,gnd;value=C)
+    gnd = ground()
+    input = node()
+    output = node()
+    Source = voltage_source(
+        input,
+        gnd;
+        dc=0V,
+        ac=1V,
+        waveform=Step(low=0V, high=1V, at=100μs),
+    )
+    R1 = resistor(input, output; value=R)
+    C1 = capacitor(output, gnd; value=C)
     observe(voltage(output))
 end
 
-circuit=LowPass(R=4.7kΩ,C=22nF)
+circuit = LowPass(R=4.7kΩ, C=22nF)
 check(circuit)
-bias=operating_point(circuit)
-ac=small_signal(circuit,10Hz=>1MHz;source=:Source,points=100)
-startup=transient(circuit,0s=>1ms;saveat=10μs)
-(voltage(bias,:output)[1],magnitude(voltage(ac,:output))[1],
-    voltage(startup,:output)[end])
+bias = operating_point(circuit)
+ac = small_signal(circuit, 10Hz => 1MHz; source=:Source, points=100)
+startup = transient(circuit, 0s => 1ms; saveat=10μs)
+(
+    voltage(bias, :output)[1],
+    magnitude(voltage(ac, :output))[1],
+    voltage(startup, :output)[end],
+)
 ```
 
 Amber currently provides operating-point, adaptive or fixed-grid BDF
-transient, small-signal AC, and adjoint noise analyses. Its component library
+transient, small-signal AC, stationary and stochastic noise, periodic noise,
+and oscillator phase-noise analyses. Its component library
 includes passive devices, controlled sources, junction diodes, an Ebers--Moll
 BJT, behavioral op-amps, and smooth or event switches. The emphasis is on a
 small coherent core whose equations, Jacobians, convergence order, and

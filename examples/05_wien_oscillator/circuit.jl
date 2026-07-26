@@ -8,7 +8,10 @@ using Amber
     Rparallel=resistor(noninv,gnd;value=Rw); Cparallel=capacitor(noninv,gnd;value=Cw)
     Rg=resistor(inv,gnd;value=10kΩ); Rf1=resistor(output,gain_n;value=12kΩ); Rf2=resistor(gain_n,inv;value=10kΩ)
     D1=diode(output,gain_n;model=JunctionDiode()); D2=diode(gain_n,output;model=JunctionDiode())
-    A1=opamp(noninv,inv,output,vdd,vss;model=BehavioralOpAmp(dc_gain=120dB,gain_bandwidth=10MHz,slew_rate=5V/μs,output_resistance=20Ω,output_current_limit=25mA,input_offset=100μV,input_voltage_noise=8nV/sqrt(Hz),saturation_recovery=2μs))
+    A1=opamp(noninv,inv,output,vdd,vss;model=BehavioralOpAmp(dc_gain=120dB,
+        gain_bandwidth=10MHz,slew_rate=5V/μs,output_resistance=20Ω,
+        output_current_limit=25mA,input_offset=100μV,
+        input_voltage_noise_density=8nV/sqrt(Hz),saturation_recovery=2μs))
     initial_voltage(Cparallel,1μV)
     observe(voltage(output),voltage(noninv),voltage(inv),current(D1),state(A1,:dominant_pole))
 end

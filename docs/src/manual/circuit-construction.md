@@ -4,8 +4,11 @@ An Amber circuit is a graph whose vertices are electrical nodes and whose edges 
 
 ```@example construction
 using Amber
- c = Circuit(:loaded_divider)
-vdd = node!(c, :vdd); out = node!(c, :out); gnd = ground!(c)
+
+c = Circuit(:loaded_divider)
+vdd = node!(c, :vdd)
+out = node!(c, :out)
+gnd = ground!(c)
 add!(c, voltage_source(vdd, gnd; dc=12.0); name=:supply)
 add!(c, resistor(vdd, out; value=10e3); name=:upper)
 add!(c, resistor(out, gnd; value=10e3); name=:lower)

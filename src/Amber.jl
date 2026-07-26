@@ -23,8 +23,12 @@ export current_controlled_current_source, current_controlled_voltage_source
 export voltage, current, power, charge, state, initial_voltage
 export differential_capacitance
 export operating_point, transient, small_signal, simulate, run, sweep
-export noise, NoiseResult, output_noise_density, input_referred_noise_density
-export OperatingPoint, Transient, SmallSignal, frequencies, trace, transfer
+export NoiseSource, NoiseCorrelationGroup, NoiseSourceContribution
+export noise, NoiseResult, noise_psd, noise_density
+export input_referred_noise_psd, input_referred_noise_density, noise_contributions, noise_figure
+export transient_noise, periodic_noise, phase_noise
+export PeriodicNoiseResult, PhaseNoiseResult
+export OperatingPoint, Transient, TransientNoise, SmallSignal, frequencies, trace, transfer
 export Port, NetworkResult, port_response, network_parameters, impedance, admittance, renormalize
 export MatchedGroup, matched_group, Differential
 export Gaussian, LogNormal, UniformVariation, ProcessVariation, CorrelatedVariation, MonteCarloFailure, MonteCarloResult
@@ -89,6 +93,9 @@ include("Solvers/Network.jl")
 include("Analysis/Control.jl")
 include("Analysis/Feedback.jl")
 include("Solvers/Noise.jl")
+include("Solvers/TransientNoise.jl")
+include("Solvers/PeriodicNoise.jl")
+include("Solvers/PhaseNoise.jl")
 include("Analysis/Sweeps.jl")
 include("Analysis/MonteCarlo.jl")
 include("Analysis/Metrics.jl")

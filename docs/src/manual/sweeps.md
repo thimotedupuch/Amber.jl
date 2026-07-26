@@ -10,13 +10,16 @@ For small custom studies, ordinary Julia is equally expressive:
 using Amber
 function divider(rbottom)
     c = Circuit(:divider)
-    top, out = node!(c, :top), node!(c, :out); gnd = ground!(c)
+    top = node!(c, :top)
+    out = node!(c, :out)
+    gnd = ground!(c)
     add!(c, voltage_source(top, gnd; dc=1.0); name=:v)
     add!(c, resistor(top, out; value=1kΩ); name=:rt)
     add!(c, resistor(out, gnd; value=rbottom); name=:rb)
     observe!(c, voltage(out))
     voltage(operating_point(c), :out)[1]
 end
+
 [divider(r) for r in (500.0, 1kΩ, 2kΩ)]
 ```
 

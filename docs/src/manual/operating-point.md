@@ -5,7 +5,9 @@
 ```@example op
 using Amber
 c = Circuit(:diode_bias)
-vdd, anode = node!(c, :vdd), node!(c, :anode); gnd = ground!(c)
+vdd = node!(c, :vdd)
+anode = node!(c, :anode)
+gnd = ground!(c)
 add!(c, voltage_source(vdd, gnd; dc=5.0); name=:supply)
 add!(c, resistor(vdd, anode; value=2.2kΩ); name=:bias)
 add!(c, diode(anode, gnd); name=:d1)

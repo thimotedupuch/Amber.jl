@@ -5,13 +5,16 @@
 ```@example tran
 using Amber
 @circuit RCStep() begin
-    gnd=ground(); vin=node(); out=node()
-    Source=voltage_source(vin,gnd;waveform=Step(low=0V,high=1V,at=0s))
-    R1=resistor(vin,out;value=1kΩ)
-    C1=capacitor(out,gnd;value=1μF,initial_voltage=0V)
+    gnd = ground()
+    vin = node()
+    out = node()
+    Source = voltage_source(vin, gnd; waveform=Step(low=0V, high=1V, at=0s))
+    R1 = resistor(vin, out; value=1kΩ)
+    C1 = capacitor(out, gnd; value=1μF, initial_voltage=0V)
     observe(voltage(out))
 end
-r = transient(RCStep(), 0s=>5ms; saveat=0.5ms)
+
+r = transient(RCStep(), 0s => 5ms; saveat=0.5ms)
 (first(r.axis), last(r.axis), length(r.axis))
 ```
 

@@ -5,7 +5,9 @@ Amber serializes circuits and Monte Carlo results to versioned, deterministic TO
 ```@example persistence
 using Amber
 c = Circuit(:saved_divider)
-v, o = node!(c, :v), node!(c, :o); g = ground!(c)
+v = node!(c, :v)
+o = node!(c, :o)
+g = ground!(c)
 add!(c, voltage_source(v, g; dc=3.0); name=:source)
 add!(c, resistor(v, o; value=1kΩ); name=:r1)
 add!(c, resistor(o, g; value=2kΩ); name=:r2)

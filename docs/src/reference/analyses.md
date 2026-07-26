@@ -3,6 +3,7 @@
 ```@docs
 OperatingPoint
 Transient
+TransientNoise
 SmallSignal
 operating_point
 transient
@@ -12,6 +13,9 @@ Amber.run
 sweep
 noise
 NoiseResult
+transient_noise
+periodic_noise
+phase_noise
 PeriodicSteadyState
 PSSResult
 periodic_steady_state

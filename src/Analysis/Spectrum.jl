@@ -52,7 +52,8 @@ function _window_values(kind::Symbol,count::Int)
 end
 
 function _uniform_signal(result::SimulationResult,signal,interval)
-    result.analysis isa Transient||throw(ArgumentError("spectrum requires a transient result"))
+    result.analysis isa Union{Transient,TransientNoise}||throw(ArgumentError(
+        "spectrum requires a deterministic or stochastic transient result"))
     indices=interval===nothing ? collect(eachindex(result.axis)) : findall(time->first(interval)<=time<=last(interval),result.axis)
     length(indices)>=4||throw(ArgumentError("selected spectrum interval must contain at least four samples"))
     times=result.axis[indices]; values=Float64.(real.(_signal(result,signal)[indices])); steps=diff(times)

@@ -38,7 +38,9 @@ function current(r::SimulationResult,name::Union{Symbol,String},branch=nothing)
     x.kind===:resistor&&return (va-vb)/x.parameters[:value]
     x.kind===:conductance&&return (va-vb)*x.parameters[:value]
     if x.kind===:capacitor
-        v=va-vb; return x.parameters[:value].*_derivative(r,v).+v./get(x.parameters,:leakage_resistance,Inf)
+        v=va-vb; return x.parameters[:value].*_derivative(r,v).+
+            v./get(x.parameters,:external_leakage_resistance,
+                get(x.parameters,:leakage_resistance,Inf))
     elseif x.kind===:current_source
         if r.analysis isa SmallSignal
             return fill(ComplexF64(get(x.parameters,:ac,0.)),length(r.axis))
@@ -214,7 +216,7 @@ function report(r::SimulationResult)
 end
 
 function validity_report(r::SimulationResult)
-    devices=Dict{Symbol,Any}(); warnings=String[]
+    devices=Dict{Symbol,Any}(); warnings=copy(get(r.stats,:warnings,String[]))
     for component in r.compiled.circuit.components
         if component.kind===:diode
             terminal_voltage=real.(voltage(r,component.terminals[1].name,component.terminals[2].name)); device_current=real.(current(r,component.name))
@@ -223,6 +225,8 @@ function validity_report(r::SimulationResult)
             ripple=current(r,component.name); rms=sqrt(sum(abs2,ripple)/length(ripple))
             devices[component.name]=(ripple_current_rms=rms,rated_ripple_current=:unspecified)
             push!(warnings,"$(component.name): rated ripple current is unspecified; thermal validity cannot be evaluated")
+        elseif r.analysis isa TransientNoise&&component.kind in (:nmos,:pmos)
+            push!(warnings,"$(component.name): Level1MOSFET noise excludes body-diode, junction, substrate, and foundry BSIM mechanisms")
         end
     end
     Dict(:devices=>devices,:warnings=>warnings)

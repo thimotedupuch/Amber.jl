@@ -10,4 +10,10 @@
     @test result.residual_norm<1e-5
     @test length(result.floquet_multipliers)==size(result.monodromy,1)
     @test voltage(result.orbit,:output)[1]≈voltage(result.orbit,:output)[end] atol=1e-5
+    periodic_result=periodic_noise(result,[100Hz,200Hz];
+        output=voltage(:output),sidebands=-1:1)
+    stationary_result=noise(DrivenRC(),[100Hz,200Hz];output=voltage(:output))
+    @test noise_psd(periodic_result)≈noise_psd(stationary_result) rtol=1e-4
+    @test_throws AnalysisValidationError phase_noise(result,[100Hz];
+        output=voltage(:output))
 end
