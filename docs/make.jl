@@ -42,6 +42,7 @@ makedocs(
             "Buck converter"=>"tutorials/buck-converter.md",
             "Hierarchical active filter"=>"tutorials/hierarchical-filter.md",
             "Precision bridge"=>"tutorials/precision-bridge.md",
+            "Conductance crossbar"=>"tutorials/conductance-crossbar.md",
         ],
         "How Amber works"=>[
             "Sign conventions"=>"explanation/sign-conventions.md",

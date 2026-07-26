@@ -14,6 +14,7 @@
         "11_precision_bridge/circuit.jl",
         "12_cmos_inverter/circuit.jl",
         "13_cmos_ring_oscillator/circuit.jl",
+        "14_conductance_crossbar/circuit.jl",
     ]
     modules=Module[]
     for file in files
@@ -57,4 +58,10 @@
     @test ring_start.stats[:converged]
     @test ring_metrics.fundamental.frequency>10MHz
     @test ring_metrics.fundamental.amplitude_rms>1V
+    crossbar=getfield(modules[14],:ConductanceCrossbar)()
+    crossbar_result=operating_point(crossbar)
+    crossbar_outputs=[voltage(crossbar_result,Symbol(:output_,row))[1] for row in 1:2]
+    expected=-100kΩ.*([2.0 1.0 0.5; 0.5 1.5 2.0].*μS*[0.2,0.5,0.8].*V)
+    @test crossbar_result.stats[:converged]
+    @test isapprox(crossbar_outputs,expected;rtol=2e-5)
 end

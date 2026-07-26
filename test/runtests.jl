@@ -5,6 +5,7 @@ include("fixtures/circuits.jl")
 
 @testset "Amber.jl" begin
     include("Core/circuit_ir.jl")
+    include("Core/units.jl")
     include("Core/serialization.jl")
     include("Devices/models.jl")
     include("Devices/mosfet.jl")

@@ -1,12 +1,23 @@
-const Ω=1.0; const kΩ=1e3; const MΩ=1e6; const GΩ=1e9; const TΩ=1e12; const mΩ=1e-3
-const V=1.0; const mV=1e-3; const μV=1e-6; const nV=1e-9
-const A=1.0; const mA=1e-3; const μA=1e-6; const nA=1e-9; const pA=1e-12; const fA=1e-15
-const C=1.0; const mC=1e-3; const μC=1e-6; const nC=1e-9; const pC=1e-12; const fC=1e-15
-const F=1.0; const mF=1e-3; const μF=1e-6; const nF=1e-9; const pF=1e-12; const fF=1e-15
-const H=1.0; const mH=1e-3; const μH=1e-6; const nH=1e-9; const pH=1e-12
-const s=1.0; const ms=1e-3; const μs=1e-6; const ns=1e-9; const ps=1e-12
-const Hz=1.0; const kHz=1e3; const MHz=1e6; const GHz=1e9
-const K=1.0; const m=1.0; const μS=1e-6; const percent=0.01
+const _SI_PREFIX_SCALES=(f=1e-15,p=1e-12,n=1e-9,μ=1e-6,m=1e-3,k=1e3,M=1e6,G=1e9,T=1e12)
+
+for unit in (:Ω,:V,:A,:F,:H,:C,:s,:Hz,:S,:K)
+    @eval const $unit=1.0
+    for (prefix,scale) in pairs(_SI_PREFIX_SCALES)
+        name=Symbol(prefix,unit)
+        @eval const $name=$scale
+    end
+end
+
+# The unprefixed metre is `m`; prefixed metre names still follow SI spelling.
+const m=1.0
+for (prefix,scale) in pairs(_SI_PREFIX_SCALES)
+    prefix===:m&&continue
+    name=Symbol(prefix,:m)
+    @eval const $name=$scale
+end
+const mm=1e-3
+
+const percent=0.01
 
 struct DecibelUnit end
 const dB=DecibelUnit()

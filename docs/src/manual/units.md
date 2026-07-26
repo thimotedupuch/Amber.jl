@@ -12,5 +12,11 @@ c = 100nF
 
 This syntax improves readability but does not provide dimensional type checking. `10V + 2s` is valid Julia even though it is physically meaningless. Treat suffixes as conversion constants, not as a units package.
 
-Common prefixes include `p`, `n`, `u`, `m`, `k`, `M`, and `G`; electrical and time units include `Ω`, `V`, `A`, `F`, `H`, `s`, and `Hz`. A bare number already means SI. At API boundaries, document the expected dimension even when the argument name seems obvious.
+Every supported SI unit provides `f`, `p`, `n`, `μ`, `m`, `k`, `M`, `G`, and
+`T` prefixes. Electrical and time units include `Ω`, `V`, `A`, `F`, `H`, `C`,
+`S`, `s`, and `Hz`; temperature uses `K`. Length uses `m`, with conventional
+prefixed names such as `mm`, `μm`, and `km`. For example, both `4.7mS` and
+`22μH` are ordinary numeric expressions.
 
+A bare number already means SI. At API boundaries, document the expected
+dimension even when the argument name seems obvious.

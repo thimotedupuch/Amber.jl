@@ -51,10 +51,18 @@ export Step, Sine, Pulse, ThinFilm, SMD0603, C0G, DebyeBranches
 export JunctionDiode, GummelPoonBJT, Level1MOSFET, BehavioralOpAmp, VoltageControlledSwitch
 export SmoothSwitch, EventSwitch, IdealResistor, IdealCapacitor
 export @circuit
-export Ω, kΩ, MΩ, GΩ, TΩ, mΩ, V, mV, μV, nV, A, mA, μA, nA, pA, fA
-export F, mF, μF, nF, pF, fF, H, mH, μH, nH, pH
-export C, mC, μC, nC, pC, fC
-export s, ms, μs, ns, ps, Hz, kHz, MHz, GHz, K, m, μS, dB, percent
+export Ω, fΩ, pΩ, nΩ, μΩ, mΩ, kΩ, MΩ, GΩ, TΩ
+export V, fV, pV, nV, μV, mV, kV, MV, GV, TV
+export A, fA, pA, nA, μA, mA, kA, MA, GA, TA
+export F, fF, pF, nF, μF, mF, kF, MF, GF, TF
+export H, fH, pH, nH, μH, mH, kH, MH, GH, TH
+export C, fC, pC, nC, μC, mC, kC, MC, GC, TC
+export s, fs, ps, ns, μs, ms, ks, Ms, Gs, Ts
+export Hz, fHz, pHz, nHz, μHz, mHz, kHz, MHz, GHz, THz
+export S, fS, pS, nS, μS, mS, kS, MS, GS, TS
+export K, fK, pK, nK, μK, mK, kK, MK, GK, TK
+export m, fm, pm, nm, μm, mm, km, Mm, Gm, Tm
+export dB, percent
 export °
 
 include("Core/Units.jl")

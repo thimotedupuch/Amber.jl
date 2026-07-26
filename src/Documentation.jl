@@ -215,16 +215,27 @@
 @doc """Save a `MonteCarloResult` to a TOML file.""" save_monte_carlo
 @doc """Load a `MonteCarloResult` from an Amber TOML file.""" load_monte_carlo
 
-for (name, description) in (
-    (:Ω,"ohm"), (:kΩ,"kilohm"), (:MΩ,"megohm"), (:GΩ,"gigohm"), (:TΩ,"teraohm"), (:mΩ,"milliohm"),
-    (:V,"volt"), (:mV,"millivolt"), (:μV,"microvolt"), (:nV,"nanovolt"),
-    (:A,"ampere"), (:mA,"milliampere"), (:μA,"microampere"), (:nA,"nanoampere"), (:pA,"picoampere"), (:fA,"femtoampere"),
-    (:F,"farad"), (:mF,"millifarad"), (:μF,"microfarad"), (:nF,"nanofarad"), (:pF,"picofarad"), (:fF,"femtofarad"),
-    (:H,"henry"), (:mH,"millihenry"), (:μH,"microhenry"), (:nH,"nanohenry"), (:pH,"picohenry"),
-    (:C,"coulomb"), (:mC,"millicoulomb"), (:μC,"microcoulomb"), (:nC,"nanocoulomb"), (:pC,"picocoulomb"), (:fC,"femtocoulomb"),
-    (:s,"second"), (:ms,"millisecond"), (:μs,"microsecond"), (:ns,"nanosecond"), (:ps,"picosecond"),
-    (:Hz,"hertz"), (:kHz,"kilohertz"), (:MHz,"megahertz"), (:GHz,"gigahertz"), (:K,"kelvin"),
-    (:m,"metre scale factor"), (:μS,"microsiemens"), (:dB,"decibel amplitude conversion"), (:percent,"percent scale factor"), (:°,"degree-to-radian conversion"),
+const _documented_unit_families=(
+    (:Ω,"ohm"),(:V,"volt"),(:A,"ampere"),(:F,"farad"),(:H,"henry"),
+    (:C,"coulomb"),(:s,"second"),(:Hz,"hertz"),(:S,"siemens"),(:K,"kelvin"),
 )
+const _documented_prefixes=((:f,"femto"),(:p,"pico"),(:n,"nano"),(:μ,"micro"),
+    (:m,"milli"),(:k,"kilo"),(:M,"mega"),(:G,"giga"),(:T,"tera"))
+const _documented_units=Pair{Symbol,String}[]
+for (unit,description) in _documented_unit_families
+    push!(_documented_units,unit=>description)
+    for (prefix,prefix_description) in _documented_prefixes
+        push!(_documented_units,Symbol(prefix,unit)=>(prefix_description*description))
+    end
+end
+push!(_documented_units,:m=>"metre")
+for (prefix,prefix_description) in _documented_prefixes
+    prefix===:m&&continue
+    push!(_documented_units,Symbol(prefix,:m)=>(prefix_description*"metre"))
+end
+push!(_documented_units,:mm=>"millimetre")
+append!(_documented_units,[:dB=>"decibel amplitude conversion",:percent=>"percent scale factor",:°=>"degree-to-radian conversion"])
+
+for (name, description) in _documented_units
     @eval @doc $("Numeric SI scale factor for one " * description * ".") $name
 end
