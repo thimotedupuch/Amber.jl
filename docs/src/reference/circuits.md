@@ -5,8 +5,15 @@ Circuit
 Node
 Ground
 Component
+AbstractCircuitDefinition
+NameId
+NameSegment
 CompiledTopology
 CompiledCircuit
+ElaborationIndex
+PrimitiveBatch
+ResistorBatch
+SimulationWorkspace
 circuit
 node!
 ground!
@@ -14,6 +21,8 @@ add!
 observe!
 observe
 compile
+with_parameters
+residual_jacobian!
 node
 ground
 @circuit

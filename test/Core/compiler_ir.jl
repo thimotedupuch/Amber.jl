@@ -71,6 +71,11 @@ end
     @test batch_residual ≈ reference_residual atol=1e-18 rtol=1e-14
     @test Matrix(batch_jacobian) ≈ Matrix(reference_jacobian) atol=1e-15 rtol=4eps(Float64)
     @test assembly_allocations(workspace, compiled, state_values, previous) == 0
+
+    Amber._newton(compiled, state_values, previous, 1μs, 1e5; workspace)
+    original_factorizations = workspace.numeric_factorizations
+    Amber._newton(updated, state_values, previous, 1μs, 1e5; workspace)
+    @test workspace.numeric_factorizations > original_factorizations
 end
 
 @testset "controlled-source batch topology" begin
@@ -87,6 +92,9 @@ end
     result = operating_point(compiled)
     @test voltage(result, :current_output)[1] ≈ 2V
     @test voltage(result, :voltage_output)[1] ≈ -1V
+    workspace = SimulationWorkspace(compiled)
+    state_values = copy(result.values[:, 1])
+    @test assembly_allocations(workspace, compiled, state_values, state_values) == 0
 end
 
 
@@ -100,4 +108,36 @@ end
     @test batch_residual ≈ reference_residual atol=1e-12 rtol=1e-13
     @test Matrix(batch_jacobian) ≈ Matrix(reference_jacobian) atol=1e-15 rtol=4eps(Float64)
     @test assembly_allocations(workspace, compiled, state_values, previous) == 0
+
+    initial_factorizations = workspace.numeric_factorizations
+    Amber._newton(compiled, state_values, previous, 2ns, 1e9; workspace)
+    first_factorizations = workspace.numeric_factorizations
+    Amber._newton(compiled, state_values, previous, 3ns, 1e9; workspace)
+    @test first_factorizations > initial_factorizations
+    @test workspace.numeric_factorizations == first_factorizations
+
+end
+
+@testset "nonlinear workspace assembly and solver" begin
+    legacy = operating_point(BiasedNPN())
+    compiled = compile(migrate_design(BiasedNPN()))
+    hierarchical = operating_point(compiled)
+    @test hierarchical.stats[:converged]
+    @test hierarchical.values ≈ legacy.values atol=1e-12 rtol=1e-10
+
+    workspace = SimulationWorkspace(compiled)
+    state_values = copy(hierarchical.values[:, 1])
+    batch_residual, batch_jacobian = residual_jacobian!(workspace, compiled,
+        state_values, state_values, 0.0, 0.0; mode=:dc)
+    reference_residual, reference_jacobian = Amber.residual_jacobian(compiled,
+        state_values, state_values, 0.0, 0.0; mode=:dc)
+    @test batch_residual ≈ reference_residual atol=1e-18 rtol=1e-14
+    @test Matrix(batch_jacobian) ≈ Matrix(reference_jacobian) atol=1e-15 rtol=4eps(Float64)
+    @test assembly_allocations(workspace, compiled, state_values, state_values) == 0
+
+    legacy_transient = transient(LowPass(), 0s => 50μs; saveat=10μs)
+    hierarchy_transient = transient(migrate_design(LowPass()), 0s => 50μs; saveat=10μs)
+    @test hierarchy_transient.stats[:converged]
+    @test hierarchy_transient.axis ≈ legacy_transient.axis
+    @test hierarchy_transient.values ≈ legacy_transient.values atol=1e-12 rtol=1e-10
 end

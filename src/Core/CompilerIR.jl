@@ -35,6 +35,7 @@ struct PrimitiveBatch{K,N,P} <: AbstractCompiledBatch
     residual_slots::Matrix{Int32}
     jacobian_slots::Matrix{Int32}
     branch_unknowns::Vector{Int32}
+    control_unknowns::Vector{Int32}
     state_unknowns::Vector{Vector{Int32}}
     locators::Vector{DeviceLocator}
 end
@@ -78,6 +79,7 @@ mutable struct _BatchBuilder
     residual_slots::Matrix{Int32}
     jacobian_slots::Matrix{Int32}
     branch_unknowns::Vector{Int32}
+    control_unknowns::Vector{Int32}
     state_unknowns::Vector{Vector{Int32}}
     locators::Vector{DeviceLocator}
 end
@@ -215,7 +217,7 @@ end
 function _new_batch_builder(kind, parameter_type, terminal_count, stamp_count)
     _BatchBuilder(kind, parameter_type, [Int32[] for _ in 1:terminal_count], Any[],
         Matrix{Int32}(undef, terminal_count, 0), Matrix{Int32}(undef, stamp_count, 0),
-        Int32[], Vector{Int32}[], DeviceLocator[])
+        Int32[], Int32[], Vector{Int32}[], DeviceLocator[])
 end
 
 function _pattern_from_contributions!(contributions::Vector{_Contribution}, builders, unknown_count::Int, diagonal_count::Int)
@@ -257,7 +259,8 @@ function _freeze_batch(builder::_BatchBuilder)
             builder.jacobian_slots, builder.locators)
     end
     PrimitiveBatch{Val{builder.kind},length(terminal_tuple),builder.parameter_type}(terminal_tuple, parameters,
-        builder.residual_slots, builder.jacobian_slots, builder.branch_unknowns, builder.state_unknowns, builder.locators)
+        builder.residual_slots, builder.jacobian_slots, builder.branch_unknowns, builder.control_unknowns,
+        builder.state_unknowns, builder.locators)
 end
 
 function _compile_hierarchy(design::CircuitDesign)
@@ -298,7 +301,7 @@ function _compile_hierarchy(design::CircuitDesign)
         _stamp_shape(kind, device_contract(kind))) for ((kind, parameter_type), count) in zip(batch_keys, counts)]
     for (builder, count) in zip(builders, counts)
         foreach(column -> sizehint!(column, count), builder.terminals)
-        sizehint!(builder.parameters, count); sizehint!(builder.branch_unknowns, count)
+        sizehint!(builder.parameters, count); sizehint!(builder.branch_unknowns, count); sizehint!(builder.control_unknowns, count)
         sizehint!(builder.state_unknowns, count); sizehint!(builder.locators, count)
         builder.residual_slots = zeros(Int32, length(builder.terminals), count)
         builder.jacobian_slots = zeros(Int32, size(builder.jacobian_slots, 1), count)
@@ -336,6 +339,7 @@ function _compile_hierarchy(design::CircuitDesign)
             end
             control == 0 && throw(ArgumentError("controlled source refers to a primitive without a branch-current unknown"))
         end
+        push!(builder.control_unknowns, control)
         local_contribution = 0
         _emit_stamp_positions!(kind, terminals, branch, states, control) do row, column
             local_contribution += 1
@@ -419,7 +423,7 @@ function _updated_batch(batch::PrimitiveBatch{K,N,P}, design, selector, value) w
         push!(matches, index)
     end
     copied ? PrimitiveBatch{K,N,P}(batch.terminals, values, batch.residual_slots, batch.jacobian_slots,
-        batch.branch_unknowns, batch.state_unknowns, batch.locators) : batch, matches
+        batch.branch_unknowns, batch.control_unknowns, batch.state_unknowns, batch.locators) : batch, matches
 end
 
 function _parameter_store_fingerprint(batches)

@@ -6,7 +6,7 @@ struct CircuitSerializationError <: Exception
 end
 Base.showerror(io::IO,error::CircuitSerializationError)=print(io,error.message)
 
-const _SERIALIZABLE_STRUCTS = Dict{String,DataType}(
+const _SERIALIZABLE_STRUCTS = Dict{String,Any}(
     String(nameof(type)) => type for type in (
         Step, Sine, Pulse, ThinFilm, SMD0603, C0G, DebyeBranches,
         JunctionDiode, GummelPoonBJT, Level1MOSFET, BehavioralOpAmp,
@@ -80,7 +80,9 @@ function _decode_value(encoded,nodes,components,depth::Int=0,max_depth::Int=64)
             return type(values[:value])
         elseif type === Differential
             return Differential(values[:positive], values[:negative])
-        elseif fieldnames(type) == (:data,)
+        elseif type in (ThinFilm, SMD0603, C0G, DebyeBranches, JunctionDiode,
+                GummelPoonBJT, Level1MOSFET, BehavioralOpAmp,
+                VoltageControlledSwitch, EventSwitch, SmoothSwitch)
             return type(values[:data])
         end
         return type(; values...)

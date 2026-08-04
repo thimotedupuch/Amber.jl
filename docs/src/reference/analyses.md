@@ -3,6 +3,9 @@
 ```@docs
 OperatingPoint
 Transient
+SolverOptions
+AbstractLinearSolver
+SuiteSparseLU
 TransientNoise
 SmallSignal
 operating_point

@@ -1,6 +1,70 @@
 abstract type AbstractAnalysis end
 
-struct OperatingPoint <: AbstractAnalysis end
+"""Policy interface for sparse linear solvers used by Newton iterations."""
+abstract type AbstractLinearSolver end
+
+"""SuiteSparse UMFPACK LU policy with reusable symbolic analysis."""
+Base.@kwdef struct SuiteSparseLU <: AbstractLinearSolver
+    ordering::Symbol = :amd
+    pivot_tolerance::Float64 = 0.1
+end
+
+"""Typed nonlinear-solver tolerances, iteration limits, and linear-solver policy."""
+Base.@kwdef struct SolverOptions
+    reltol::Float64 = 1e-7
+    voltage_abstol::Float64 = 1e-9
+    current_abstol::Float64 = 1e-12
+    state_abstol::Float64 = 1e-10
+    max_newton_iterations::Int = 60
+    line_search_minimum::Float64 = 1 / 256
+    continuation_maxdepth::Int = 10
+    linear_solver::AbstractLinearSolver = SuiteSparseLU()
+end
+
+function _validate_solver_options(options::SolverOptions)
+    isfinite(options.reltol) && options.reltol > 0 ||
+        throw(AnalysisValidationError("solver reltol must be finite and positive"))
+    for (name, value) in (("voltage_abstol", options.voltage_abstol),
+            ("current_abstol", options.current_abstol), ("state_abstol", options.state_abstol))
+        isfinite(value) && value > 0 ||
+            throw(AnalysisValidationError("solver $name must be finite and positive"))
+    end
+    options.max_newton_iterations > 0 ||
+        throw(AnalysisValidationError("max_newton_iterations must be positive"))
+    isfinite(options.line_search_minimum) && 0 < options.line_search_minimum <= 1 ||
+        throw(AnalysisValidationError("line_search_minimum must lie in (0, 1]"))
+    options.continuation_maxdepth >= 0 ||
+        throw(AnalysisValidationError("continuation_maxdepth must be non-negative"))
+    if options.linear_solver isa SuiteSparseLU
+        options.linear_solver.ordering in (:amd, :natural) ||
+            throw(AnalysisValidationError("SuiteSparseLU ordering must be :amd or :natural"))
+        isfinite(options.linear_solver.pivot_tolerance) &&
+            0 <= options.linear_solver.pivot_tolerance <= 1 ||
+            throw(AnalysisValidationError("SuiteSparseLU pivot_tolerance must lie in [0, 1]"))
+    end
+    options
+end
+
+function _solver_values(options::SolverOptions; reltol=nothing, abstol=nothing,
+        maxiters=nothing, continuation_maxdepth=nothing)
+    _validate_solver_options(options)
+    resolved_reltol = something(reltol, options.reltol)
+    resolved_abstol = something(abstol, options.current_abstol)
+    resolved_maxiters = something(maxiters, options.max_newton_iterations)
+    resolved_depth = something(continuation_maxdepth, options.continuation_maxdepth)
+    isfinite(resolved_reltol) && resolved_reltol > 0 ||
+        throw(AnalysisValidationError("reltol must be finite and positive"))
+    isfinite(resolved_abstol) && resolved_abstol > 0 ||
+        throw(AnalysisValidationError("abstol must be finite and positive"))
+    resolved_depth >= 0 ||
+        throw(AnalysisValidationError("continuation_maxdepth must be non-negative"))
+    resolved_reltol, resolved_abstol, resolved_maxiters, resolved_depth
+end
+
+Base.@kwdef struct OperatingPoint <: AbstractAnalysis
+    solver::SolverOptions = SolverOptions()
+    temperature::Float64 = 300.0
+end
 
 Base.@kwdef struct TransientNoise <: AbstractAnalysis
     interval::Pair{Float64,Float64}
@@ -20,6 +84,7 @@ Base.@kwdef struct Transient <: AbstractAnalysis
     adaptive::Union{Nothing,Bool}=nothing
     temperature::Float64=300.
     overrides::Any=nothing
+    solver::SolverOptions=SolverOptions()
 end
 Transient(p::Pair;kw...)=Transient(interval=Float64(first(p))=>Float64(last(p));kw...)
 
@@ -83,7 +148,8 @@ function _apply_overrides!(cc::CompiledCircuit,overrides)
             push!(saved,(component,key,component.parameters[key],:parameter)); component.parameters[key]=value
         elseif haskey(component.parameters,:model)&&haskey(component.parameters[:model].data,key)
             model=component.parameters[:model]; push!(saved,(component,:model,model,:parameter))
-            component.parameters[:model]=typeof(model)((;model.data...,key=>value))
+            model_wrapper=Base.typename(typeof(model)).wrapper
+            component.parameters[:model]=model_wrapper((;model.data...,key=>value))
         else
             throw(KeyError(path))
         end

@@ -69,7 +69,7 @@ for (T,defaults) in ((:ThinFilm,:(;tc1=0.,temperature_coefficient=0.,voltage_coe
     (:EventSwitch,:(;threshold=.5,ron=1.,roff=1e12,charge_injection=0.,clock_feedthrough=0.)),
     (:SmoothSwitch,:(;threshold=.5,transition=.05,ron=1.,roff=1e12,charge_injection=0.,clock_feedthrough=0.)))
     @eval begin
-        struct $T; data::NamedTuple; end
+        struct $T{D<:NamedTuple}; data::D; end
         function $T(;kw...)
             defaults=(;$defaults...)
             unknown=setdiff(keys(kw),keys(defaults))
@@ -78,7 +78,8 @@ for (T,defaults) in ((:ThinFilm,:(;tc1=0.,temperature_coefficient=0.,voltage_coe
                     join(string.(unknown),", ")))
             $T((;defaults...,kw...))
         end
-        Base.getproperty(x::$T,s::Symbol)=s===:data ? getfield(x,:data) : getproperty(getfield(x,:data),s)
+        Base.@constprop :aggressive Base.getproperty(x::$T,s::Symbol)=
+            s===:data ? getfield(x,:data) : getproperty(getfield(x,:data),s)
     end
 end
 

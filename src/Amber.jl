@@ -17,6 +17,7 @@ export TemplateId, InstanceId, PathId, PartitionHint, summary, devices, nets, re
 export ParameterStore, HierarchicalCompiledTopology, ElaborationIndex, SparsePattern
 export PrimitiveBatch, ResistorBatch, with_parameters, TopologyParameterError
 export SimulationWorkspace, residual!, jacobian!, residual_jacobian!
+export AbstractLinearSolver, SuiteSparseLU, SolverOptions
 export ConvergenceError
 export CircuitValidationError, AnalysisValidationError, LinearSolveError
 export CircuitSerializationError
