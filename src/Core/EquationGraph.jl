@@ -21,6 +21,7 @@ const _DEVICE_SPECS = Dict{Symbol,DeviceContract}(
     :opamp=>_contract(5;branch=true,states=[:dominant_pole],dc_path=true,noise=true),
 )
 device_contract(kind::Symbol)=get(_DEVICE_SPECS,kind,nothing)
+device_contract(::Type{Val{K}}) where {K}=device_contract(K)
 
 struct EquationGraph
     node_index::Dict{Int,Int}

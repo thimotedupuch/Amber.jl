@@ -1,0 +1,62 @@
+@subcircuit TestRCSection(input, output, reference; R=1kΩ, C=1nF) begin
+    R1 = resistor(input, output; value=R)
+    C1 = capacitor(output, reference; value=C)
+    observe(output; name=:output)
+end
+
+@testset "hierarchical circuit construction" begin
+    builder = CircuitBuilder(:Ladder)
+    reference = ground!(builder, :gnd)
+    nodes = node_array!(builder, :x, 0:8)
+    add!(builder, voltage_source(nodes[0], reference; dc=1V); name=:Source)
+    stage_handles = instances!(
+        builder,
+        TestRCSection,
+        1:8;
+        name=index -> (:stage, index),
+        connections=index -> (
+            input=nodes[index - 1],
+            output=nodes[index],
+            reference=reference,
+        ),
+        parameters=index -> (R=(1 + index / 8) * 1kΩ, C=1nF),
+    )
+    design = finish(builder)
+
+    @test nodes[0].id == 2
+    @test stage_handles[8].id == InstanceId(8)
+    @test summary(design).templates == 1
+    @test summary(design).instances == 8
+    @test summary(design).primitive_devices == 17
+    @test string(parsepath("stage[4].R1")) == "stage[4].R1"
+    @test resolve(design, "stage[4].R1").kind == :device
+    @test length(instances(design; limit=3)) == 3
+    @test length(devices(design; kind=:resistor)) == 8
+    @test occursin("Primitive devices: 17", describe(design; limit=2))
+
+    serialized = serialize_circuit(design)
+    restored = deserialize_circuit(serialized)
+    @test restored isa CircuitDesign
+    @test serialize_circuit(restored) == serialized
+    @test summary(restored) == summary(design)
+
+    compiled = compile(restored)
+    @test length(compiled.circuit.components) == 17
+    @test compiled.n == 10
+    result = operating_point(restored)
+    @test voltage(result, "x[8]")[1] ≈ 1V
+
+    foreign_builder = CircuitBuilder(:foreign)
+    foreign_node = node!(foreign_builder, :foreign)
+    @test_throws Amber.BuilderOwnershipError add!(foreign_builder, resistor(nodes[0], foreign_node; value=1kΩ))
+    finish(foreign_builder)
+    @test_throws Amber.BuilderOwnershipError node!(foreign_builder, :late)
+end
+
+@testset "schema-2 migration" begin
+    old = LowPass()
+    migrated = migrate_design(old)
+    @test migrated isa CircuitDesign
+    @test summary(migrated).primitive_devices == length(old.components)
+    @test deserialize_circuit(serialize_circuit(old)) isa Circuit
+end

@@ -8,6 +8,7 @@ transconductance(control_p,control_n,output_p,output_n;gm=1.,kw...)=_component(:
 voltage_controlled_voltage_source(control_p,control_n,output_p,output_n;gain=1.,kw...)=_component(:vcvs,control_p,control_n,output_p,output_n;gain,kw...)
 
 _control_name(control::Component)=control.name
+_control_name(control::BuilderPrimitive)=LocalPrimitiveReference(control.id)
 _control_name(control::Symbol)=control
 _control_name(control::String)=Symbol(control)
 current_controlled_current_source(control,output_p,output_n;gain=1.,kw...)=_component(:cccs,output_p,output_n;control=_control_name(control),gain,kw...)

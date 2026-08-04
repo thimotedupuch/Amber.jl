@@ -10,12 +10,20 @@ using Statistics
 using TOML
 
 export Circuit, Node, Ground, Component, CompiledTopology, CompiledCircuit, SimulationResult
+export AbstractCircuitDefinition, CircuitBuilder, CircuitDesign, SubcircuitTemplate
+export NameId, NameSegment, InstancePath, NetPath, DevicePath, parsepath
+export NetArray, InstanceArray, node_array!, instances!, instance, instance!, finish
+export TemplateId, InstanceId, PathId, PartitionHint, summary, devices, nets, resolve
+export ParameterStore, HierarchicalCompiledTopology, ElaborationIndex, SparsePattern
+export PrimitiveBatch, ResistorBatch, with_parameters, TopologyParameterError
+export SimulationWorkspace, residual!, jacobian!, residual_jacobian!
 export ConvergenceError
 export CircuitValidationError, AnalysisValidationError, LinearSolveError
 export CircuitSerializationError
 export circuit, node!, ground!, add!, observe!, observe, compile, check, describe
 export explain, explain_failure
 export circuit_snapshot, serialize_circuit, deserialize_circuit, save_circuit, load_circuit
+export migrate_design
 export node, ground, resistor, capacitor, inductor, conductance
 export voltage_source, current_source, diode, npn, nmos, pmos, opamp, analog_switch
 export transconductance, voltage_controlled_voltage_source
@@ -55,6 +63,7 @@ export Step, Sine, Pulse, ThinFilm, SMD0603, C0G, DebyeBranches
 export JunctionDiode, GummelPoonBJT, Level1MOSFET, BehavioralOpAmp, VoltageControlledSwitch
 export SmoothSwitch, EventSwitch, IdealResistor, IdealCapacitor
 export @circuit
+export @subcircuit
 export Ω, fΩ, pΩ, nΩ, μΩ, mΩ, kΩ, MΩ, GΩ, TΩ
 export V, fV, pV, nV, μV, mV, kV, MV, GV, TV
 export A, fA, pA, nA, μA, mA, kA, MA, GA, TA
@@ -73,6 +82,7 @@ include("Core/Units.jl")
 include("Core/Ports.jl")
 include("Devices/Models.jl")
 include("Core/CircuitIR.jl")
+include("Core/Hierarchy.jl")
 include("Core/Serialization.jl")
 include("Devices/Ideal.jl")
 include("Devices/Passive.jl")
@@ -80,7 +90,9 @@ include("Devices/Semiconductor.jl")
 include("Devices/Behavioral.jl")
 include("Diagnostics/Diagnostics.jl")
 include("Core/EquationGraph.jl")
+include("Core/CompilerIR.jl")
 include("Core/Compilation.jl")
+include("Core/Workspace.jl")
 include("Analysis/Analyses.jl")
 include("Results/Results.jl")
 include("Results/Tabular.jl")

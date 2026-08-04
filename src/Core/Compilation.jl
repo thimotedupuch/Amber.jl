@@ -7,18 +7,23 @@ struct CompiledTopology
     jacobian_pattern::SparseMatrixCSC{Float64,Int}
 end
 
-struct CompiledCircuit
+struct CompiledCircuit{D,H,P}
     circuit::Circuit
     topology::CompiledTopology
     fingerprint::String
+    design::D
+    hierarchical_topology::H
+    parameters::P
 end
+CompiledCircuit(circuit::Circuit, topology::CompiledTopology, fingerprint::String) =
+    CompiledCircuit(circuit, topology, fingerprint, nothing, nothing, nothing)
 
 function Base.getproperty(compiled::CompiledCircuit,name::Symbol)
-    name in (:circuit,:topology,:fingerprint)&&return getfield(compiled,name)
+    name in (:circuit,:topology,:fingerprint,:design,:hierarchical_topology,:parameters)&&return getfield(compiled,name)
     name in (:node_index,:branches,:states,:n,:jacobian_pattern)&&return getproperty(getfield(compiled,:topology),name)
     getfield(compiled,name)
 end
-Base.propertynames(::CompiledCircuit,private=false)=(:circuit,:topology,:fingerprint,:node_index,:branches,:states,:n,:jacobian_pattern)
+Base.propertynames(::CompiledCircuit,private=false)=(:circuit,:topology,:fingerprint,:design,:hierarchical_topology,:parameters,:node_index,:branches,:states,:n,:jacobian_pattern)
 
 function _jacobian_pattern(circuit,node_index,branches,states,n)
     entries=Set{Tuple{Int,Int}}()
@@ -63,7 +68,7 @@ end
 
 """Create an isolated compiled-circuit snapshot for a simulation result."""
 function _snapshot_compiled(cc::CompiledCircuit)
-    CompiledCircuit(deepcopy(cc.circuit),cc.topology,cc.fingerprint)
+    CompiledCircuit(deepcopy(cc.circuit),cc.topology,cc.fingerprint,cc.design,cc.hierarchical_topology,cc.parameters)
 end
 
 _topology_signature(circuit)=string(circuit.name,[(component.kind,getfield.(component.terminals,:id),get(component.parameters,:control,nothing)) for component in circuit.components])
@@ -83,7 +88,100 @@ function compile(c::Circuit)
     end
     compiled
 end
+
+function _materialize_parameter(value, values, netmap=nothing)
+    value isa AbstractParameterExpression && return _evaluate(value, values)
+    value isa LocalNetReference && return netmap === nothing ? value : netmap[Int(value.id)]
+    value isa NamedTuple && return NamedTuple{keys(value)}(Tuple(_materialize_parameter(item, values, netmap) for item in value))
+    value isa Tuple && return Tuple(_materialize_parameter(item, values, netmap) for item in value)
+    value isa AbstractVector && return [_materialize_parameter(item, values, netmap) for item in value]
+    value
+end
+
+"""Materialize a compatibility `Circuit` for the current exact backend.
+
+The returned object is intentionally a bridge: the retained `CircuitDesign` remains hierarchical,
+while Milestones 2–3 replace this materialization with streamed device batches.
+"""
+function _legacy_circuit(design::CircuitDesign)
+    circuit = Circuit(Symbol(_name(design.names, design.name)))
+    root_netmap = Dict{Int,AbstractNode}()
+    for (index, segment) in enumerate(design.root_ir.net_names)
+        rendered = _render_segment((_name(design.names, segment.base), segment.index))
+        net = Int32(index) == design.root_ir.ground_net ? ground!(circuit, Symbol(rendered)) : node!(circuit, Symbol(rendered))
+        root_netmap[index] = net
+    end
+    for primitive in design.root_ir.primitives
+        terminals = AbstractNode[root_netmap[Int(local_id)] for local_id in design.root_ir.terminal_data[primitive.terminals]]
+        parameters = Dict{Symbol,Any}(pairs(_materialize_parameter(primitive.parameters, Dict{NameId,Any}(), root_netmap)))
+        if get(parameters, :control, nothing) isa LocalPrimitiveReference
+            referenced = design.root_ir.primitives[Int(parameters[:control].id)]
+            parameters[:control] = Symbol(_name(design.names, referenced.name))
+        end
+        name = Symbol(_name(design.names, primitive.name))
+        component = Component(typeof(primitive.kernel).parameters[1], terminals, parameters, name)
+        push!(circuit.components, component)
+    end
+    for record in design.root.records
+        template = design.templates.templates[Int(record.template)]
+        connection_values = design.root.connection_data[Int(record.connections.start):Int(record.connections.start) + Int(record.connections.length) - 1]
+        netmap = Dict{Int,AbstractNode}(index => root_netmap[Int(net)] for (index, net) in enumerate(connection_values))
+        prefix = string(InstancePath(_path_segments(design, record.path)))
+        for local_index in (length(template.ports) + 1):length(template.body.net_names)
+            segment = template.body.net_names[local_index]
+            local_name = _render_segment((_name(template.names, segment.base), segment.index))
+            netmap[local_index] = node!(circuit, Symbol(prefix, ".", local_name))
+        end
+        raw_parameters = design.root.parameter_data[Int(record.parameters.start):Int(record.parameters.start) + Int(record.parameters.length) - 1]
+        parameter_values = Dict(parameter.name => raw_parameters[index] for (index, parameter) in enumerate(template.parameters))
+        for primitive in template.body.primitives
+            terminals = AbstractNode[netmap[Int(local_id)] for local_id in template.body.terminal_data[primitive.terminals]]
+            materialized = _materialize_parameter(primitive.parameters, parameter_values, netmap)
+            parameters = Dict{Symbol,Any}(pairs(materialized))
+            if get(parameters, :control, nothing) isa LocalPrimitiveReference
+                referenced = template.body.primitives[Int(parameters[:control].id)]
+                parameters[:control] = Symbol(prefix, ".", _name(template.names, referenced.name))
+            end
+            name = Symbol(prefix, ".", _name(template.names, primitive.name))
+            push!(circuit.components, Component(typeof(primitive.kernel).parameters[1], terminals, parameters, name))
+        end
+    end
+    circuit
+end
+
+function compile(design::CircuitDesign)
+    hierarchical_topology, parameters = _compile_hierarchy(design)
+    legacy = compile(_legacy_circuit(design))
+    CompiledCircuit(legacy.circuit, legacy.topology, bytes2hex(sha1(string(design.structural_fingerprint, ':', design.parameter_fingerprint))),
+        design, hierarchical_topology, parameters)
+end
+
+"""Convert a schema-2 flat circuit into one schema-3 root design."""
+_migrate_parameter(value, netmap) = value
+_migrate_parameter(value::AbstractNode, netmap) = netmap[value]
+_migrate_parameter(value::Tuple, netmap) = Tuple(_migrate_parameter(item, netmap) for item in value)
+_migrate_parameter(value::NamedTuple, netmap) = NamedTuple{keys(value)}(Tuple(_migrate_parameter(item, netmap) for item in value))
+_migrate_parameter(value::AbstractVector, netmap) = [_migrate_parameter(item, netmap) for item in value]
+function migrate_design(circuit::Circuit)
+    builder = CircuitBuilder(String(circuit.name))
+    netmap = IdDict{AbstractNode,BuilderNet}()
+    for net in circuit.nodes
+        handle = net isa Ground ? ground!(builder, String(net.name)) : node!(builder, String(net.name))
+        netmap[net] = handle
+    end
+    for component in circuit.components
+        terminals = AbstractNode[netmap[terminal] for terminal in component.terminals]
+        parameters = Dict{Symbol,Any}(key => _migrate_parameter(value, netmap) for (key, value) in component.parameters)
+        if get(parameters, :control, nothing) isa Symbol
+            control_index = findfirst(candidate -> candidate.name === parameters[:control], circuit.components)
+            control_index === nothing || (parameters[:control] = LocalPrimitiveReference(Int32(control_index)))
+        end
+        add!(builder, Component(component.kind, terminals, parameters, component.name); name=String(component.name))
+    end
+    finish(builder)
+end
 function compile(compiled::CompiledCircuit)
+    compiled.design !== nothing && return compiled
     errors=filter(d->d.severity===:error,check(compiled.circuit)); isempty(errors)||throw(CircuitValidationError(errors))
     frozen=deepcopy(compiled.circuit); topology_hash=bytes2hex(sha1(_topology_signature(frozen)))
     topology_hash==compiled.topology.fingerprint||return compile(frozen)
