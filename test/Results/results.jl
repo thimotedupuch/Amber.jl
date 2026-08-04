@@ -15,30 +15,30 @@
     sampler=getfield(sampler_module,:SampleAndHold)()
     sampler_op=operating_point(sampler)
     @test length(state(sampler_op,:Buffer,:dominant_pole))==1
-    named=Circuit(:NamedObservation); reference=ground!(named,:gnd); output=node!(named,:physical_output)
-    add!(named,voltage_source(output,reference;dc=3V);name=:source)
-    observe!(named,voltage(output);name=:output)
+    @circuit NamedObservation() begin
+        reference=ground(); output=node(); source=voltage_source(output,reference;dc=3V)
+        observe(voltage(output);name=:output)
+    end
+    named=NamedObservation()
     @test voltage(operating_point(named),:output)[1]≈3V
     rectifier_result=transient(HalfWaveRectifier(),0s=>2ms;max_step=100μs)
     validity=validity_report(rectifier_result)
-    @test haskey(validity[:devices],:D1)
-    @test haskey(validity[:devices],:C1)
+    @test haskey(validity[:devices],"D1")
+    @test haskey(validity[:devices],"C1")
     @test haskey(provenance(rectifier_result),:parameters)
     table=result_table(result)
     @test length(table)==length(result.axis)
     @test hasproperty(first(table),:frequency)
     @test hasproperty(first(table),:output)
 
-    unsupported=Circuit(:UnsupportedCurrent); reference=ground!(unsupported,:gnd); output=node!(unsupported,:output)
-    add!(unsupported,voltage_source(output,reference;dc=1V);name=:V1)
-    add!(unsupported,Component(:custom,Amber.AbstractNode[output,reference],Dict{Symbol,Any}(),:X1);name=:X1)
-    @test_throws CircuitValidationError operating_point(unsupported)
+    builder=CircuitBuilder(:UnsupportedValue); ground!(builder,:gnd)
+    @test_throws MethodError add!(builder,"not a primitive")
 end
 
 
 @testset "result snapshots" begin
-    circuit=LowPass(); result=operating_point(circuit); before=current(result,:R1)
-    resistor=only(filter(component->component.name===:R1,circuit.components)); resistor.parameters[:value]*=2
+    compiled=compile(LowPass()); result=operating_point(compiled); before=current(result,:R1)
+    updated=with_parameters(compiled,"R1.value"=>20kΩ)
     @test current(result,:R1)==before
-    @test provenance(result)[:parameters][:R1][:value]!=resistor.parameters[:value]
+    @test provenance(result)[:parameters]["R1"][:value]!=provenance(operating_point(updated))[:parameters]["R1"][:value]
 end

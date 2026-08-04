@@ -11,7 +11,7 @@ struct Port
 end
 
 struct NetworkResult
-    compiled::CompiledCircuit
+    compiled::AbstractCompiledCircuit
     frequencies::Vector{Float64}
     ports::Vector{Port}
     z::Array{ComplexF64,3}
@@ -23,7 +23,13 @@ frequencies(result::NetworkResult)=result.frequencies
 _port_node_name(node::AbstractNode)=node.name
 _port_node_name(node::Union{Symbol,String})=node
 function _port_node_index(cc,node)
-    name=_port_node_name(node); index=_findnode(cc,name)
+    name=_port_node_name(node)
+    if cc.design !== nothing
+        index=_hierarchical_net_index(cc,name)
+        index===nothing&&throw(KeyError(name))
+        return Int(index)
+    end
+    index=_findnode(cc,name)
     index===nothing&&throw(KeyError(name))
     circuit_node=cc.circuit.nodes[index]
     circuit_node.id==0 ? 0 : cc.node_index[circuit_node.id]

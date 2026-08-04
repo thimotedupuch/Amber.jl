@@ -22,21 +22,3 @@ const _DEVICE_SPECS = Dict{Symbol,DeviceContract}(
 )
 device_contract(kind::Symbol)=get(_DEVICE_SPECS,kind,nothing)
 device_contract(::Type{Val{K}}) where {K}=device_contract(K)
-
-struct EquationGraph
-    node_index::Dict{Int,Int}
-    branches::Dict{Int,Int}
-    states::Dict{Tuple{Int,Symbol},Int}
-    unknown_count::Int
-end
-
-function equation_graph(c::Circuit)
-    ids=sort(unique(n.id for n in c.nodes if n.id!=0))
-    nodes=Dict(id=>i for (i,id) in enumerate(ids)); branches=Dict{Int,Int}(); states=Dict{Tuple{Int,Symbol},Int}(); k=length(ids)
-    for (i,x) in enumerate(c.components)
-        spec=_DEVICE_SPECS[x.kind]
-        if spec.branch; k+=1; branches[i]=k end
-        for state in spec.states; k+=1; states[(i,state)]=k end
-    end
-    EquationGraph(nodes,branches,states,k)
-end

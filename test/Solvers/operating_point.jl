@@ -32,7 +32,7 @@ end
 @testset "typed solver options" begin
     options=SolverOptions(reltol=1e-8,max_newton_iterations=80,
         linear_solver=SuiteSparseLU(ordering=:natural,pivot_tolerance=0.05))
-    result=simulate(migrate_design(BiasedNPN()),OperatingPoint(solver=options,temperature=310.))
+    result=simulate(BiasedNPN(),OperatingPoint(solver=options,temperature=310.))
     @test result.stats[:converged]
     @test result.analysis.solver===options
     @test result.stats[:temperature]==310.

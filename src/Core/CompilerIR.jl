@@ -23,6 +23,33 @@ struct SparsePattern
     n::Int
 end
 
+@enum UnknownKind::UInt8 begin
+    NodeVoltageUnknown
+    BranchCurrentUnknown
+    DeviceStateUnknown
+    PartitionInterfaceUnknown
+end
+
+@enum EquationKind::UInt8 begin
+    KCLCurrentEquation
+    VoltageConstraintEquation
+    DynamicStateEquation
+    DeviceAuxiliaryEquation
+end
+
+"""Typed classification and ownership metadata for every solver unknown."""
+struct UnknownLayout
+    kinds::Vector{UnknownKind}
+    locators::Vector{Union{Nothing,DeviceLocator}}
+    state_names::Vector{Union{Nothing,Symbol}}
+end
+
+"""Typed classification and ownership metadata for every circuit equation."""
+struct EquationLayout
+    kinds::Vector{EquationKind}
+    locators::Vector{Union{Nothing,DeviceLocator}}
+end
+
 SparseArrays.SparseMatrixCSC{Float64,Int}(pattern::SparsePattern) =
     SparseMatrixCSC(pattern.n, pattern.n, copy(pattern.colptr), copy(pattern.rowval), zeros(Float64, length(pattern.rowval)))
 
@@ -51,12 +78,17 @@ struct ResistorBatch{T,P} <: AbstractCompiledBatch
     locators::Vector{DeviceLocator}
 end
 
+_batch_kind(::ResistorBatch) = :resistor
+_batch_kind(::PrimitiveBatch{Val{K}}) where {K} = K
+
 struct ParameterStore{B<:Tuple}
     batches::B
     fingerprint::UInt128
 end
 
 struct HierarchicalCompiledTopology
+    layout::UnknownLayout
+    equations::EquationLayout
     hierarchy::ElaborationIndex
     pattern::SparsePattern
     batch_kinds::Tuple
@@ -351,8 +383,34 @@ function _compile_hierarchy(design::CircuitDesign)
     batches = Tuple(_freeze_batch(builder) for builder in builders)
     hierarchy = ElaborationIndex(root_mapping, internal_bases, getfield.(design.root.records, :path),
         primitive_count, Int(solver_net_count), unknown_count)
+    unknown_kinds = fill(NodeVoltageUnknown, unknown_count)
+    equation_kinds = fill(KCLCurrentEquation, unknown_count)
+    unknown_locators = Union{Nothing,DeviceLocator}[nothing for _ in 1:unknown_count]
+    equation_locators = Union{Nothing,DeviceLocator}[nothing for _ in 1:unknown_count]
+    state_names = Union{Nothing,Symbol}[nothing for _ in 1:unknown_count]
+    for batch in batches
+        batch isa PrimitiveBatch || continue
+        for (device, branch) in enumerate(batch.branch_unknowns)
+            branch == 0 && continue
+            unknown_kinds[Int(branch)] = BranchCurrentUnknown
+            equation_kinds[Int(branch)] = VoltageConstraintEquation
+            unknown_locators[Int(branch)] = batch.locators[device]
+            equation_locators[Int(branch)] = batch.locators[device]
+        end
+        for (device, states) in enumerate(batch.state_unknowns), (state_index, unknown) in enumerate(states)
+            unknown_kinds[Int(unknown)] = DeviceStateUnknown
+            equation_kinds[Int(unknown)] = DynamicStateEquation
+            unknown_locators[Int(unknown)] = batch.locators[device]
+            equation_locators[Int(unknown)] = batch.locators[device]
+            contract = device_contract(_batch_kind(batch))
+            state_names[Int(unknown)] = contract.states[state_index]
+        end
+    end
     batch_kinds = Tuple(first(key) for key in batch_keys)
-    topology = HierarchicalCompiledTopology(hierarchy, pattern, batch_kinds, design.structural_fingerprint)
+    layout = UnknownLayout(unknown_kinds, unknown_locators, state_names)
+    equations = EquationLayout(equation_kinds, equation_locators)
+    topology = HierarchicalCompiledTopology(layout, equations, hierarchy, pattern, batch_kinds,
+        design.structural_fingerprint)
     parameters = ParameterStore(batches, design.parameter_fingerprint)
     topology, parameters
 end
@@ -374,8 +432,14 @@ function _locator_device_name(design::CircuitDesign, locator::DeviceLocator)
 end
 
 function _parse_parameter_selector(selector::AbstractString)
-    matched = match(r"^(.*)\.([^.]+)\.([A-Za-z_][A-Za-z0-9_]*)$", String(selector))
-    matched === nothing && throw(ArgumentError("parameter selector must have the form instance.device.parameter"))
+    text = String(selector)
+    matched = match(r"^(.*)\.([^.]+)\.([A-Za-z_][A-Za-z0-9_]*)$", text)
+    if matched === nothing
+        root_match = match(r"^([^.]+)\.([A-Za-z_][A-Za-z0-9_]*)$", text)
+        root_match === nothing && throw(ArgumentError("parameter selector must have the form device.parameter or instance.device.parameter"))
+        device_name, parameter_text = root_match.captures
+        return "", nothing, device_name, Symbol(parameter_text)
+    end
     instance_text, device_name, parameter_text = matched.captures
     range_match = match(r"^(.*)\[(-?\d+):(-?\d+)\]$", instance_text)
     if range_match === nothing
@@ -432,7 +496,7 @@ function _parameter_store_fingerprint(batches)
         if batch isa ResistorBatch
             print(io, :resistor, ':', repr(batch.conductance), ';')
         else
-            print(io, typeof(batch).parameters[1], ':', repr(batch.parameters), ';')
+            print(io, _batch_kind(batch), ':', repr(batch.parameters), ';')
         end
     end
     digest = sha256(take!(io)); value = zero(UInt128)
@@ -448,7 +512,6 @@ rejected because changing them requires hierarchy elaboration and a new pattern.
 function with_parameters(compiled, updates::Pair...)
     compiled.design === nothing && throw(ArgumentError("with_parameters requires a compiled CircuitDesign"))
     batches = collect(compiled.parameters.batches)
-    legacy = nothing
     for (selector_text, value) in updates
         selector = _parse_parameter_selector(String(selector_text))
         selector[4] in _STRUCTURAL_PARAMETER_NAMES && throw(TopologyParameterError(String(selector_text), selector[4]))
@@ -458,22 +521,11 @@ function with_parameters(compiled, updates::Pair...)
             batches[index] = updated; matched |= !isempty(matches)
         end
         matched || throw(KeyError(selector_text))
-        legacy === nothing && (legacy = deepcopy(compiled.circuit))
-        selector_instance, selector_range, selector_device, parameter = selector
-        for component in legacy.components
-            path = String(component.name)
-            split_at = findlast(==('.'), path)
-            instance_path = split_at === nothing ? "" : path[1:split_at-1]
-            device_name = split_at === nothing ? path : path[split_at+1:end]
-            _matches_selector(instance_path, device_name, selector_instance, selector_range, selector_device) || continue
-            component.parameters[parameter] = value
-        end
     end
     new_batches = Tuple(batches)
     store = ParameterStore(new_batches, _parameter_store_fingerprint(new_batches))
     fingerprint = bytes2hex(sha1(string(compiled.design.structural_fingerprint, ':', store.fingerprint)))
-    CompiledCircuit(legacy === nothing ? compiled.circuit : legacy, compiled.topology, fingerprint,
-        compiled.design, compiled.hierarchical_topology, store)
+    CompiledCircuit(compiled.design, compiled.topology, store, fingerprint)
 end
 
 with_parameters(compiled, updates::AbstractVector{<:Pair}) = with_parameters(compiled, updates...)

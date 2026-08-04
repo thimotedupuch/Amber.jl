@@ -28,11 +28,11 @@ end
 frequencies(result::LoopGainResult)=result.response.frequencies
 
 function _validate_probe_source(circuit,probe::AbstractLoopProbe)
-    cc=compile(circuit); index=findfirst(component->component.name===probe.source,cc.circuit.components)
-    index===nothing&&throw(KeyError(probe.source)); source=cc.circuit.components[index]
     expected=probe isa VoltageLoopProbe ? :voltage_source : :current_source
-    source.kind===expected||throw(ArgumentError("$(probe.source) must be a $(expected) for $(typeof(probe))"))
-    iszero(get(source.parameters,:dc,0.))||throw(ArgumentError("loop injection source $(probe.source) must have zero DC value to preserve the bias point"))
+    cc=compile(circuit)
+    located=_hierarchical_device(cc,probe.source); located===nothing&&throw(KeyError(probe.source))
+    batch,device=located; _batch_kind(batch)===expected||throw(ArgumentError("$(probe.source) must be a $(expected) for $(typeof(probe))"))
+    iszero(get(batch.parameters[device],:dc,0.))||throw(ArgumentError("loop injection source $(probe.source) must have zero DC value to preserve the bias point"))
 end
 
 function loop_gain(circuit,frequency_specification::Union{Pair,AbstractVector};probe::AbstractLoopProbe,points=100,scale=:log,temperature=300.,kw...)

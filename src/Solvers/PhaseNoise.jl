@@ -8,7 +8,7 @@ struct PhaseNoiseResult
     contributions::Vector{NoiseSourceContribution}
     phase_sensitivity::Matrix{Float64}
     neutral_floquet_multiplier::ComplexF64
-    compiled::CompiledCircuit
+    compiled::AbstractCompiledCircuit
     stats::Dict{Symbol,Any}
 end
 

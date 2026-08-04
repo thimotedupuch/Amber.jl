@@ -394,13 +394,13 @@ function _builder_parameter(builder::CircuitBuilder, value)
     value
 end
 
-function _primitive_parameters(builder::CircuitBuilder, parameters::Dict{Symbol,Any})
+function _primitive_parameters(builder::CircuitBuilder, parameters)
     keys_ordered = sort!(collect(keys(parameters)); by=String)
     names = Tuple(keys_ordered)
     NamedTuple{names}(Tuple(_builder_parameter(builder, parameters[key]) for key in keys_ordered))
 end
 
-function add!(builder::CircuitBuilder, component::Component; name::Union{Symbol,AbstractString}=Symbol(component.kind, length(builder.primitives) + 1))
+function _add_raw!(builder::CircuitBuilder, component::PrimitiveDraft, name)
     _assert_open(builder)
     terminals = Int32[]
     for terminal in component.terminals
@@ -412,10 +412,113 @@ function add!(builder::CircuitBuilder, component::Component; name::Union{Symbol,
     append!(builder.terminal_data, terminals)
     name_id = _intern!(builder.names, name)
     parameters = _primitive_parameters(builder, component.parameters)
-    kernel = Val(component.kind)
+    kernel = Val(_draft_kind(component))
     stop = start + Int32(length(terminals) - 1)
     push!(builder.primitives, PrimitiveSpec(kernel, start:stop, parameters, name_id))
     BuilderPrimitive(builder.owner, builder.generation, Int32(length(builder.primitives)), name_id)
+end
+
+_model_value(model,key,default=0.)=model===nothing ? default : get(model.data,key,default)
+_without(parameters::NamedTuple,removed::Tuple)=begin
+    retained=Tuple(key for key in keys(parameters) if key ∉ removed)
+    NamedTuple{retained}(Tuple(getproperty(parameters,key) for key in retained))
+end
+_hidden_name(name,suffix)=string(name,'.',suffix)
+
+function add!(builder::CircuitBuilder, component::PrimitiveDraft; name::Union{Symbol,AbstractString}=string(_draft_kind(component),length(builder.primitives) + 1))
+    kind=_draft_kind(component); parameters=component.parameters; terminals=component.terminals
+    if kind===:resistor
+        package=get(parameters,:package,nothing)
+        series_inductance=_model_value(package,:series_inductance)
+        parallel_capacitance=_model_value(package,:parallel_capacitance)
+        main=if series_inductance>0
+            internal=node!(builder,_hidden_name(name,"__series"))
+            handle=_add_raw!(builder,_component(:resistor,terminals[1],internal;parameters...),name)
+            _add_raw!(builder,inductor(internal,terminals[2];value=series_inductance),_hidden_name(name,"package_inductance")); handle
+        else
+            _add_raw!(builder,component,name)
+        end
+        parallel_capacitance>0&&_add_raw!(builder,capacitor(terminals[1],terminals[2];value=parallel_capacitance),_hidden_name(name,"package_capacitance"))
+        return main
+    elseif kind===:capacitor
+        package=get(parameters,:package,nothing)
+        esr=Float64(get(parameters,:esr,_model_value(package,:esr)))
+        esl=Float64(get(parameters,:esl,_model_value(package,:esl)))
+        terminal=terminals[1]
+        if esr>0
+            following=node!(builder,_hidden_name(name,"__esr"))
+            _add_raw!(builder,resistor(terminal,following;value=esr),_hidden_name(name,"esr")); terminal=following
+        end
+        if esl>0
+            following=node!(builder,_hidden_name(name,"__esl"))
+            _add_raw!(builder,inductor(terminal,following;value=esl),_hidden_name(name,"esl")); terminal=following
+        end
+        leakage=Float64(get(parameters,:leakage_resistance,Inf))
+        main_parameters=_without(parameters,(:esr,:esl,:leakage_resistance,:dielectric_absorption))
+        main=_add_raw!(builder,_component(:capacitor,terminal,terminals[2];main_parameters...),name)
+        isfinite(leakage)&&leakage>0&&_add_raw!(builder,resistor(terminal,terminals[2];value=leakage),_hidden_name(name,"leakage_resistance"))
+        absorption=get(parameters,:dielectric_absorption,nothing)
+        if absorption isa DebyeBranches
+            length(absorption.time_constants)==length(absorption.fractions)||throw(ArgumentError("Debye time constants and fractions must have equal lengths"))
+            for (index,(time_constant,fraction)) in enumerate(zip(absorption.time_constants,absorption.fractions))
+                fraction>0||continue
+                branch_capacitance=Float64(parameters.value)*fraction
+                branch_node=node!(builder,_hidden_name(name,"__da$(index)"))
+                _add_raw!(builder,resistor(terminal,branch_node;value=time_constant/branch_capacitance),_hidden_name(name,"da$(index)_resistor"))
+                _add_raw!(builder,capacitor(branch_node,terminals[2];value=branch_capacitance),_hidden_name(name,"da$(index)_capacitor"))
+            end
+        end
+        return main
+    elseif kind===:inductor
+        resistance=Float64(get(parameters,:winding_resistance,get(parameters,:series_resistance,0.)))
+        parallel_capacitance=Float64(get(parameters,:parallel_capacitance,0.))
+        main=if resistance>0
+            internal=node!(builder,_hidden_name(name,"__winding"))
+            handle=_add_raw!(builder,_component(:inductor,terminals[1],internal;parameters...),name)
+            _add_raw!(builder,resistor(internal,terminals[2];value=resistance),_hidden_name(name,"winding_resistance")); handle
+        else
+            _add_raw!(builder,component,name)
+        end
+        parallel_capacitance>0&&_add_raw!(builder,capacitor(terminals[1],terminals[2];value=parallel_capacitance),_hidden_name(name,"parallel_capacitance"))
+        return main
+    elseif kind===:diode&&parameters.model.series_resistance>0
+        internal=node!(builder,_hidden_name(name,"__series"))
+        _add_raw!(builder,resistor(terminals[1],internal;value=parameters.model.series_resistance),_hidden_name(name,"series_resistance"))
+        return _add_raw!(builder,_component(:diode,internal,terminals[2];parameters...),name)
+    elseif kind===:npn&&parameters.model.base_resistance>0
+        internal=node!(builder,_hidden_name(name,"__base"))
+        main=_add_raw!(builder,_component(:npn,terminals[1],internal,terminals[3];parameters...),name)
+        _add_raw!(builder,resistor(terminals[2],internal;value=parameters.model.base_resistance),_hidden_name(name,"base_resistance"))
+        return main
+    end
+    main=_add_raw!(builder,component,name)
+    if kind===:switch&&parameters.model.clock_feedthrough>0
+        _add_raw!(builder,capacitor(terminals[3],terminals[2];value=parameters.model.clock_feedthrough),_hidden_name(name,"clock_feedthrough"))
+    elseif kind===:opamp
+        model=parameters.model
+        model.input_capacitance>0&&_add_raw!(builder,capacitor(terminals[1],terminals[2];value=model.input_capacitance),_hidden_name(name,"input_capacitance"))
+        if model.input_bias_current!=0
+            _add_raw!(builder,current_source(terminals[1],terminals[5];dc=model.input_bias_current),_hidden_name(name,"positive_bias_current"))
+            _add_raw!(builder,current_source(terminals[2],terminals[5];dc=model.input_bias_current),_hidden_name(name,"negative_bias_current"))
+        end
+    end
+    main
+end
+
+function _set_initial_voltage!(builder::CircuitBuilder, primitive::BuilderPrimitive, value)
+    _assert_owned(builder,primitive)
+    specification=builder.primitives[Int(primitive.id)]
+    kind=typeof(specification.kernel).parameters[1]
+    kind===:capacitor||throw(ArgumentError("initial_voltage applies only to capacitors"))
+    parameters=merge(specification.parameters,(initial_voltage=_builder_parameter(builder,value),))
+    builder.primitives[Int(primitive.id)]=PrimitiveSpec(specification.kernel,specification.terminals,parameters,specification.name)
+    primitive
+end
+
+function _attach_value!(builder::CircuitBuilder,value,name=nothing)
+    value isa PrimitiveDraft&&return add!(builder,value;name=name===nothing ? string(_draft_kind(value),length(builder.primitives)+1) : name)
+    value isa TemplateInvocation&&return instance!(builder,value;instance_name=name===nothing ? value.instance_name : name)
+    value
 end
 
 function observe!(builder::CircuitBuilder, values...; name=nothing)
@@ -503,28 +606,6 @@ function instance!(builder::CircuitBuilder, invocation::TemplateInvocation; inst
     instance_name === nothing && throw(ArgumentError("an explicit instance name is required outside @circuit assignment inference"))
     instance!(builder, invocation.template, invocation.connections...; instance_name,
         partition=invocation.partition, invocation.parameters...)
-end
-
-function _attach!(parent::Circuit, invocation::TemplateInvocation; name=:value)
-    template = invocation.template
-    chosen_name = invocation.instance_name === nothing ? name : invocation.instance_name
-    prefix = chosen_name isa Tuple ? _render_segment((String(first(chosen_name)), last(chosen_name))) : String(chosen_name)
-    netmap = Dict{Int,AbstractNode}(index => connection for (index, connection) in enumerate(invocation.connections))
-    for local_index in (length(template.ports) + 1):length(template.body.net_names)
-        segment = template.body.net_names[local_index]
-        local_name = _render_segment((_name(template.names, segment.base), segment.index))
-        netmap[local_index] = node!(parent, Symbol(prefix, ".", local_name))
-    end
-    supplied = _named_values(template.parameters, template.names, invocation.parameters, "parameter")
-    values = Dict(parameter.name => supplied[index] for (index, parameter) in enumerate(template.parameters))
-    componentmap = Any[]
-    for primitive in template.body.primitives
-        terminals = AbstractNode[netmap[Int(local_id)] for local_id in template.body.terminal_data[primitive.terminals]]
-        parameters = Dict{Symbol,Any}(pairs(_materialize_parameter(primitive.parameters, values)))
-        component_name = Symbol(prefix, ".", _name(template.names, primitive.name))
-        push!(componentmap, add!(parent, Component(typeof(primitive.kernel).parameters[1], terminals, parameters, component_name); name=component_name))
-    end
-    invocation
 end
 
 struct InstanceArray{N,A<:Tuple}
@@ -692,6 +773,9 @@ function _template_macro_rewrite(expression, builder)
     expression isa Expr || return expression
     if expression.head === :(=) && expression.args[1] isa Symbol && expression.args[2] isa Expr && expression.args[2].head === :call
         name = expression.args[1]; call = expression.args[2]
+        call.args[1] === :node && return :($name = node!($builder, $(QuoteNode(name))))
+        call.args[1] === :ground && return :(throw(ArgumentError(
+            "ground() is not allowed inside @subcircuit; add an explicit reference port and connect it at the top level")))
         call.args[1] in _HIERARCHY_PRIMITIVES && return :($name = add!($builder, $call; name=$(QuoteNode(name))))
     elseif expression.head === :call && expression.args[1] === :observe
         arguments = Any[expression.args[2:end]...]
@@ -699,6 +783,8 @@ function _template_macro_rewrite(expression, builder)
             return Expr(:call, :observe!, arguments[1], builder, arguments[2:end]...)
         end
         return Expr(:call, :observe!, builder, arguments...)
+    elseif expression.head === :call && expression.args[1] === :initial_voltage
+        return Expr(:call,GlobalRef(@__MODULE__, :_set_initial_voltage!),builder,expression.args[2:end]...)
     elseif expression.head === :call && expression.args[1] in _HIERARCHY_PRIMITIVES
         return :(add!($builder, $expression))
     elseif expression.head === :block
@@ -709,6 +795,56 @@ function _template_macro_rewrite(expression, builder)
         return Expr(:if, expression.args[1], map(item -> _template_macro_rewrite(item, builder), expression.args[2:end])...)
     end
     expression
+end
+
+function _design_macro_rewrite(expression,builder)
+    expression isa Expr||return expression
+    attach=GlobalRef(@__MODULE__, :_attach_value!)
+    set_initial=GlobalRef(@__MODULE__, :_set_initial_voltage!)
+    if expression.head===:(=)&&expression.args[1] isa Symbol&&expression.args[2] isa Expr&&expression.args[2].head===:call
+        name=expression.args[1]; call=expression.args[2]; function_name=call.args[1]
+        function_name===:node&&return :($name=node!($builder,$(QuoteNode(name))))
+        function_name===:ground&&return :($name=ground!($builder,$(QuoteNode(name))))
+        return :($name=$attach($builder,$call,$(QuoteNode(name))))
+    elseif expression.head===:call&&expression.args[1]===:observe
+        arguments=Any[expression.args[2:end]...]
+        if !isempty(arguments)&&arguments[1] isa Expr&&arguments[1].head===:parameters
+            return Expr(:call,:observe!,arguments[1],builder,arguments[2:end]...)
+        end
+        return Expr(:call,:observe!,builder,arguments...)
+    elseif expression.head===:call&&expression.args[1]===:initial_voltage
+        return Expr(:call,set_initial,builder,expression.args[2:end]...)
+    elseif expression.head===:call
+        return :($attach($builder,$expression))
+    elseif expression.head===:block
+        return Expr(:block,map(item->_design_macro_rewrite(item,builder),expression.args)...)
+    elseif expression.head in (:for,:while)
+        return Expr(expression.head,expression.args[1],_design_macro_rewrite(expression.args[2],builder))
+    elseif expression.head===:if
+        return Expr(:if,expression.args[1],map(item->_design_macro_rewrite(item,builder),expression.args[2:end])...)
+    elseif expression.head===:let
+        return Expr(:let,expression.args[1:end-1]...,_design_macro_rewrite(expression.args[end],builder))
+    end
+    expression
+end
+
+macro circuit(signature,block)
+    parsed=signature isa Symbol ? Expr(:call,signature) : signature
+    parsed isa Expr&&parsed.head===:call||error("@circuit requires a function-like signature")
+    ports=Symbol[]
+    for argument in parsed.args[2:end]
+        argument isa Expr&&argument.head===:parameters&&continue
+        port=argument isa Symbol ? argument : argument isa Expr&&argument.head===:(::) ? argument.args[1] : nothing
+        port isa Symbol&&push!(ports,port)
+    end
+    isempty(ports)||return var"@subcircuit"(__source__,__module__,signature,block)
+    name=parsed.args[1]; builder=gensym(:builder); rewritten=_design_macro_rewrite(block,builder)
+    body=quote
+        $builder=CircuitBuilder($(QuoteNode(name)))
+        $rewritten
+        finish($builder)
+    end
+    esc(Expr(:function,parsed,body))
 end
 
 macro subcircuit(signature, block)

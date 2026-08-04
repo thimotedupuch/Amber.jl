@@ -11,6 +11,8 @@ NameSegment
 CompiledTopology
 CompiledCircuit
 ElaborationIndex
+UnknownLayout
+EquationLayout
 PrimitiveBatch
 ResistorBatch
 SimulationWorkspace

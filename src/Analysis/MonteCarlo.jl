@@ -124,13 +124,13 @@ function _automatic_tolerance_draws!(draws,circuit,rng,explicit_paths)
 end
 
 function _matched_group_draws!(draws,circuit,rng,explicit_paths)
-    groups=Dict{Symbol,Vector{Component}}()
+    groups=Dict{Symbol,Vector{Any}}()
     definitions=Dict{Symbol,MatchedGroup}()
     for component in circuit.components
         match=get(component.parameters,:match,nothing)
         match isa MatchedGroup||continue
         component.kind===:npn||throw(ArgumentError("matched groups are currently supported only for NPN devices"))
-        push!(get!(groups,match.name,Component[]),component); definitions[match.name]=match
+        push!(get!(groups,match.name,Any[]),component); definitions[match.name]=match
     end
     for (name,components) in groups
         match=definitions[name]; 0<=match.correlation<=1||throw(ArgumentError("matched-group correlation must lie in [0, 1]"))

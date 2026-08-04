@@ -16,8 +16,11 @@
     @test voltage(overridden,:vout)[end]>1V
     original=transient(compiled,0s=>200μs;saveat=10μs)
     @test voltage(original,:vin)[end]≈1V
-    pulse_circuit=Circuit(:PulseEvents); pulse_ground=ground!(pulse_circuit,:gnd); pulse_node=node!(pulse_circuit,:clock)
-    add!(pulse_circuit,voltage_source(pulse_node,pulse_ground;waveform=Pulse(frequency=100kHz,rise=2ns,fall=2ns,duty_cycle=.15));name=:Clock)
+    @circuit PulseEvents() begin
+        pulse_ground=ground(); pulse_node=node()
+        Clock=voltage_source(pulse_node,pulse_ground;waveform=Pulse(frequency=100kHz,rise=2ns,fall=2ns,duty_cycle=.15))
+    end
+    pulse_circuit=PulseEvents()
     event_result=transient(pulse_circuit,0s=>3μs;max_step=50ns,event_mode=:exact)
     @test any(==(2ns),event_result.axis)
     @test any(==(1.5μs),event_result.axis)

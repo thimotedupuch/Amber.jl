@@ -4,17 +4,17 @@ struct LinearizedModel
     B::Matrix{Float64}
     output_matrix::Matrix{Float64}
     D::Matrix{Float64}
-    inputs::Vector{Symbol}
+    inputs::Vector{String}
     outputs::Vector{Observable}
     operating_point::Vector{Float64}
-    compiled::CompiledCircuit
+    compiled::AbstractCompiledCircuit
     stats::Dict{Symbol,Any}
 end
 
 struct LinearFrequencyResponse
     frequencies::Vector{Float64}
     values::Array{ComplexF64,3}
-    inputs::Vector{Symbol}
+    inputs::Vector{String}
     outputs::Vector{Observable}
     stats::Dict{Symbol,Any}
 end
@@ -23,7 +23,7 @@ frequencies(result::LinearFrequencyResponse)=result.frequencies
 struct TimeResponse
     axis::Vector{Float64}
     values::Array{Float64,3}
-    inputs::Vector{Symbol}
+    inputs::Vector{String}
     outputs::Vector{Observable}
     stats::Dict{Symbol,Any}
 end
@@ -31,15 +31,15 @@ end
 _as_observable(value::Observable)=value
 _as_observable(value::Union{Symbol,String})=voltage(value)
 
-function _unit_source_excitation(cc,name::Symbol)
-    index=findfirst(component->component.name===name,cc.circuit.components)
-    index===nothing&&throw(KeyError(name)); source=cc.circuit.components[index]
-    source.kind in (:voltage_source,:current_source)||throw(ArgumentError("$(name) is not an independent source"))
+function _unit_source_excitation(cc,name)
+    located=_hierarchical_device(cc,name); located===nothing&&throw(KeyError(name))
+    batch,device=located; kind=_batch_kind(batch)
+    kind in (:voltage_source,:current_source)||throw(ArgumentError("$(name) is not an independent source"))
     excitation=zeros(Float64,cc.n)
-    if source.kind===:voltage_source
-        excitation[cc.branches[index]]=1.
+    if kind===:voltage_source
+        excitation[Int(batch.branch_unknowns[device])]=1.
     else
-        positive,negative=map(node->_idx(cc,node),source.terminals)
+        positive=Int(batch.terminals[1][device]); negative=Int(batch.terminals[2][device])
         positive>0&&(excitation[positive]-=1); negative>0&&(excitation[negative]+=1)
     end
     excitation
@@ -49,25 +49,29 @@ function _linear_output_selector(cc,observable::Observable)
     selector=zeros(Float64,cc.n)
     if observable.kind===:voltage
         target=observable.target isa AbstractNode ? observable.target.name : observable.target
-        first_index=_findnode(cc,target); first_index===nothing&&throw(KeyError(target)); first_node=cc.circuit.nodes[first_index]
-        first_node.id!=0&&(selector[cc.node_index[first_node.id]]+=1)
+        first_index=_hierarchical_net_index(cc,target); first_index===nothing&&throw(KeyError(target))
+        first_index>0&&(selector[Int(first_index)]+=1)
         if observable.extra!==nothing
             other=observable.extra isa AbstractNode ? observable.extra.name : observable.extra
-            second_index=_findnode(cc,other); second_index===nothing&&throw(KeyError(other)); second_node=cc.circuit.nodes[second_index]
-            second_node.id!=0&&(selector[cc.node_index[second_node.id]]-=1)
+            second_index=_hierarchical_net_index(cc,other); second_index===nothing&&throw(KeyError(other))
+            second_index>0&&(selector[Int(second_index)]-=1)
         end
         return selector
-    elseif observable.kind===:state
-        component=_findcomponent(cc,observable.target isa Component ? observable.target.name : observable.target)
-        component===nothing&&throw(KeyError(observable.target)); selector[cc.states[(component,observable.extra)]]=1.; return selector
-    elseif observable.kind===:current
-        component=_findcomponent(cc,observable.target isa Component ? observable.target.name : observable.target)
-        component===nothing&&throw(KeyError(observable.target))
-        haskey(cc.branches,component)&&(selector[cc.branches[component]]=1.; return selector)
-        device=cc.circuit.components[component]
-        if device.kind in (:resistor,:conductance)
-            conductance=device.kind===:resistor ? inv(Float64(device.parameters[:value])) : Float64(device.parameters[:value])
-            a,b=map(node->_idx(cc,node),device.terminals[1:2]); a>0&&(selector[a]+=conductance); b>0&&(selector[b]-=conductance); return selector
+    elseif observable.kind in (:state,:current)
+        target=observable.target
+        located=_hierarchical_device(cc,target); located===nothing&&throw(KeyError(target))
+        batch,device=located
+        if observable.kind===:state
+            contract=device_contract(_batch_kind(batch)); state_index=findfirst(==(observable.extra),contract.states)
+            state_index===nothing&&throw(KeyError((target,observable.extra)))
+            selector[Int(batch.state_unknowns[device][state_index])]=1.; return selector
+        elseif batch isa PrimitiveBatch&&batch.branch_unknowns[device]!=0
+            selector[Int(batch.branch_unknowns[device])]=1.; return selector
+        elseif _batch_kind(batch) in (:resistor,:conductance)
+            conductance=_batch_kind(batch)===:resistor ? batch.conductance[device] : batch.parameters[device].value
+            positive=Int(batch.terminals[1][device]); negative=Int(batch.terminals[2][device])
+            positive>0&&(selector[positive]+=conductance); negative>0&&(selector[negative]-=conductance)
+            return selector
         end
         throw(ArgumentError("descriptor outputs currently require voltage, state, branch-current, resistor-current, or conductance-current observables"))
     end
@@ -80,7 +84,7 @@ function linearize(c;inputs,outputs,bias=nothing,temperature=300.,kw...)
     length(point)==cc.n||throw(DimensionMismatch("bias point does not match the compiled circuit"))
     _,G=residual_jacobian(cc,point,point,0.,0.;mode=:dc,temperature)
     _,combined=residual_jacobian(cc,point,point,0.,1.;mode=:dc,temperature); E=combined-G
-    input_names=inputs isa Union{Symbol,String} ? Symbol[inputs] : Symbol.(inputs)
+    input_names=inputs isa Union{Symbol,String} ? String[String(inputs)] : String.(inputs)
     output_observables=outputs isa Union{Observable,Symbol,String} ? Observable[_as_observable(outputs)] : Observable[_as_observable(output) for output in outputs]
     B=hcat((_unit_source_excitation(cc,name) for name in input_names)...)
     output_matrix=vcat((transpose(_linear_output_selector(cc,observable)) for observable in output_observables)...)

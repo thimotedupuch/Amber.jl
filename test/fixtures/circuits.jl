@@ -29,21 +29,22 @@ end
 end
 
 function RLGCLine(;sections=5)
-    c=Circuit(:RLGCLine); gnd=ground!(c,:gnd); x=[node!(c,Symbol(:x,k)) for k in 0:sections]
-    add!(c,voltage_source(x[1],gnd;waveform=Step(at=1ns,rise=100ps));name=:Vin)
+    builder=CircuitBuilder(:RLGCLine); gnd=ground!(builder,:gnd); x=node_array!(builder,:x,0:sections)
+    add!(builder,voltage_source(x[0],gnd;waveform=Step(at=1ns,rise=100ps));name=:Vin)
     for k in 1:sections
-        middle=node!(c,Symbol(:middle,k)); add!(c,resistor(x[k],middle;value=.01Ω);name=Symbol(:R,k))
-        add!(c,inductor(middle,x[k+1];value=1nH);name=Symbol(:L,k)); add!(c,conductance(x[k+1],gnd;value=1μS);name=Symbol(:G,k))
-        add!(c,capacitor(x[k+1],gnd;value=1pF);name=Symbol(:C,k))
+        middle=node!(builder,(:middle,k)); add!(builder,resistor(x[k-1],middle;value=.01Ω);name=(:R,k))
+        add!(builder,inductor(middle,x[k];value=1nH);name=(:L,k)); add!(builder,conductance(x[k],gnd;value=1μS);name=(:G,k))
+        add!(builder,capacitor(x[k],gnd;value=1pF);name=(:C,k))
     end
-    add!(c,resistor(x[end],gnd;value=50Ω);name=:Rload); observe!(c,voltage(x[1]),voltage(x[end])); c
+    add!(builder,resistor(x[sections],gnd;value=50Ω);name=:Rload)
+    observe!(builder,voltage(x[0]),voltage(x[sections])); finish(builder)
 end
 
-@circuit RCSection(input,output;R=1kΩ,C=10nF) begin
-    local_ground=ground(); R1=resistor(input,output;value=R); C1=capacitor(output,local_ground;value=C)
+@subcircuit RCSection(input,output,reference;R=1kΩ,C=10nF) begin
+    R1=resistor(input,output;value=R); C1=capacitor(output,reference;value=C)
     observe(voltage(output),current(R1))
 end
 @circuit HierarchicalFilter() begin
     gnd=ground(); input=node(); middle=node(); output=node(); Vin=voltage_source(input,gnd;ac=1V)
-    First=RCSection(input,middle;R=1kΩ,C=10nF); Second=RCSection(middle,output;R=2kΩ,C=20nF)
+    First=RCSection(input,middle,gnd;R=1kΩ,C=10nF); Second=RCSection(middle,output,gnd;R=2kΩ,C=20nF)
 end

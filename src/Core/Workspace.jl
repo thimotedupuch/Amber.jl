@@ -19,7 +19,7 @@ mutable struct SimulationWorkspace{T}
     numeric_factorizations::Int
 end
 
-function SimulationWorkspace(compiled::CompiledCircuit; scalar_type::Type{T}=Float64) where {T}
+function SimulationWorkspace(compiled::AbstractCompiledCircuit; scalar_type::Type{T}=Float64) where {T}
     n = compiled.n
     pattern = if compiled.hierarchical_topology === nothing
         compiled.jacobian_pattern
@@ -29,7 +29,13 @@ function SimulationWorkspace(compiled::CompiledCircuit; scalar_type::Type{T}=Flo
     jacobian = SparseMatrixCSC{T,Int}(pattern.m, pattern.n, copy(pattern.colptr), copy(pattern.rowval), zeros(T, length(pattern.nzval)))
     scaled_jacobian = copy(jacobian); system = copy(jacobian)
     variable_scales = ones(T, n)
-    for index in values(compiled.branches); variable_scales[index] = convert(T, 1e-3) end
+    if compiled.hierarchical_topology === nothing
+        for index in values(compiled.branches); variable_scales[index] = convert(T, 1e-3) end
+    else
+        for (index, kind) in enumerate(compiled.hierarchical_topology.layout.kinds)
+            kind === BranchCurrentUnknown && (variable_scales[index] = convert(T, 1e-3))
+        end
+    end
     SimulationWorkspace(zeros(T, n), zeros(T, n), zeros(T, n), zeros(T, n), zeros(T, n), jacobian,
         scaled_jacobian, system, zeros(T, n), zeros(T, n), zeros(T, n), variable_scales,
         zeros(T, n), zeros(T, n), nothing, nothing, 0)

@@ -1,37 +1,43 @@
 function _apply_initial_conditions!(z,cc)
-    for x in cc.circuit.components
-        x.kind===:capacitor||continue
-        haskey(x.parameters,:initial_voltage)||continue
-        a,b=map(n->_idx(cc,n),x.terminals); value=Float64(x.parameters[:initial_voltage])
-        if a>0&&b==0; z[a]=value
-        elseif a==0&&b>0; z[b]=-value
-        elseif a>0&&b>0; z[a]=z[b]+value
+    for batch in cc.parameters.batches
+        batch isa PrimitiveBatch{Val{:capacitor}} || continue
+        for device in eachindex(batch.parameters)
+            parameters=batch.parameters[device]
+            hasproperty(parameters,:initial_voltage)||continue
+            a=Int(batch.terminals[1][device]); b=Int(batch.terminals[2][device])
+            value=Float64(parameters.initial_voltage)
+            if a>0&&b==0; z[a]=value
+            elseif a==0&&b>0; z[b]=-value
+            elseif a>0&&b>0; z[a]=z[b]+value
+            end
         end
     end
     z
 end
 
 function transient(c,p::Pair;overrides=nothing,kw...)
-    cc=compile(c); saved=_apply_overrides!(cc,overrides)
-    try
-        _transient(cc,p;kw...)
-    finally
-        _restore_overrides!(saved)
-    end
+    cc=compile(c)
+    updates=_override_pairs(overrides)
+    updated=isempty(updates) ? cc : with_parameters(cc,(String(first(pair))=>last(pair) for pair in updates)...)
+    _transient(updated,p;kw...)
 end
 
 function _waveform_events(cc,t0,t1)
     events=Float64[]
-    for component in cc.circuit.components
-        component.kind in (:voltage_source,:current_source)||continue
-        waveform=get(component.parameters,:waveform,nothing)
-        if waveform isa Step
-            push!(events,waveform.at); waveform.rise>0&&push!(events,waveform.at+waveform.rise)
-        elseif waveform isa Pulse
-            period=inv(waveform.frequency); first_cycle=floor(Int,(t0-waveform.delay)/period)-1; last_cycle=ceil(Int,(t1-waveform.delay)/period)+1
-            for cycle in first_cycle:last_cycle
-                start=waveform.delay+cycle*period
-                append!(events,(start,start+waveform.rise,start+waveform.duty_cycle*period,start+waveform.duty_cycle*period+waveform.fall))
+    for batch in cc.parameters.batches
+        batch isa PrimitiveBatch || continue
+        kind=_batch_kind(batch)
+        kind in (:voltage_source,:current_source)||continue
+        for parameters in batch.parameters
+            waveform=get(parameters,:waveform,nothing)
+            if waveform isa Step
+                push!(events,waveform.at); waveform.rise>0&&push!(events,waveform.at+waveform.rise)
+            elseif waveform isa Pulse
+                period=inv(waveform.frequency); first_cycle=floor(Int,(t0-waveform.delay)/period)-1; last_cycle=ceil(Int,(t1-waveform.delay)/period)+1
+                for cycle in first_cycle:last_cycle
+                    start=waveform.delay+cycle*period
+                    append!(events,(start,start+waveform.rise,start+waveform.duty_cycle*period,start+waveform.duty_cycle*period+waveform.fall))
+                end
             end
         end
     end
@@ -48,27 +54,47 @@ function _merge_time_grid(times,nominal_step)
     merged
 end
 
-function _prescribed_node_voltage(cc,node,t)
-    _known_node_voltage(cc,node,t,:time)
+function _prescribed_node_voltage(cc,node::Integer,t)
+    node==0&&return 0.
+    for batch in cc.parameters.batches
+        batch isa PrimitiveBatch{Val{:voltage_source}}||continue
+        for device in eachindex(batch.parameters)
+            positive=Int(batch.terminals[1][device]); negative=Int(batch.terminals[2][device])
+            if positive==node&&negative==0
+                return _source_value(batch.parameters[device],t,:time)
+            elseif positive==0&&negative==node
+                return -_source_value(batch.parameters[device],t,:time)
+            end
+        end
+    end
+    nothing
 end
 
 function _apply_switch_events!(history,cc,previous_time,time)
     applied=false
-    for component in cc.circuit.components
-        component.kind===:switch||continue; model=component.parameters[:model]; model.charge_injection==0&&continue
-        control_positive,control_negative=component.terminals[3:4]
-        positive_before=_prescribed_node_voltage(cc,control_positive,previous_time); negative_before=_prescribed_node_voltage(cc,control_negative,previous_time)
-        positive_after=_prescribed_node_voltage(cc,control_positive,time); negative_after=_prescribed_node_voltage(cc,control_negative,time)
-        any(isnothing,(positive_before,negative_before,positive_after,negative_after))&&continue
-        before=positive_before-negative_before; after=positive_after-negative_after
-        before>=model.threshold>after||continue
-        held=component.terminals[2]; held.id==0&&continue; capacitance=0.
-        for candidate in cc.circuit.components
-            candidate.kind===:capacitor||continue
-            any(node->node.id==held.id,candidate.terminals)&& (capacitance+=Float64(candidate.parameters[:value]))
+    for batch in cc.parameters.batches
+        batch isa PrimitiveBatch{Val{:switch}}||continue
+        for device in eachindex(batch.parameters)
+            model=batch.parameters[device].model; model.charge_injection==0&&continue
+            control_positive=Int(batch.terminals[3][device]); control_negative=Int(batch.terminals[4][device])
+            positive_before=_prescribed_node_voltage(cc,control_positive,previous_time)
+            negative_before=_prescribed_node_voltage(cc,control_negative,previous_time)
+            positive_after=_prescribed_node_voltage(cc,control_positive,time)
+            negative_after=_prescribed_node_voltage(cc,control_negative,time)
+            any(isnothing,(positive_before,negative_before,positive_after,negative_after))&&continue
+            before=positive_before-negative_before; after=positive_after-negative_after
+            before>=model.threshold>after||continue
+            held=Int(batch.terminals[2][device]); held==0&&continue; capacitance=0.
+            for candidate in cc.parameters.batches
+                candidate isa PrimitiveBatch{Val{:capacitor}}||continue
+                for capacitor in eachindex(candidate.parameters)
+                    (candidate.terminals[1][capacitor]==held||candidate.terminals[2][capacitor]==held)&&
+                        (capacitance+=Float64(candidate.parameters[capacitor].value))
+                end
+            end
+            capacitance>0||continue
+            history[held]+=model.charge_injection/capacitance; applied=true
         end
-        capacitance>0||continue
-        history[cc.node_index[held.id]]+=model.charge_injection/capacitance; applied=true
     end
     applied
 end
@@ -97,7 +123,9 @@ function _mandatory_times(cc,t0,t1,saveat,event_mode)
 end
 
 function _error_norm(high,low,previous,cc,reltol,abstol)
-    indices=sort!(vcat(collect(values(cc.node_index)),collect(values(cc.states))))
+    indices=cc.hierarchical_topology === nothing ?
+        sort!(vcat(collect(values(cc.node_index)),collect(values(cc.states)))) :
+        findall(!=(BranchCurrentUnknown),cc.hierarchical_topology.layout.kinds)
     isempty(indices)&&return 0.
     maximum(abs(high[index]-low[index])/(abstol+reltol*max(abs(high[index]),abs(previous[index]),1e-12)) for index in indices)
 end

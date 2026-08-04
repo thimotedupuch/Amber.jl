@@ -9,22 +9,24 @@ using SHA
 using Statistics
 using TOML
 
-export Circuit, Node, Ground, Component, CompiledTopology, CompiledCircuit, SimulationResult
+export CompiledTopology, CompiledCircuit, SimulationResult
 export AbstractCircuitDefinition, CircuitBuilder, CircuitDesign, SubcircuitTemplate
 export NameId, NameSegment, InstancePath, NetPath, DevicePath, parsepath
 export NetArray, InstanceArray, node_array!, instances!, instance, instance!, finish
 export TemplateId, InstanceId, PathId, PartitionHint, summary, devices, nets, resolve
 export ParameterStore, HierarchicalCompiledTopology, ElaborationIndex, SparsePattern
+export UnknownKind, UnknownLayout, EquationKind, EquationLayout
+export NodeVoltageUnknown, BranchCurrentUnknown, DeviceStateUnknown, PartitionInterfaceUnknown
+export KCLCurrentEquation, VoltageConstraintEquation, DynamicStateEquation, DeviceAuxiliaryEquation
 export PrimitiveBatch, ResistorBatch, with_parameters, TopologyParameterError
 export SimulationWorkspace, residual!, jacobian!, residual_jacobian!
 export AbstractLinearSolver, SuiteSparseLU, SolverOptions
 export ConvergenceError
 export CircuitValidationError, AnalysisValidationError, LinearSolveError
 export CircuitSerializationError
-export circuit, node!, ground!, add!, observe!, observe, compile, check, describe
+export node!, ground!, add!, observe!, observe, compile, check, describe
 export explain, explain_failure
 export circuit_snapshot, serialize_circuit, deserialize_circuit, save_circuit, load_circuit
-export migrate_design
 export node, ground, resistor, capacitor, inductor, conductance
 export voltage_source, current_source, diode, npn, nmos, pmos, opamp, analog_switch
 export transconductance, voltage_controlled_voltage_source
@@ -82,7 +84,6 @@ export °
 include("Core/Units.jl")
 include("Core/Ports.jl")
 include("Devices/Models.jl")
-include("Core/CircuitIR.jl")
 include("Core/Hierarchy.jl")
 include("Core/Serialization.jl")
 include("Devices/Ideal.jl")

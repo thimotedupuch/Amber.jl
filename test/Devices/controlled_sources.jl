@@ -29,8 +29,9 @@
     @test voltage(controlled,:current_output)[1]≈2V
     @test voltage(controlled,:voltage_output)[1]≈-1V
     @test current(controlled,:F1)[1]≈-2mA
-    invalid=Circuit(:InvalidControl); reference=ground!(invalid,:gnd); node=node!(invalid,:node)
-    controller=add!(invalid,resistor(node,reference;value=1kΩ);name=:Rcontrol)
-    add!(invalid,current_controlled_current_source(controller,node,reference;gain=2.);name=:Fbad)
+    invalid_builder=CircuitBuilder(:InvalidControl); reference=ground!(invalid_builder,:gnd); output=node!(invalid_builder,:node)
+    controller=add!(invalid_builder,resistor(output,reference;value=1kΩ);name=:Rcontrol)
+    add!(invalid_builder,current_controlled_current_source(controller,output,reference;gain=2.);name=:Fbad)
+    invalid=finish(invalid_builder)
     @test_throws CircuitValidationError compile(invalid)
 end

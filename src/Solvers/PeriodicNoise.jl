@@ -8,7 +8,7 @@ struct PeriodicNoiseResult
     input_referred_psd::Union{Nothing,Vector{Float64}}
     sideband_psd::Matrix{Float64}
     contributions::Vector{NoiseSourceContribution}
-    compiled::CompiledCircuit
+    compiled::AbstractCompiledCircuit
     stats::Dict{Symbol,Any}
 end
 

@@ -3,8 +3,10 @@
         gnd=ground(); n=node(); V1=voltage_source(n,gnd;dc=5V); V2=voltage_source(n,gnd;dc=3V)
     end
     @test any(d->d.severity==:error,check(Bad()))
-    c=Circuit(:FloatingIsland); g=ground!(c,:gnd); add!(c,resistor(g,g;value=1kΩ);name=:reference)
-    a=node!(c,:a); b=node!(c,:b); add!(c,capacitor(a,b;value=10nF);name=:C1)
+    @circuit FloatingIsland() begin
+        g=ground(); a=node(); b=node(); reference=resistor(g,g;value=1kΩ); C1=capacitor(a,b;value=10nF)
+    end
+    c=FloatingIsland()
     @test any(d->occursin("no finite DC path",d.message),check(c))
     @circuit BadLoop() begin
         gnd=ground(); a=node(); b=node(); V1=voltage_source(a,gnd;dc=1V)
@@ -26,7 +28,7 @@
     failed_stats=copy(converged.stats)
     failed_stats[:converged]=false
     failed_stats[:failed_steps]=[2]
-    failed_stats[:failed_residuals]=[(row=first(values(converged.compiled.node_index)),norm=1.25)]
+    failed_stats[:failed_residuals]=[(row=1,norm=1.25)]
     failed=SimulationResult(converged.compiled,converged.analysis,converged.axis,converged.values,failed_stats)
     failure_explanation=explain_failure(failed)
     @test occursin("did not converge",failure_explanation)

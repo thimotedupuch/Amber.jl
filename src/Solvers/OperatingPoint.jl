@@ -32,7 +32,8 @@ function _pseudo_transient_operating_point(cc,temperature;workspace=nothing,kw..
     _,initial_jacobian=workspace === nothing ? residual_jacobian(cc,z,z,0.,0.;mode=:dc,
         source_scale=1.,temperature) : residual_jacobian!(workspace,cc,z,z,0.,0.;mode=:dc,
         source_scale=1.,temperature)
-    node_rows=collect(values(cc.node_index))
+    node_rows=cc.hierarchical_topology === nothing ? collect(values(cc.node_index)) :
+        collect(1:cc.hierarchical_topology.hierarchy.solver_net_count)
     row_norms=zeros(cc.n)
     for column in 1:cc.n, pointer in nzrange(initial_jacobian,column)
         row_norms[initial_jacobian.rowval[pointer]]+=abs(initial_jacobian.nzval[pointer])

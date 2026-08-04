@@ -18,11 +18,13 @@ function compilation_design(cells::Integer)
 end
 
 cells = parse(Int, get(ENV, "AMBER_BENCH_CELLS", "500000"))
-Amber._compile_hierarchy(compilation_design(10))
+compile(compilation_design(10))
 design = compilation_design(cells)
 Base.GC.gc()
-measurement = @timed Amber._compile_hierarchy(design)
-topology, parameters = measurement.value
+measurement = @timed compile(design)
+compiled = measurement.value
+topology = compiled.hierarchical_topology
+parameters = compiled.parameters
 
 result = Dict(
     "benchmark" => "HierarchicalCompilationLadder",
@@ -33,7 +35,7 @@ result = Dict(
     "batch_count" => length(parameters.batches),
     "compilation_seconds" => measurement.time,
     "allocated_bytes" => measurement.bytes,
-    "retained_bytes" => Base.summarysize(measurement.value),
+    "retained_bytes" => Base.summarysize(compiled),
     "julia_version" => string(VERSION),
     "threads" => Threads.nthreads(),
 )

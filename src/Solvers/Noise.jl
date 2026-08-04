@@ -37,7 +37,7 @@ struct NoiseResult
     output_psd::Vector{Float64}
     input_referred_psd::Union{Nothing,Vector{Float64}}
     contributions::Vector{NoiseSourceContribution}
-    compiled::CompiledCircuit
+    compiled::AbstractCompiledCircuit
     stats::Dict{Symbol,Any}
     function NoiseResult(frequencies,output,input_source,output_psd,input_referred_psd,
             contributions,compiled,stats)

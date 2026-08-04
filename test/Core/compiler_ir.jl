@@ -58,7 +58,12 @@ end
     @test updated_resistors.p === resistor_batch.p
     @test updated_resistors.conductance[1:3] == fill(1 / 10kΩ, 3)
     @test updated.parameters.fingerprint != compiled.parameters.fingerprint
-    @test all(component.parameters[:value] == 10kΩ for component in updated.circuit.components if String(component.name) in ("stage[1].R1", "stage[2].R1", "stage[3].R1"))
+    @test !hasproperty(compiled,:circuit)
+    @test !hasproperty(updated,:circuit)
+    @test count(==(NodeVoltageUnknown),compiled.hierarchical_topology.layout.kinds) == 9
+    @test count(==(BranchCurrentUnknown),compiled.hierarchical_topology.layout.kinds) == 1
+    @test count(==(KCLCurrentEquation),compiled.hierarchical_topology.equations.kinds) == 9
+    @test count(==(VoltageConstraintEquation),compiled.hierarchical_topology.equations.kinds) == 1
     @test compile(updated) === updated
     @test_throws TopologyParameterError with_parameters(compiled, "stage[1].R1.package" => SMD0603())
     @test_throws KeyError with_parameters(compiled, "stage[99].R1.value" => 2kΩ)
@@ -99,7 +104,7 @@ end
 
 
 @testset "linear RLGC workspace assembly" begin
-    compiled = compile(migrate_design(RLGCLine(sections=3)))
+    compiled = compile(RLGCLine(sections=3))
     workspace = SimulationWorkspace(compiled)
     state_values = collect(range(-0.2, 0.3; length=compiled.n))
     previous = state_values .- 1e-3
@@ -119,11 +124,9 @@ end
 end
 
 @testset "nonlinear workspace assembly and solver" begin
-    legacy = operating_point(BiasedNPN())
-    compiled = compile(migrate_design(BiasedNPN()))
+    compiled = compile(BiasedNPN())
     hierarchical = operating_point(compiled)
     @test hierarchical.stats[:converged]
-    @test hierarchical.values ≈ legacy.values atol=1e-12 rtol=1e-10
 
     workspace = SimulationWorkspace(compiled)
     state_values = copy(hierarchical.values[:, 1])
@@ -135,9 +138,25 @@ end
     @test Matrix(batch_jacobian) ≈ Matrix(reference_jacobian) atol=1e-15 rtol=4eps(Float64)
     @test assembly_allocations(workspace, compiled, state_values, state_values) == 0
 
-    legacy_transient = transient(LowPass(), 0s => 50μs; saveat=10μs)
-    hierarchy_transient = transient(migrate_design(LowPass()), 0s => 50μs; saveat=10μs)
+    hierarchy_transient = transient(LowPass(), 0s => 50μs; saveat=10μs)
     @test hierarchy_transient.stats[:converged]
-    @test hierarchy_transient.axis ≈ legacy_transient.axis
-    @test hierarchy_transient.values ≈ legacy_transient.values atol=1e-12 rtol=1e-10
+end
+
+@testset "hierarchy-native analysis metadata" begin
+    design=LowPass()
+    compiled=compile(design)
+    @test compiled isa CompiledCircuit
+    @test !hasproperty(compiled,:circuit)
+    @test compiled.topology isa CompiledTopology
+
+    ac=small_signal(compiled,[1kHz];source="V1")
+    @test length(voltage(ac,:vout))==1
+    network=port_response(compiled,[1kHz];ports=Port(:vin,:gnd))
+    @test size(impedance(network))==(1,1,1)
+    model=linearize(compiled;inputs="V1",outputs=voltage(:vout))
+    @test model.inputs==["V1"]
+    @test size(model.B,2)==1
+    metadata=provenance(operating_point(compiled))
+    @test metadata[:design_fingerprint]==design.structural_fingerprint
+    @test metadata[:parameter_fingerprint]==compiled.parameters.fingerprint
 end

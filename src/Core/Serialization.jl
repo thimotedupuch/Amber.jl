@@ -1,5 +1,5 @@
 const _CIRCUIT_SCHEMA = "amber-circuit"
-const _CIRCUIT_SCHEMA_VERSION = 2
+const _CIRCUIT_SCHEMA_VERSION = 3
 
 struct CircuitSerializationError <: Exception
     message::String
@@ -24,8 +24,6 @@ _encode_value(value::AbstractFloat) = Dict("type" => "float", "value" => Float64
 _encode_value(value::Complex) = Dict("type" => "complex", "real" => Float64(real(value)), "imag" => Float64(imag(value)))
 _encode_value(value::AbstractString) = Dict("type" => "string", "value" => String(value))
 _encode_value(value::Symbol) = Dict("type" => "symbol", "value" => String(value))
-_encode_value(value::AbstractNode) = Dict("type" => "node", "id" => value.id)
-_encode_value(value::Component) = Dict("type" => "component", "name" => String(value.name))
 _encode_value(value::Tuple) = Dict("type" => "tuple", "items" => [_encode_value(item) for item in value])
 _encode_value(value::AbstractVector) = Dict("type" => "vector", "items" => [_encode_value(item) for item in value])
 _encode_value(value::NamedTuple) = Dict("type" => "named_tuple", "entries" => [
@@ -54,15 +52,7 @@ function _decode_value(encoded,nodes,components,depth::Int=0,max_depth::Int=64)
         return get(encoded,"unsigned",false) ? parse(UInt64,value) : parse(Int64,value)
     end
     kind == "symbol" && return Symbol(encoded["value"])
-    if kind == "node"
-        id = Int(encoded["id"])
-        haskey(nodes, id) || throw(ArgumentError("serialized circuit refers to unknown node id $(id)"))
-        return nodes[id]
-    elseif kind == "component"
-        name = Symbol(encoded["name"])
-        haskey(components, name) || throw(ArgumentError("serialized circuit refers to unknown component $(name)"))
-        return components[name]
-    elseif kind == "tuple"
+    if kind == "tuple"
         return Tuple(_decode_value(item,nodes,components,depth+1,max_depth) for item in encoded["items"])
     elseif kind == "vector"
         return [_decode_value(item,nodes,components,depth+1,max_depth) for item in encoded["items"]]
@@ -90,103 +80,19 @@ function _decode_value(encoded,nodes,components,depth::Int=0,max_depth::Int=64)
     throw(ArgumentError("unknown serialized value type $(kind)"))
 end
 
-function _encode_observable(observable::Observable)
-    Dict("kind" => String(observable.kind), "target" => _encode_value(observable.target), "extra" => _encode_value(observable.extra))
-end
-
-function _decode_observable(encoded,nodes,components,max_depth=64)
-    Observable(Symbol(encoded["kind"]),_decode_value(encoded["target"],nodes,components,0,max_depth),_decode_value(encoded["extra"],nodes,components,0,max_depth))
-end
-
-"""Return the versioned, session-independent representation of a circuit."""
-function circuit_snapshot(circuit::Circuit)
-    named = get(circuit.metadata, :named_observations, Dict{Symbol,Any}())
-    ports = get(circuit.metadata, :ports, Dict{Symbol,Any}())
-    metadata = Dict(key => value for (key, value) in circuit.metadata if key ∉ (:named_observations, :ports))
-    all(observation -> observation isa Observable, circuit.observations) || throw(ArgumentError("circuit contains an unsupported non-Observable observation"))
-    Dict{String,Any}(
-        "schema" => _CIRCUIT_SCHEMA,
-        "schema_version" => _CIRCUIT_SCHEMA_VERSION,
-        "name" => String(circuit.name),
-        "nodes" => [Dict("id" => node.id, "name" => String(node.name), "ground" => node isa Ground) for node in circuit.nodes],
-        "components" => [Dict(
-            "kind" => String(component.kind),
-            "name" => String(component.name),
-            "terminals" => [node.id for node in component.terminals],
-            "parameters" => _encode_value(component.parameters),
-        ) for component in circuit.components],
-        "observations" => [_encode_observable(observable) for observable in circuit.observations],
-        "named_observations" => [Dict("name" => String(name), "observable" => _encode_observable(observable)) for (name, observable) in sort!(collect(pairs(named)); by=x -> String(first(x)))],
-        "ports" => [Dict("name" => String(name), "node" => terminal.id) for (name, terminal) in sort!(collect(pairs(ports)); by=x -> String(first(x))) if terminal isa AbstractNode],
-        "metadata" => _encode_value(metadata),
-    )
-end
-
-"""Serialize a circuit to deterministic, versioned TOML text."""
-function serialize_circuit(circuit::Circuit)
-    io = IOBuffer()
-    TOML.print(io, circuit_snapshot(circuit); sorted=true)
-    String(take!(io))
-end
-
-"""Reconstruct a circuit from `serialize_circuit` TOML text."""
-function _deserialize_circuit(text::AbstractString;max_nodes,max_components,max_depth)
-    snapshot = try
-        TOML.parse(text)
-    catch error
-        throw(CircuitSerializationError("invalid Amber circuit serialization: $(sprint(showerror, error))"))
-    end
-    get(snapshot, "schema", nothing) == _CIRCUIT_SCHEMA || throw(ArgumentError("not an Amber circuit serialization"))
-    version = get(snapshot, "schema_version", nothing)
-    version == _CIRCUIT_SCHEMA_VERSION || throw(CircuitSerializationError(
-        "unsupported Amber circuit schema version $(version); noise-model fields changed in schema 2, so regenerate the circuit definition with explicit spectral-density parameters"))
-    nodes_snapshot=get(snapshot,"nodes",nothing); components_snapshot=get(snapshot,"components",nothing)
-    nodes_snapshot isa AbstractVector||throw(CircuitSerializationError("serialized circuit nodes must be an array"))
-    components_snapshot isa AbstractVector||throw(CircuitSerializationError("serialized circuit components must be an array"))
-    length(nodes_snapshot)<=max_nodes||throw(CircuitSerializationError("serialized circuit exceeds the node limit"))
-    length(components_snapshot)<=max_components||throw(CircuitSerializationError("serialized circuit exceeds the component limit"))
-    circuit = Circuit(Symbol(snapshot["name"]))
-    nodes = Dict{Int,AbstractNode}()
-    for encoded in snapshot["nodes"]
-        id = Int(encoded["id"]); name = Symbol(encoded["name"])
-        node = encoded["ground"] ? Ground(circuit, id, name) : Node(circuit, id, name)
-        haskey(nodes, id) && throw(ArgumentError("duplicate node id $(id) in serialized circuit"))
-        nodes[id] = node; push!(circuit.nodes, node)
-    end
-    components = Dict{Symbol,Component}()
-    for encoded in snapshot["components"]
-        name = Symbol(encoded["name"])
-        terminals = AbstractNode[nodes[Int(id)] for id in encoded["terminals"]]
-        parameters = Dict{Symbol,Any}(_decode_value(encoded["parameters"],nodes,components,0,max_depth))
-        component = Component(Symbol(encoded["kind"]), terminals, parameters, name)
-        haskey(components, name) && throw(ArgumentError("duplicate component name $(name) in serialized circuit"))
-        components[name] = component; push!(circuit.components, component)
-    end
-    append!(circuit.observations, [_decode_observable(item,nodes,components,max_depth) for item in get(snapshot, "observations", Any[])])
-    circuit.metadata[:named_observations] = Dict(Symbol(item["name"]) => _decode_observable(item["observable"],nodes,components,max_depth) for item in get(snapshot, "named_observations", Any[]))
-    circuit.metadata[:ports] = Dict(Symbol(item["name"]) => nodes[Int(item["node"])] for item in get(snapshot, "ports", Any[]))
-    merge!(circuit.metadata, Dict{Symbol,Any}(_decode_value(get(snapshot,"metadata",_encode_value(Dict{Symbol,Any}())),nodes,components,0,max_depth)))
-    circuit
-end
-
 function deserialize_circuit(text::AbstractString;max_bytes::Integer=16*1024*1024,max_nodes::Integer=1_000_000,max_components::Integer=1_000_000,max_depth::Integer=64)
     sizeof(text)<=max_bytes||throw(CircuitSerializationError("serialized circuit exceeds the byte limit"))
     try
         header = TOML.parse(text)
         get(header, "schema", nothing) == _CIRCUIT_SCHEMA || throw(ArgumentError("not an Amber circuit serialization"))
-        get(header, "schema_version", nothing) == 3 && return _deserialize_design(header; max_nodes, max_components, max_depth)
-        _deserialize_circuit(text;max_nodes,max_components,max_depth)
+        version = get(header, "schema_version", nothing)
+        version == _CIRCUIT_SCHEMA_VERSION || throw(CircuitSerializationError(
+            "unsupported Amber circuit schema version $(version); only immutable hierarchical schema 3 is supported"))
+        _deserialize_design(header; max_nodes, max_components, max_depth)
     catch error
         error isa CircuitSerializationError&&rethrow()
         throw(CircuitSerializationError("invalid Amber circuit serialization: $(sprint(showerror,error))"))
     end
-end
-
-function save_circuit(path::AbstractString, circuit::Circuit)
-    open(path, "w") do io
-        write(io, serialize_circuit(circuit))
-    end
-    path
 end
 
 load_circuit(path::AbstractString) = deserialize_circuit(read(path, String))
@@ -223,7 +129,7 @@ function _hierarchy_decode(value, max_depth::Int, depth::Int=0)
     end
     kind == "hierarchy_tuple" && return Tuple(_hierarchy_decode(item, max_depth, depth + 1) for item in value["items"])
     kind == "hierarchy_vector" && return [_hierarchy_decode(item, max_depth, depth + 1) for item in value["items"]]
-    _decode_value(value, Dict{Int,AbstractNode}(), Dict{Symbol,Component}(), depth, max_depth)
+    _decode_value(value, Dict{Int,AbstractNode}(), Dict{Any,Any}(), depth, max_depth)
 end
 
 function _segment_snapshot(segment::NameSegment, names::NameTable)

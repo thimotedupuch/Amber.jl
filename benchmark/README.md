@@ -16,5 +16,5 @@ Run the streamed hierarchy compiler benchmark with:
 julia --project=benchmark benchmark/compilation.jl
 ```
 
-This measures the hierarchy-to-batch compiler directly, excluding the temporary
-flat exact-solver compatibility bridge.
+This measures the public hierarchy-native compiler. No flattened compatibility
+graph is constructed.

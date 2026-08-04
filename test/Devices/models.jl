@@ -22,18 +22,20 @@
     sampler_module=Module(:DeviceElaborationSampler)
     Base.include(sampler_module,normpath(joinpath(@__DIR__,"..","..","examples","06_sample_and_hold","circuit.jl")))
     sampler=getfield(sampler_module,:SampleAndHold)()
-    @test any(x->x.name==Symbol("S1.clock_feedthrough"),sampler.components)
-    @test any(x->x.name==Symbol("Buffer.input_capacitance"),sampler.components)
-    @test count(x->occursin("bias_current",String(x.name)),sampler.components)==2
-    practical_inductor=Circuit(:PracticalInductor); inductor_ground=ground!(practical_inductor,:gnd); inductor_node=node!(practical_inductor,:input)
-    add!(practical_inductor,voltage_source(inductor_node,inductor_ground;dc=1V);name=:source)
-    add!(practical_inductor,inductor(inductor_node,inductor_ground;value=1mH,winding_resistance=2Ω,parallel_capacitance=5pF);name=:L1)
-    @test any(x->x.name==Symbol("L1.winding_resistance"),practical_inductor.components)
-    @test any(x->x.name==Symbol("L1.parallel_capacitance"),practical_inductor.components)
+    @test resolve(sampler,"S1.clock_feedthrough").kind==:device
+    @test resolve(sampler,"Buffer.input_capacitance").kind==:device
+    @test count(x->occursin("bias_current",x.path),devices(sampler))==2
+    @circuit PracticalInductor() begin
+        inductor_ground=ground(); inductor_node=node(); source=voltage_source(inductor_node,inductor_ground;dc=1V)
+        L1=inductor(inductor_node,inductor_ground;value=1mH,winding_resistance=2Ω,parallel_capacitance=5pF)
+    end
+    practical_inductor=PracticalInductor()
+    @test resolve(practical_inductor,"L1.winding_resistance").kind==:device
+    @test resolve(practical_inductor,"L1.parallel_capacitance").kind==:device
     amplifier_module=Module(:BJTElaborationAmplifier)
     Base.include(amplifier_module,normpath(joinpath(@__DIR__,"..","..","examples","03_common_emitter","circuit.jl")))
     amplifier=getfield(amplifier_module,:CommonEmitterAmplifier)()
-    @test any(x->x.name==Symbol("Q1.base_resistance"),amplifier.components)
+    @test resolve(amplifier,"Q1.base_resistance").kind==:device
     smooth=SmoothSwitch(threshold=1V,transition=.1V,ron=10Ω,roff=1GΩ)
     @test Amber._switch_conductance(smooth,2V)>Amber._switch_conductance(smooth,0V)
     @test Amber._switch_conductance_derivative(smooth,1V)>0

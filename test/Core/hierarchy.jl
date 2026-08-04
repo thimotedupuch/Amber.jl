@@ -41,7 +41,8 @@ end
     @test summary(restored) == summary(design)
 
     compiled = compile(restored)
-    @test length(compiled.circuit.components) == 17
+    @test !hasproperty(compiled,:circuit)
+    @test compiled.hierarchical_topology.hierarchy.primitive_count == 17
     @test compiled.n == 10
     result = operating_point(restored)
     @test voltage(result, "x[8]")[1] ≈ 1V
@@ -53,10 +54,10 @@ end
     @test_throws Amber.BuilderOwnershipError node!(foreign_builder, :late)
 end
 
-@testset "schema-2 migration" begin
-    old = LowPass()
-    migrated = migrate_design(old)
-    @test migrated isa CircuitDesign
-    @test summary(migrated).primitive_devices == length(old.components)
-    @test deserialize_circuit(serialize_circuit(old)) isa Circuit
+@testset "legacy flat API removed" begin
+    @test !isdefined(Amber, :Circuit)
+    @test !isdefined(Amber, :Component)
+    @test !isdefined(Amber, :Node)
+    @test !isdefined(Amber, :Ground)
+    @test !isdefined(Amber, :migrate_design)
 end

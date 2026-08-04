@@ -1,10 +1,6 @@
 # Public documentation lives together so `?Amber.name` and Documenter expose the
 # same contract without coupling narrative text to implementation files.
 
-@doc """Abstract supertype of Amber circuit components.""" Component
-@doc """Mutable circuit intermediate representation containing named nodes, components, and observables.""" Circuit
-@doc """A non-reference electrical node belonging to a `Circuit`.""" Node
-@doc """The zero-volt reference node of a `Circuit`.""" Ground
 @doc """Reusable structural indexing and sparse-pattern information produced by `compile`.""" CompiledTopology
 @doc """A frozen circuit plus its compiled topology, suitable for repeated analyses.""" CompiledCircuit
 @doc """Common result container for operating-point, transient, and small-signal analyses.""" SimulationResult

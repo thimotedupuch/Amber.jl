@@ -12,15 +12,24 @@ function small_signal(c,p::Union{Pair,AbstractVector};points=p isa AbstractVecto
     cc=compile(c); operating_point_result=_require_converged(operating_point(cc;temperature,kw...),"small-signal operating point"); op=operating_point_result.values[:,1]
     fs=_small_signal_frequencies(p;points,scale)
     warnings=String[]
-    active=[x.name for x in cc.circuit.components if x.kind in (:voltage_source,:current_source)&&!iszero(get(x.parameters,:ac,0.))]
+    active=String[]
+    source_kinds=Dict{String,Symbol}()
+    source_amplitudes=Dict{String,Any}()
+    for batch in cc.parameters.batches
+        batch isa PrimitiveBatch||continue; kind=_batch_kind(batch)
+        kind in (:voltage_source,:current_source)||continue
+        for device in eachindex(batch.parameters)
+            instance_name,device_name=_locator_device_name(cc.design,batch.locators[device])
+            path=isempty(instance_name) ? device_name : string(instance_name,'.',device_name)
+            source_kinds[path]=kind; source_amplitudes[path]=get(batch.parameters[device],:ac,0.)
+            iszero(source_amplitudes[path])||push!(active,path)
+        end
+    end
     if source===nothing&&length(active)>1
         throw(ArgumentError("multiple AC sources are active ($(join(active, ", "))); select source=... explicitly"))
     elseif source!==nothing
-        index=findfirst(x->x.name===source,cc.circuit.components)
-        index===nothing&&throw(ArgumentError("unknown small-signal source $(source)"))
-        selected=cc.circuit.components[index]
-        selected.kind in (:voltage_source,:current_source)||throw(ArgumentError("$(source) is not an independent source"))
-        iszero(get(selected.parameters,:ac,0.))&&push!(warnings,"selected source $(source) has zero AC excitation")
+        path=String(source); haskey(source_kinds,path)||throw(ArgumentError("unknown small-signal source $(source)"))
+        iszero(source_amplitudes[path])&&push!(warnings,"selected source $(source) has zero AC excitation")
     elseif isempty(active)
         push!(warnings,"the circuit has no nonzero AC excitation")
     end

@@ -119,7 +119,7 @@ end
 
 Base.@kwdef struct SmallSignal <: AbstractAnalysis
     frequencies::Vector{Float64}
-    source::Union{Nothing,Symbol}=nothing
+    source::Union{Nothing,Symbol,String}=nothing
     temperature::Float64=300.
 end
 SmallSignal(frequencies::AbstractVector;kw...)=SmallSignal(frequencies=_validate_frequency_grid(frequencies);kw...)
@@ -135,28 +135,4 @@ function _override_pairs(overrides)
     overrides isa AbstractDict&&return [Symbol(key)=>value for (key,value) in pairs(overrides)]
     overrides isa Pair&&return [Symbol(first(overrides))=>last(overrides)]
     [Symbol(first(item))=>last(item) for item in overrides]
-end
-
-function _apply_overrides!(cc::CompiledCircuit,overrides)
-    saved=Tuple{Component,Symbol,Any,Symbol}[]
-    for (path,value) in _override_pairs(overrides)
-        parts=split(String(path),'.'); length(parts)>=2||throw(ArgumentError("override paths must have the form Component.parameter"))
-        component_name=Symbol(join(parts[1:end-1],'.')); key=Symbol(parts[end])
-        component_index=findfirst(x->x.name===component_name,cc.circuit.components)
-        component_index===nothing&&throw(KeyError(path)); component=cc.circuit.components[component_index]
-        if haskey(component.parameters,key)
-            push!(saved,(component,key,component.parameters[key],:parameter)); component.parameters[key]=value
-        elseif haskey(component.parameters,:model)&&haskey(component.parameters[:model].data,key)
-            model=component.parameters[:model]; push!(saved,(component,:model,model,:parameter))
-            model_wrapper=Base.typename(typeof(model)).wrapper
-            component.parameters[:model]=model_wrapper((;model.data...,key=>value))
-        else
-            throw(KeyError(path))
-        end
-    end
-    saved
-end
-
-function _restore_overrides!(saved)
-    for (component,key,value,_) in reverse(saved); component.parameters[key]=value end
 end

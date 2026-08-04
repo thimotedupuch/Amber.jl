@@ -41,14 +41,24 @@ end
 
 function _unknown_scales(cc)
     scales=ones(Float64,cc.n)
-    for index in values(cc.branches); scales[index]=1e-3 end
+    if cc.hierarchical_topology === nothing
+        for index in values(cc.branches); scales[index]=1e-3 end
+    else
+        for (index, kind) in enumerate(cc.hierarchical_topology.layout.kinds)
+            kind === BranchCurrentUnknown && (scales[index]=1e-3)
+        end
+    end
     scales
 end
 
 function _update_converged(cc,z,delta,reltol,current_abstol,voltage_abstol,state_abstol)
     for index in eachindex(z)
-        absolute = index in values(cc.branches) ? current_abstol :
-            index in values(cc.states) ? state_abstol : voltage_abstol
+        kind = cc.hierarchical_topology === nothing ?
+            (index in values(cc.branches) ? BranchCurrentUnknown :
+                index in values(cc.states) ? DeviceStateUnknown : NodeVoltageUnknown) :
+            cc.hierarchical_topology.layout.kinds[index]
+        absolute = kind === BranchCurrentUnknown ? current_abstol :
+            kind === DeviceStateUnknown ? state_abstol : voltage_abstol
         abs(delta[index])<=absolute+reltol*max(abs(z[index]),abs(z[index]+delta[index]),1.)||return false
     end
     true
