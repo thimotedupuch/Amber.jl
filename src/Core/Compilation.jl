@@ -94,9 +94,21 @@ _idx(cc,n)=n.id==0 ? 0 : cc.node_index[n.id]
 _v(z,i)=i==0 ? zero(eltype(z)) : z[i]
 _thermal_voltage(temperature)=1.380649e-23*Float64(temperature)/1.602176634e-19
 function _limited_exponential(argument)
-    limited=clamp(argument,-80.,40.)
-    expvalue=exp(limited)
-    expvalue-1, (-80.0 < argument < 40.0) ? expvalue : zero(expvalue)
+    # Keep the exponential and its derivative finite without making the
+    # device locally constant.  A hard upper clamp gives Newton a zero diode
+    # conductance exactly when a large trial voltage most needs a restoring
+    # slope.  The tangent-line continuation is C1 at the limit and is the
+    # usual safe extension used by circuit simulators during globalization.
+    if argument>80.
+        expvalue=exp(80.)
+        expvalue*(1+argument-80.)-1,expvalue
+    elseif argument < -80.
+        expvalue=exp(-80.)
+        expvalue-1,zero(expvalue)
+    else
+        expvalue=exp(argument)
+        expvalue-1,expvalue
+    end
 end
 function _source_value(p,t,mode)
     mode===:dc&&return get(p,:dc,0.)

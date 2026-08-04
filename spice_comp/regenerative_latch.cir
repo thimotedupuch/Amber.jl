@@ -1,0 +1,21 @@
+* Regenerative latch biased just beyond its saddle-node trip point.
+R1 q 0 1k
+R2 qb 0 1k
+G1 q 0 qb 0 1.001m
+G2 qb 0 q 0 1.001m
+D1p q 0 DCLAMP
+D1n 0 q DCLAMP
+D2p qb 0 DCLAMP
+D2n 0 qb DCLAMP
+Ibias 0 q -236.908021074324n
+Ibiasb qb 0 -236.908021074324n
+.model DCLAMP D(Is=1e-12 N=1)
+.options tnom=26.85
+.temp 26.85
+.op
+.control
+run
+print v(q) v(qb)
+quit
+.endc
+.end

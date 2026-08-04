@@ -1,0 +1,11 @@
+[workspace]
+authors = ["Thimoté Dupuch <thimote.dupuch@proton.me>"]
+channels = ["conda-forge"]
+name = "spice_comp"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
+ngspice = ">=41,<42"

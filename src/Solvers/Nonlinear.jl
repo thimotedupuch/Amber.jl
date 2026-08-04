@@ -40,14 +40,24 @@ function _unknown_scales(cc)
     scales
 end
 
+function _update_converged(cc,z,delta,reltol,abstol)
+    for index in eachindex(z)
+        # MNA branch unknowns are currents; node and internal-state unknowns
+        # are voltages.  `abstol` remains the current floor for compatibility,
+        # while voltage updates use a small voltage floor independent of the
+        # magnitudes of KCL residuals.
+        absolute=index in values(cc.branches) ? abstol : max(abstol,1e-9)
+        abs(delta[index])<=absolute+reltol*max(abs(z[index]),abs(z[index]+delta[index]),1.)||return false
+    end
+    true
+end
+
 function _newton(cc,z0,previous,t,α;reltol=1e-7,abstol=1e-10,maxiters=60,
         mode=:time,source_scale=1.,gmin=0.,temperature=300.,forcing=nothing)
     z=copy(z0); factorization=nothing
     for it in 1:maxiters
         r,J=residual_jacobian(cc,z,previous,t,α;mode,source_scale,gmin,temperature)
         forcing===nothing||(r.-=forcing)
-        numerical_floor=32eps(Float64)*max(opnorm(J,Inf)*max(norm(z,Inf),1),1)
-        norm(r,Inf)<=abstol+numerical_floor&&return z,it,true
         variable_scales=_unknown_scales(cc)
         scaled_matrix=copy(J)
         for column in 1:cc.n, pointer in nzrange(scaled_matrix,column); scaled_matrix.nzval[pointer]*=variable_scales[column] end
@@ -66,6 +76,14 @@ function _newton(cc,z0,previous,t,α;reltol=1e-7,abstol=1e-10,maxiters=60,
             throw(LinearSolveError("Newton matrix is singular at iteration $(it)"))
         end
         all(isfinite,Δ)||return z,it,false
+        # Account for roundoff in equations containing large, cancelling
+        # terms (notably high-gain controlled sources).  This floor alone is
+        # not a convergence test: the Newton update below must also be small,
+        # which prevents high-impedance circuits from accepting a badly wrong
+        # voltage merely because their absolute KCL residual is tiny.
+        numerical_floor=32eps(Float64)*max(opnorm(J,Inf)*max(norm(z,Inf),1),1)
+        residual_converged=norm(r,Inf)<=abstol+numerical_floor
+        residual_converged&&_update_converged(cc,z,Δ,reltol,abstol)&&return z,it,true
         damping=1.; nr=norm(r)
         while damping>1/128
             candidate=z+damping*Δ

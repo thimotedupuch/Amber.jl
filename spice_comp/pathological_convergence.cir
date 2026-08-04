@@ -1,0 +1,18 @@
+* Physical convergence torture test mirrored by Amber's example 15.
+VSupply supply 0 100
+RLimit supply diode_bias 10k
+DLowLeakage diode_bias 0 DLOW
+.model DLOW D(Is=1e-20 N=1)
+
+RDividerHigh supply divider_midpoint 1T
+RDividerLow divider_midpoint 0 1T
+
+.options reltol=1e-9 abstol=1e-15 vntol=1e-9 tnom=26.85
+.temp 26.85
+.op
+.control
+run
+print v(diode_bias) v(divider_midpoint)
+quit
+.endc
+.end

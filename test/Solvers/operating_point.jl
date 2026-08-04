@@ -9,10 +9,37 @@
     @test voltage(operating_point(DCVersusWaveform()),:output)[1]≈2V
 end
 
+@testset "regenerative latch pseudo-transient fallback" begin
+    example_module=Module(:RegenerativeLatchExample)
+    Base.include(example_module,normpath(joinpath(@__DIR__,"..","..","examples",
+        "16_regenerative_latch","circuit.jl")))
+    result=operating_point(getfield(example_module,:RegenerativeLatch)())
+    @test result.stats[:converged]
+    @test result.stats[:strategy]===:pseudo_transient
+    @test result.stats[:fallback_trigger]===5
+    @test voltage(result,:q)[1]≈-0.343075557 atol=1e-7
+    @test voltage(result,:qb)[1]≈0.343075557 atol=1e-7
+end
+
 
 @testset "temperature-aware operating point" begin
     cold=operating_point(BiasedNPN();temperature=250.)
     hot=operating_point(BiasedNPN();temperature=350.)
     @test cold.stats[:converged]&&hot.stats[:converged]
     @test voltage(cold,:base)[1]!=voltage(hot,:base)[1]
+end
+
+@testset "pathological nonlinear and high-impedance convergence" begin
+    example_module=Module(:PathologicalConvergenceExample)
+    Base.include(example_module,normpath(joinpath(@__DIR__,"..","..","examples",
+        "15_pathological_convergence","circuit.jl")))
+    result=operating_point(getfield(example_module,:PathologicalConvergence)())
+    @test result.stats[:converged]
+    @test voltage(result,:diode_bias)[1]≈1.071197308 atol=1e-7
+    @test voltage(result,:divider_midpoint)[1]≈50V atol=1e-8
+
+    adaptive=operating_point(getfield(example_module,:PathologicalConvergence)();maxiters=8)
+    @test adaptive.stats[:converged]
+    @test adaptive.stats[:rejected_continuation_steps]>0
+    @test voltage(adaptive,:diode_bias)[1]≈voltage(result,:diode_bias)[1] atol=1e-7
 end

@@ -16,6 +16,6 @@ r = operating_point(c)
 (r.stats[:status], voltage(r, :anode)[1])
 ```
 
-The solver uses scaled Newton iterations and sparse linear solves. A result carries status, warnings, provenance, and the values needed to evaluate registered observables. Inspect `validity_report(r)` even after convergence: mathematical convergence is not the same as physical model validity.
+The solver uses scaled Newton iterations, sparse linear solves, source/gmin continuation, adaptive continuation-step subdivision, and a pseudo-transient fallback for regenerative folds. `r.stats[:rejected_continuation_steps]` records subdivisions caused by rejected homotopy steps, while `r.stats[:strategy]` reports the path that ultimately converged. A result carries status, warnings, provenance, and the values needed to evaluate registered observables. Inspect `validity_report(r)` even after convergence: mathematical convergence is not the same as physical model validity.
 
 Failures raise structured exceptions rather than returning plausible-looking partial vectors. `explain_failure` turns those exceptions into a concise diagnosis; `explain` describes successful results.
