@@ -1,0 +1,20 @@
+name = "AmberMakie"
+uuid = "fd161fee-29dc-4075-a8b2-01cef381d9be"
+authors = ["Amber contributors"]
+version = "0.1.0"
+
+[deps]
+Amber = "2c7a1e4c-6de2-4e12-9714-7d38608cb52a"
+Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
+
+[compat]
+Amber = "0.1"
+Makie = "0.24"
+julia = "1.10"
+
+[extras]
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["CairoMakie", "Test"]
