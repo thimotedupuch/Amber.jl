@@ -2,18 +2,30 @@ module AmberMakie
 
 import Amber
 import Makie
+import LinearAlgebra
+import TOML
 
-export TraceView, FrequencyView, SpectrumView, NoiseView, NetworkView, EnsembleView
-export traceview, frequencyview, spectrumview, noiseview, networkview, ensembleview
+export TraceView, FrequencyView, SpectrumView, SpectrogramView, NoiseView, NoiseContributionView, NetworkView, EnsembleView, OperatingPointView, EyeDiagramView, JitterView
+export traceview, frequencyview, spectrumview, spectrogramview, noiseview, noisecontributionview, networkview, ensembleview, operatingpointview, eyediagramview, jitterview, diagnosticgroups
+export SpectrumCursorReadout, spectrum_cursor
 export engineering, theme_amber_light, theme_amber_dark, theme_amber_publication
 export PlotHandle, WorkbenchHandle, traceplot, bodeplot, spectrumplot, harmonicplot
-export noiseplot, workbench
+export eyediagramplot, jitterplot, transfercharacteristicplot, sensitivityplot, yieldmapplot
+export spectrogramplot, noiseplot, noisecontributionplot, noisebudgetplot, integratednoiseplot, phasenoiseplot, periodicnoiseplot, workbench
 export nyquistplot, nicholsplot, polezeroplot, rootlocusplot, marginplot, groupdelayplot
-export networkplot, smithplot, stabilitycircleplot, mixedmodeplot
+export networkplot, smithplot, stabilitycircleplot, mixedmodeplot, impedanceplot
+export SmithCursorReadout, smith_cursor_readout
 export pssplot, orbitplot, operatingpointplot, diagnosticplot
+export safeoperatingareaplot, powerdashboard, poleparticipationplot, waterfallplot
+export FloquetModeReadout, floquet_mode
 export sweepplot, ensembleplot, correlationplot, compareplot
+export yieldplot, failureplot, parametermatrixplot, sampleplot
+export rank_correlation, selectsample!, replay_sample!, selectcomponent!
+export isolatetrace!, toggletrace!, showalltraces!, helptext
+export outlier_samples
 export StudyHandle, explore, runstudy!, setparameter!, pin!
 export savefigure, copyrecipe
+export reportfigure
 export CursorSample, CursorReadout, CursorState, IntervalReadout
 export nearest_sample, cursor_readout, interval_readout, setcursor!, setinterval!
 

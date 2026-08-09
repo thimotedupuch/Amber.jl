@@ -70,3 +70,39 @@ function groupdelayplot(position, response; input=1, output=1, kwargs...)
     plot = Makie.lines!(axis, frequencies, delay; kwargs...)
     PlotHandle(slot, (groupdelay=axis,), (groupdelay=plot,), (frequencies, delay))
 end
+
+function poleparticipationplot(position, model::Amber.LinearizedModel;
+        pole=:dominant, labels=nothing, top=20, kwargs...)
+    decomposition = LinearAlgebra.eigen(model.A, model.E)
+    finite = findall(isfinite, decomposition.values)
+    isempty(finite) && throw(ArgumentError("model has no finite poles"))
+    pole_index = if pole === :dominant
+        finite[argmax(real.(decomposition.values[finite]))]
+    elseif pole isa Integer
+        checkbounds(decomposition.values, pole); Int(pole)
+    else
+        finite[argmin(abs.(decomposition.values[finite] .- ComplexF64(pole)))]
+    end
+    selected_pole = decomposition.values[pole_index]
+    right = decomposition.vectors[:, pole_index]
+    left_decomposition = LinearAlgebra.eigen(transpose(model.A), transpose(model.E))
+    left_index = argmin(abs.(left_decomposition.values .- conj(selected_pole)))
+    left = left_decomposition.vectors[:, left_index]
+    raw = abs.(conj.(left) .* right)
+    total = sum(raw); total > 0 || throw(ArgumentError("pole participation is singular"))
+    participation = raw ./ total
+    state_labels = labels === nothing ? ["state $(index)" for index in eachindex(raw)] :
+        String.(collect(labels))
+    length(state_labels) == length(raw) ||
+        throw(DimensionMismatch("participation labels must match model states"))
+    order = sortperm(participation; rev=true)[1:min(Int(top), length(raw))]
+    slot = _position(position); axis = Makie.Axis(slot;
+        xlabel="Normalized participation", ylabel="State",
+        yticks=(collect(eachindex(order)), state_labels[order]),
+        title="Pole $(engineering(real(selected_pole); unit="rad/s")) $(imag(selected_pole) < 0 ? "−" : "+") j$(engineering(abs(imag(selected_pole)); unit="rad/s"))")
+    plot = Makie.barplot!(axis, collect(eachindex(order)), participation[order];
+        direction=:x, kwargs...)
+    PlotHandle(slot, (participation=axis,), (participation=plot,),
+        (pole=selected_pole, state_indices=order, labels=state_labels[order],
+            participation=participation[order], full_participation=participation))
+end

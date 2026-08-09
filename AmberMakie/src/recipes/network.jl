@@ -11,6 +11,75 @@ function networkplot(position, result::Amber.NetworkResult; parameter=:s, elemen
     PlotHandle(layout, (magnitude=magnitude_axis, phase=phase_axis), plots, view)
 end
 
+function impedanceplot(position, result::Amber.NetworkResult; element=(1, 1),
+        quantity=:impedance, view=:cartesian, kwargs...)
+    quantity in (:impedance, :admittance) ||
+        throw(ArgumentError("quantity must be :impedance or :admittance"))
+    view in (:cartesian, :magnitude_phase, :q) ||
+        throw(ArgumentError("view must be :cartesian, :magnitude_phase, or :q"))
+    semantic = networkview(result;
+        parameter=quantity === :impedance ? :z : :y, element)
+    frequencies, values = semantic.frequencies, semantic.values
+    slot = _position(position); layout = Makie.GridLayout(slot)
+    if view === :cartesian
+        first_label, second_label = quantity === :impedance ?
+            ("Resistance (Ω)", "Reactance (Ω)") : ("Conductance (S)", "Susceptance (S)")
+        first_values, second_values = real.(values), imag.(values)
+    elseif view === :magnitude_phase
+        first_label = quantity === :impedance ? "|Z| (Ω)" : "|Y| (S)"
+        second_label = "Phase (°)"
+        first_values, second_values = abs.(values), rad2deg.(_unwrap(angle.(values)))
+    else
+        first_label = "Q = |Im/Re|"
+        second_label = quantity === :impedance ? "Reactance (Ω)" : "Susceptance (S)"
+        first_values = [real(value) == 0 ? Inf : abs(imag(value) / real(value)) for value in values]
+        second_values = imag.(values)
+    end
+    first_axis = _frequency_axis(layout[1, 1], frequencies; ylabel=first_label)
+    second_axis = _frequency_axis(layout[2, 1], frequencies;
+        xlabel="Frequency (Hz)", ylabel=second_label)
+    Makie.linkxaxes!(first_axis, second_axis)
+    first_plot = Makie.lines!(first_axis, frequencies, first_values; kwargs...)
+    second_plot = Makie.lines!(second_axis, frequencies, second_values; kwargs...)
+    resonance_indices = [index for index in 1:length(values)-1
+        if signbit(imag(values[index])) != signbit(imag(values[index + 1]))]
+    isempty(resonance_indices) || Makie.vlines!(second_axis,
+        frequencies[resonance_indices]; color=_AMBER_COLORS.warning, linestyle=:dash)
+    PlotHandle(layout, (primary=first_axis, secondary=second_axis),
+        (primary=first_plot, secondary=second_plot),
+        (frequencies, values, quantity, view, element,
+            resonances=frequencies[resonance_indices], warnings=semantic.warnings,
+            provenance=semantic.provenance))
+end
+
+"""Electrical values corresponding to a cursor on a diagonal Smith trace."""
+struct SmithCursorReadout
+    index::Int
+    frequency::Float64
+    reflection::ComplexF64
+    impedance::ComplexF64
+    admittance::ComplexF64
+    reference_impedance::Float64
+end
+
+function smith_cursor_readout(result::Amber.NetworkResult, frequency::Real;
+        element=(1, 1))
+    row, column = element
+    row == column || throw(ArgumentError(
+        "Smith impedance/admittance conversion requires a diagonal reflection element"))
+    s = Amber.network_parameters(result, :s)
+    checkbounds(s, row, column, :)
+    sample = nearest_sample(result.frequencies, result.frequencies, frequency)
+    reflection = ComplexF64(s[row, column, sample.index])
+    reference = Float64(result.ports[column].reference_impedance)
+    normalized = iszero(1 - reflection) ? complex(Inf, Inf) :
+        (1 + reflection) / (1 - reflection)
+    impedance = reference * normalized
+    admittance = iszero(impedance) ? complex(Inf, Inf) : inv(impedance)
+    SmithCursorReadout(sample.index, Float64(sample.x), reflection,
+        ComplexF64(impedance), ComplexF64(admittance), reference)
+end
+
 _reflection(z) = (z - 1) / (z + 1)
 _smithpoint(z) = Makie.Point2f(real(z), imag(z))
 

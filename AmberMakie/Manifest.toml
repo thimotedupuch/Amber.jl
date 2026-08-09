@@ -2,7 +2,7 @@
 
 julia_version = "1.12.6"
 manifest_format = "2.0"
-project_hash = "eb7df2d1542407b49d9bdb3d9244cd705d59a9d6"
+project_hash = "4cf574f238dc960285edfb039458927740c63521"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -76,7 +76,7 @@ uuid = "2c7a1e4c-6de2-4e12-9714-7d38608cb52a"
 version = "0.1.0"
 
 [[deps.AmberMakie]]
-deps = ["Amber", "Makie"]
+deps = ["Amber", "LinearAlgebra", "Makie", "TOML"]
 path = "."
 uuid = "fd161fee-29dc-4075-a8b2-01cef381d9be"
 version = "0.1.0"
