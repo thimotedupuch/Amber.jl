@@ -14,8 +14,8 @@ end
 Base.showerror(io::IO,error::AnalysisValidationError)=print(io,error.message)
 Base.show(io::IO,d::Diagnostic)=print(io,d.message)
 
-"""Validate an immutable design without constructing a flat component graph."""
-function check(design::CircuitDesign)
+"""Validate and compile a design in one hierarchy-elaboration pass."""
+function _check_and_compile(design::CircuitDesign)
     diagnostics = Diagnostic[]
     design.root_ir.ground_net == 0 && push!(diagnostics, Diagnostic(:error,
         "Circuit has no electrical reference. Add ground() to the top-level @circuit."))
@@ -36,12 +36,12 @@ function check(design::CircuitDesign)
                 "$(scope).$(device_name) ($(kind)) requires $(contract.terminals) terminals, but has $(terminal_count)."))
         end
     end
-    any(diagnostic->diagnostic.severity===:error,diagnostics)&&return diagnostics
+    any(diagnostic->diagnostic.severity===:error,diagnostics)&&return diagnostics,nothing,nothing
     topology,parameters = try
         _compile_hierarchy(design)
     catch error
         push!(diagnostics,Diagnostic(:error,sprint(showerror,error)))
-        return diagnostics
+        return diagnostics,nothing,nothing
     end
     net_count=topology.hierarchy.solver_net_count
     adjacency=[Int32[] for _ in 0:net_count]
@@ -114,8 +114,11 @@ function check(design::CircuitDesign)
             end
         end
     end
-    diagnostics
+    diagnostics,topology,parameters
 end
+
+"""Return structural and compiled-topology diagnostics for an immutable design."""
+check(design::CircuitDesign)=first(_check_and_compile(design))
 
 function explain(design::CircuitDesign)
     diagnostics = check(design)
@@ -125,6 +128,7 @@ function explain(design::CircuitDesign)
     if isempty(diagnostics)
         println(io, "Structural check: no errors detected; the design is ready to compile.")
     else
+        println(io, "Structural check: $(length(diagnostics)) issue(s) detected.")
         for diagnostic in diagnostics
             println(io, uppercase(String(diagnostic.severity)), ": ", diagnostic.message)
         end

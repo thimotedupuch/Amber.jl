@@ -7,7 +7,7 @@ function ConductanceCrossbar(;conductances=[2.0 1.0 0.5; 0.5 1.5 2.0].*μS,
     length(inputs)==columns||throw(ArgumentError("one input voltage is required per crossbar column"))
     all(>=(0),conductances)||throw(ArgumentError("physical conductances must be nonnegative"))
 
-    c=Circuit(:ConductanceCrossbar)
+    c=CircuitBuilder(:ConductanceCrossbar)
     gnd=ground!(c,:gnd)
     positive_rail=node!(c,:positive_rail)
     negative_rail=node!(c,:negative_rail)
@@ -36,5 +36,5 @@ function ConductanceCrossbar(;conductances=[2.0 1.0 0.5; 0.5 1.5 2.0].*μS,
             name=Symbol(:Rfeedback_,row))
         observe!(c,voltage(output_nodes[row]);name=Symbol(:output_,row))
     end
-    c
+    finish(c)
 end

@@ -99,6 +99,16 @@ struct TopologyParameterError <: Exception
     path::String
     parameter::Symbol
 end
+
+struct ParameterUpdateError <: Exception
+    path::String
+    parameter::Symbol
+    expected_type::Any
+    value_type::Any
+end
+function Base.showerror(io::IO,error::ParameterUpdateError)
+    print(io,"cannot update $(error.path).$(error.parameter) with $(error.value_type); compiled storage requires $(error.expected_type). Rebuild the design when changing parameter representation.")
+end
 function Base.showerror(io::IO, error::TopologyParameterError)
     print(io, "$(error.path).$(error.parameter) is structural; rebuild the affected template or design instead of applying a numerical override")
 end
@@ -211,6 +221,10 @@ function _stamp_shape(kind::Symbol, contract::DeviceContract)
         return 8
     elseif kind === :opamp
         return 9
+    elseif kind === :behavioral_current_source
+        return 16
+    elseif kind === :behavioral_voltage_source
+        return 12
     end
     throw(ArgumentError("unsupported device kind $(kind)"))
 end
@@ -239,6 +253,12 @@ function _emit_stamp_positions!(emit, kind::Symbol, q, branch::Int32, states, co
         state = first(states)
         emit(q[3], branch); emit(branch, q[3]); emit(branch, branch); emit(branch, state)
         emit(branch, q[4]); emit(branch, q[5]); emit(state, state); emit(state, q[1]); emit(state, q[2])
+    elseif kind === :behavioral_current_source
+        for row in q[1:2], column in q[3:10]; emit(row, column) end
+    elseif kind === :behavioral_voltage_source
+        emit(q[1], branch); emit(q[2], branch)
+        emit(branch, q[1]); emit(branch, q[2])
+        for column in q[3:10]; emit(branch, column) end
     end
 end
 
@@ -460,15 +480,22 @@ end
 function _updated_batch(batch::ResistorBatch, design, selector, value)
     selector_instance, selector_range, selector_device, parameter = selector
     parameter in _STRUCTURAL_PARAMETER_NAMES && throw(TopologyParameterError(join(filter(!isempty, (selector_instance, selector_device)), '.'), parameter))
-    parameter === :value || throw(ArgumentError("resistor batches expose the numerical parameter `value`"))
     conductance = batch.conductance; parameters = batch.parameters; copied = false; matches = Int[]
     for (index, locator) in enumerate(batch.locators)
         instance_path, device_name = _locator_device_name(design, locator)
         _matches_selector(instance_path, device_name, selector_instance, selector_range, selector_device) || continue
-        copied || (conductance = copy(conductance); parameters = copy(parameters); copied = true)
-        conductance[index] = inv(convert(eltype(conductance), value)); push!(matches, index)
+        parameter === :value || throw(ArgumentError("resistor batches expose the numerical parameter `value`"))
         P = eltype(parameters)
-        parameters[index] = convert(P, merge(parameters[index], (value=value,)))
+        converted_conductance,updated_parameters=try
+            inv(convert(eltype(conductance),value)),convert(P,merge(parameters[index],(value=value,)))
+        catch error
+            error isa InterruptException&&rethrow()
+            path=isempty(instance_path) ? device_name : string(instance_path,'.',device_name)
+            throw(ParameterUpdateError(path,parameter,eltype(conductance),typeof(value)))
+        end
+        copied || (conductance = copy(conductance); parameters = copy(parameters); copied = true)
+        conductance[index]=converted_conductance; parameters[index]=updated_parameters
+        push!(matches,index)
     end
     copied ? ResistorBatch(batch.p, batch.n, conductance, parameters, batch.residual_slots, batch.jacobian_slots, batch.locators) : batch, matches
 end
@@ -481,9 +508,21 @@ function _updated_batch(batch::PrimitiveBatch{K,N,P}, design, selector, value) w
     for (index, locator) in enumerate(batch.locators)
         instance_path, device_name = _locator_device_name(design, locator)
         _matches_selector(instance_path, device_name, selector_instance, selector_range, selector_device) || continue
-        hasproperty(values[index], parameter) || throw(ArgumentError("device $(device_name) has no numerical parameter $(parameter)"))
+        direct=hasproperty(values[index],parameter)
+        model=hasproperty(values[index],:model) ? values[index].model : nothing
+        model_values=model===nothing ? nothing : model_parameters(model)
+        modeled=model_values!==nothing&&hasproperty(model_values,parameter)
+        (direct||modeled)||throw(ArgumentError("device $(device_name) has no numerical parameter $(parameter)"))
         copied || (values = copy(values); copied = true)
-        values[index] = convert(P, merge(values[index], NamedTuple{(parameter,)}((value,))))
+        updated=direct ? merge(values[index],NamedTuple{(parameter,)}((value,))) :
+            merge(values[index],(model=with_model_parameter(model,parameter,value),))
+        try
+            values[index]=convert(P,updated)
+        catch error
+            error isa InterruptException&&rethrow()
+            path=isempty(instance_path) ? device_name : string(instance_path,'.',device_name)
+            throw(ParameterUpdateError(path,parameter,P,typeof(value)))
+        end
         push!(matches, index)
     end
     copied ? PrimitiveBatch{K,N,P}(batch.terminals, values, batch.residual_slots, batch.jacobian_slots,
@@ -510,7 +549,6 @@ Untouched batches and all topology arrays are shared. Structural parameters are
 rejected because changing them requires hierarchy elaboration and a new pattern.
 """
 function with_parameters(compiled, updates::Pair...)
-    compiled.design === nothing && throw(ArgumentError("with_parameters requires a compiled CircuitDesign"))
     batches = collect(compiled.parameters.batches)
     for (selector_text, value) in updates
         selector = _parse_parameter_selector(String(selector_text))

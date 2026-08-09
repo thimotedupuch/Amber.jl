@@ -2,6 +2,8 @@
 
 ```@docs
 SimulationResult
+observations
+observation
 voltage
 current
 power

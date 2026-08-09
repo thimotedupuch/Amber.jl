@@ -208,6 +208,7 @@ struct TemplateIR
     observations::Vector{Any}
 end
 
+"""Immutable reusable circuit template with explicit ports and parameters."""
 struct SubcircuitTemplate <: AbstractCircuitDefinition
     name::NameId
     ports::Vector{PortSpec}
@@ -259,6 +260,9 @@ end
 struct ObservationSet
     values::Vector{Any}
 end
+Base.length(observations::ObservationSet)=length(observations.values)
+Base.iterate(observations::ObservationSet,state...)=iterate(observations.values,state...)
+Base.getindex(observations::ObservationSet,index)=observations.values[index]
 struct DesignMetadata
     values::Dict{String,Any}
 end
@@ -271,6 +275,7 @@ struct PathTrie
     nodes::Vector{_PathNode}
 end
 
+"""Immutable hierarchical circuit definition produced by `finish` or `@circuit`."""
 struct CircuitDesign <: AbstractCircuitDefinition
     name::NameId
     templates::TemplateRegistry
@@ -285,6 +290,7 @@ struct CircuitDesign <: AbstractCircuitDefinition
 end
 
 const _BUILDER_OWNER = Threads.Atomic{UInt64}(0)
+"""Mutable construction context; call `finish` to produce a `CircuitDesign`."""
 mutable struct CircuitBuilder
     owner::UInt64
     generation::UInt32
@@ -410,7 +416,8 @@ function _add_raw!(builder::CircuitBuilder, component::PrimitiveDraft, name)
     end
     start = Int32(length(builder.terminal_data) + 1)
     append!(builder.terminal_data, terminals)
-    name_id = _intern!(builder.names, name)
+    segment = _name_segment!(builder.names, name)
+    name_id = _intern!(builder.names, _render_segment((builder.names.strings[Int(segment.base)],segment.index)))
     parameters = _primitive_parameters(builder, component.parameters)
     kernel = Val(_draft_kind(component))
     stop = start + Int32(length(terminals) - 1)
@@ -425,7 +432,7 @@ _without(parameters::NamedTuple,removed::Tuple)=begin
 end
 _hidden_name(name,suffix)=string(name,'.',suffix)
 
-function add!(builder::CircuitBuilder, component::PrimitiveDraft; name::Union{Symbol,AbstractString}=string(_draft_kind(component),length(builder.primitives) + 1))
+function add!(builder::CircuitBuilder, component::PrimitiveDraft; name=string(_draft_kind(component),length(builder.primitives) + 1))
     kind=_draft_kind(component); parameters=component.parameters; terminals=component.terminals
     if kind===:resistor
         package=get(parameters,:package,nothing)
@@ -717,6 +724,7 @@ function _template_signature(name, ports, parameters, body, names)
         [(segment.base.value, segment.index) for segment in body.net_names], primitive_signature)
 end
 
+"""Finish a top-level builder and return its immutable `CircuitDesign`."""
 function finish(builder::CircuitBuilder)
     _assert_open(builder)
     builder.finished = true
@@ -767,7 +775,8 @@ end
 
 const _HIERARCHY_PRIMITIVES = (:resistor, :capacitor, :inductor, :conductance, :voltage_source, :current_source,
     :transconductance, :voltage_controlled_voltage_source, :current_controlled_current_source,
-    :current_controlled_voltage_source, :diode, :npn, :nmos, :pmos, :opamp, :analog_switch)
+    :current_controlled_voltage_source, :diode, :npn, :nmos, :pmos, :opamp, :analog_switch,
+    :behavioral_current_source, :behavioral_voltage_source)
 
 function _template_macro_rewrite(expression, builder)
     expression isa Expr || return expression
@@ -926,6 +935,15 @@ end
 
 function devices(design::CircuitDesign; under=nothing, kind=nothing, limit::Integer=100)
     output = NamedTuple[]
+    if under === nothing || isempty(String(under))
+        for (primitive_index, primitive) in enumerate(design.root_ir.primitives)
+            primitive_kind = typeof(primitive.kernel).parameters[1]
+            kind !== nothing && primitive_kind != kind && continue
+            path = DevicePath([(_name(design.names, primitive.name), nothing)])
+            push!(output, (instance=nothing, path, kind=primitive_kind))
+            length(output) >= limit && return output
+        end
+    end
     for (instance_index, record) in enumerate(design.root.records)
         prefix = _path_segments(design, record.path)
         under !== nothing && !startswith(string(InstancePath(prefix)), string(under)) && continue
@@ -961,6 +979,10 @@ end
 function resolve(design::CircuitDesign, path_value::Union{AbstractString,AbstractElementPath})
     path = path_value isa AbstractString ? parsepath(path_value) : path_value
     target = string(path)
+    for (primitive_index, primitive) in enumerate(design.root_ir.primitives)
+        _name(design.names, primitive.name) == target &&
+            return ResolvedElement(:device, DevicePath(path.segments), nothing, primitive_index)
+    end
     for (index, record) in enumerate(design.root.records)
         instance_path = InstancePath(_path_segments(design, record.path))
         string(instance_path) == target && return ResolvedElement(:instance, instance_path, InstanceId(index), index)

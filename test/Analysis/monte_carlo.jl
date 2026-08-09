@@ -36,8 +36,13 @@ using Statistics
     @test all(correlated_run.converged)
     @test_throws ArgumentError monte_carlo(LowPass();samples=1,variations=Dict(Symbol("missing.value")=>Gaussian(1,1)),metric)
 
-    tolerance_circuit=LowPass()
-    only(filter(component->component.name===:R1,tolerance_circuit.components)).parameters[:tolerance]=.1
+    @circuit ToleranceLowPass() begin
+        gnd=ground(); vin=node(); vout=node()
+        V1=voltage_source(vin,gnd;dc=1V)
+        R1=resistor(vin,vout;value=10kΩ,tolerance=.1)
+        C1=capacitor(vout,gnd;value=10nF)
+    end
+    tolerance_circuit=ToleranceLowPass()
     tolerance_run=monte_carlo(tolerance_circuit;samples=12,seed=7,metric)
     resistance_draws=[draw[Symbol("R1.value")] for draw in sample_parameters(tolerance_run)]
     @test all(9kΩ .<= resistance_draws .<= 11kΩ)

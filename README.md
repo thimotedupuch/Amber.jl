@@ -2,6 +2,8 @@
 
 Amber is an MIT-licensed, native Julia environment for constructing and simulating analog electronic circuits. Circuits are ordinary Julia objects; Amber takes a compiler-centric approach to analog simulation by translating user-defined circuits into an explicit **Circuit IR**, which is then mapped into a **hierarchical compiled circuit** with a highly optimized, reusable sparse generalized MNA topology.
 
+> **TO REWRITE:** This overview still contains some pre-hierarchy API wording and needs a dedicated documentation pass.
+
 The solver suite implements operating-point, native BDF1/BDF2 transient, small-signal AC, frequency-domain noise propagation, and **harmonic/spectral analysis** without relying on an external SPICE engine.
 
 ```julia

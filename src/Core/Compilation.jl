@@ -30,9 +30,9 @@ function _materialize_parameter(value, values, netmap=nothing)
 end
 
 function compile(design::CircuitDesign)
-    diagnostics=filter(diagnostic->diagnostic.severity===:error,check(design))
+    all_diagnostics,topology,parameters=_check_and_compile(design)
+    diagnostics=filter(diagnostic->diagnostic.severity===:error,all_diagnostics)
     isempty(diagnostics)||throw(CircuitValidationError(diagnostics))
-    topology, parameters = _compile_hierarchy(design)
     fingerprint = bytes2hex(sha1(string(design.structural_fingerprint, ':', design.parameter_fingerprint)))
     CompiledCircuit(design, topology, parameters, fingerprint)
 end

@@ -14,6 +14,6 @@
     @test loop_sensitivity(result)≈fill(inv(11),2)
     @test !isdefined(Amber,:return_ratio)
 
-    bad=FeedbackReference(); only(component for component in bad.components if component.name===:Probe).parameters[:dc]=1V
+    bad=with_parameters(compile(FeedbackReference()),"Probe.dc"=>1V)
     @test_throws ArgumentError loop_gain(bad,[1kHz];probe=VoltageLoopProbe(:Probe,voltage(:output)))
 end

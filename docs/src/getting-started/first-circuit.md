@@ -31,7 +31,7 @@ check(circuit)
 ```
 
 `@circuit` is convenience syntax, not a separate circuit language. It creates
-an ordinary function returning a [`Circuit`](@ref). Keyword arguments are
+an ordinary function returning a [`CircuitDesign`](@ref). Keyword arguments are
 ordinary Julia arguments, and loops, conditionals, and helper functions remain
 available.
 

@@ -22,11 +22,12 @@ end
     @test all(isfinite,group_delay(grid,voltage(result,:vout)))
     @test_throws AnalysisValidationError small_signal(LowPass(),[1kHz,100Hz])
 
-    multiple=LowPass()
-    input=only(component for component in multiple.components if component.name===:V1)
-    input.parameters[:ac]=1+1im
-    serialized=deserialize_circuit(serialize_circuit(multiple))
-    @test only(component for component in serialized.components if component.name===:V1).parameters[:ac]==1+1im
+    @circuit ComplexACSource() begin
+        gnd=ground(); input=node()
+        V1=voltage_source(input,gnd;ac=1+1im)
+    end
+    serialized=deserialize_circuit(serialize_circuit(ComplexACSource()))
+    @test Amber.ac_excitation(compile(serialized))[end]==1+1im
 end
 
 @testset "single canonical small-signal API" begin

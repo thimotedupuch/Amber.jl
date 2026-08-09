@@ -140,10 +140,40 @@ function _segment_restore(snapshot, names::_NameBuilder, max_depth)
     NameSegment(_intern!(names, snapshot["base"]), _hierarchy_decode(snapshot["index"], max_depth))
 end
 
+function _observation_reference_snapshot(value)
+    value isa BuilderNet && return Dict("type"=>"net","id"=>Int(value.id))
+    value isa BuilderPrimitive && return Dict("type"=>"primitive","id"=>Int(value.id))
+    value isa Symbol && return Dict("type"=>"symbol","value"=>String(value))
+    value isa AbstractString && return Dict("type"=>"string","value"=>String(value))
+    value === nothing && return Dict("type"=>"nothing")
+    throw(ArgumentError("unsupported hierarchical observation reference $(typeof(value))"))
+end
+
 function _observation_snapshot(observation)
     value = observation.value
-    value isa BuilderNet || throw(ArgumentError("hierarchical serialization currently supports net observations"))
-    Dict("name" => observation.name === nothing ? "" : observation.name, "net" => Int(value.id))
+    if value isa BuilderNet || value isa BuilderPrimitive
+        return Dict("name"=>observation.name===nothing ? "" : String(observation.name),
+            "kind"=>"raw", "target"=>_observation_reference_snapshot(value),
+            "extra"=>_observation_reference_snapshot(nothing))
+    end
+    value isa Observable || throw(ArgumentError("hierarchical observations must be Observable values or builder handles"))
+    Dict("name" => observation.name === nothing ? "" : String(observation.name),
+        "kind"=>String(value.kind), "target"=>_observation_reference_snapshot(value.target),
+        "extra"=>_observation_reference_snapshot(value.extra))
+end
+
+function _observation_reference_restore(snapshot,names,primitives,owner,generation)
+    kind=snapshot["type"]
+    kind=="nothing"&&return nothing
+    kind=="symbol"&&return Symbol(snapshot["value"])
+    kind=="string"&&return String(snapshot["value"])
+    id=Int32(snapshot["id"])
+    kind=="net"&&return BuilderNet(owner,generation,id,names[Int(id)])
+    kind=="primitive"&&begin
+        1<=id<=length(primitives)||throw(CircuitSerializationError("observation refers to an unknown primitive"))
+        return BuilderPrimitive(owner,generation,id,primitives[Int(id)].name)
+    end
+    throw(CircuitSerializationError("unknown observation reference type $(kind)"))
 end
 
 function _primitive_snapshot(primitive, body::TemplateIR, names::NameTable)
@@ -216,10 +246,10 @@ function _restore_body(snapshot, names::_NameBuilder, owner::UInt64, generation:
     end
     observations = Any[]
     for observation in get(snapshot, "observations", Any[])
-        net_id = Int32(observation["net"])
-        1 <= net_id <= length(net_names) || throw(CircuitSerializationError("observation refers to an unknown hierarchical net"))
-        handle = BuilderNet(owner, generation, net_id, net_names[Int(net_id)])
-        push!(observations, (name=isempty(observation["name"]) ? nothing : observation["name"], value=handle))
+        target=_observation_reference_restore(observation["target"],net_names,primitives,owner,generation)
+        extra=_observation_reference_restore(observation["extra"],net_names,primitives,owner,generation)
+        value=observation["kind"]=="raw" ? target : Observable(Symbol(observation["kind"]),target,extra)
+        push!(observations, (name=isempty(observation["name"]) ? nothing : observation["name"], value=value))
     end
     TemplateIR(net_names, Int32(snapshot["ground_net"]), terminal_data, primitives, observations)
 end

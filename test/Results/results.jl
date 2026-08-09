@@ -17,10 +17,14 @@
     @test length(state(sampler_op,:Buffer,:dominant_pole))==1
     @circuit NamedObservation() begin
         reference=ground(); output=node(); source=voltage_source(output,reference;dc=3V)
-        observe(voltage(output);name=:output)
+        observe(voltage(output);name=:measured_output)
     end
     named=NamedObservation()
-    @test voltage(operating_point(named),:output)[1]≈3V
+    named_result=operating_point(named)
+    @test only(observations(named)).name===:measured_output
+    @test observation(named_result,:measured_output)[1]≈3V
+    @test trace(named_result,:measured_output)==observation(named_result,:measured_output)
+    @test voltage(named_result,:measured_output)==observation(named_result,:measured_output)
     rectifier_result=transient(HalfWaveRectifier(),0s=>2ms;max_step=100μs)
     validity=validity_report(rectifier_result)
     @test haskey(validity[:devices],"D1")

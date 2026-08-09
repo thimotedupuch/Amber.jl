@@ -1,25 +1,26 @@
 # Hierarchy and reusable subcircuits
 
-Ordinary Julia functions are Amber's primary composition mechanism. A helper receives a circuit and boundary nodes, creates consistently named elements, and returns useful handles.
+`@subcircuit` defines reusable hierarchy with explicit ports and parameters. Instances retain qualified paths for diagnostics, results, sweeps, and Monte Carlo.
 
 ```@example hierarchy
 using Amber
-function rc_section!(c, prefix, input, output, gnd; r, capacitance)
-    add!(c, resistor(input, output; value=r); name=Symbol(prefix, ".r"))
-    add!(c, capacitor(output, gnd; value=capacitance); name=Symbol(prefix, ".c"))
-    output
+@subcircuit RCSection(input, output, reference; resistance=1kΩ, capacitance=1μF) begin
+    R = resistor(input, output; value=resistance)
+    C = capacitor(output, reference; value=capacitance)
 end
 
-c = Circuit(:two_pole_ladder)
-vin, mid, out = (node!(c, n) for n in (:vin, :mid, :out))
-gnd = ground!(c)
-add!(c, voltage_source(vin, gnd; dc=1.0); name=:drive)
-rc_section!(c, "stage1", vin, mid, gnd; r=1e3, capacitance=1e-6)
-rc_section!(c, "stage2", mid, out, gnd; r=1e3, capacitance=1e-6)
-observe!(c, voltage(out))
-voltage(operating_point(c), :out)[1]
+@circuit TwoPoleLadder() begin
+    gnd = ground(); vin = node(); mid = node(); out = node()
+    Drive = voltage_source(vin, gnd; dc=1V)
+    First = RCSection(vin, mid, gnd; resistance=1kΩ, capacitance=1μF)
+    Second = RCSection(mid, out, gnd; resistance=1kΩ, capacitance=1μF)
+    observe(voltage(out))
+end
+
+design = TwoPoleLadder()
+voltage(operating_point(design), :out)[1]
 ```
 
-This style keeps hierarchy transparent: there is one circuit graph and names such as `stage1.r` remain available to diagnostics and Monte Carlo parameter paths. Amber does not currently preserve nested instances as a separate runtime object model. Prefix names consistently when composing repeated blocks.
+Paths such as `First.R` remain available to diagnostics and parameter studies. Use `instances(design)`, `devices(design)`, `nets(design)`, and `resolve(design, path)` to inspect retained hierarchy without flattening it.
 
-Return nodes, component handles, or a small named tuple from helpers rather than searching by position later. Parameterize helpers with physical values and model objects; this makes the same block usable in sweeps and statistical experiments.
+Subcircuits must receive their reference net as an explicit port; `ground()` is only valid at the top level. Parameterize blocks with physical values and model objects so the same template remains usable in sweeps and statistical experiments.

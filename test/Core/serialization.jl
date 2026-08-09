@@ -6,8 +6,8 @@
 
     restored=deserialize_circuit(text)
     @test restored.name==original.name
-    @test map(x->x.name,restored.nodes)==map(x->x.name,original.nodes)
-    @test map(x->x.name,restored.components)==map(x->x.name,original.components)
+    @test summary(restored).nets==summary(original).nets
+    @test summary(restored).primitive_devices==summary(original).primitive_devices
     @test serialize_circuit(restored)==text
     @test compile(restored).fingerprint==compile(original).fingerprint
 
@@ -34,6 +34,6 @@
     end
 
     @test_throws CircuitSerializationError deserialize_circuit("schema = \"other\"")
-    bad=replace(text,"schema_version = 2"=>"schema_version = 999";count=1)
+    bad=replace(text,"schema_version = 3"=>"schema_version = 999";count=1)
     @test_throws CircuitSerializationError deserialize_circuit(bad)
 end

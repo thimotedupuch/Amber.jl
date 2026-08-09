@@ -68,7 +68,7 @@ function _noise_injection(cc,positive,negative)
     vector
 end
 
-function _noise_injection(cc,weights::Pair{Int,<:Number}...)
+function _noise_injection(cc,weights::Pair{<:Integer,<:Number}...)
     vector=zeros(ComplexF64,cc.n)
     for (index,weight) in weights
         index>0&&(vector[index]+=weight)
@@ -105,18 +105,17 @@ function _noise_parent_name(name::Symbol)
     name
 end
 
-function _device_noise_sources(cc,component_index,op;temperature=300.)
-    component=cc.circuit.components[component_index]
-    kind=component.kind
-    parameters=component.parameters
-    terminals=map(node->_idx(cc,node),component.terminals)
-    owner=component.name
+function _device_noise_sources(cc,batch,device,op;temperature=300.)
+    kind=_batch_kind(batch)
+    parameters=batch.parameters[device]
+    terminals=[Int(_batch_terminal(batch,index,device)) for index in 1:(batch isa ResistorBatch ? 2 : length(batch.terminals))]
+    instance_name,device_name=_locator_device_name(cc.design,batch.locators[device])
+    owner=Symbol(isempty(instance_name) ? device_name : string(instance_name,'.',device_name))
     sources=NoiseSource[]
     groups=NoiseCorrelationGroup[]
 
     if kind in (:resistor,:conductance)
-        conductance=kind===:resistor ? inv(Float64(parameters[:value])) :
-            Float64(parameters[:value])
+        conductance=kind===:resistor ? batch.conductance[device] : Float64(parameters.value)
         injection=_noise_injection(cc,terminals[1],terminals[2])
         _push_source!(sources,:thermal,owner,:thermal,injection,
             (_frequency,_bias,_time)->4*_BOLTZMANN*temperature*conductance)
@@ -131,7 +130,7 @@ function _device_noise_sources(cc,component_index,op;temperature=300.)
     elseif kind===:voltage_source
         resistance=Float64(get(parameters,:series_resistance,0.))
         if resistance>0
-            branch=cc.branches[component_index]
+            branch=batch.branch_unknowns[device]
             _push_source!(sources,:series_resistance,owner,:thermal,
                 _noise_injection(cc,branch=>1),
                 (_frequency,_bias,_time)->4*_BOLTZMANN*temperature*resistance)
@@ -210,7 +209,7 @@ function _device_noise_sources(cc,component_index,op;temperature=300.)
                 model.flicker_reference_frequency))
     elseif kind===:switch
         model=parameters[:model]
-        control=_switch_control(cc,component,op,terminals,0.,:dc)
+        control=_v(op,terminals[3])-_v(op,terminals[4])
         conductance=_switch_conductance(model,control)
         _push_source!(sources,:channel_thermal,owner,:thermal,
             _noise_injection(cc,terminals[1],terminals[2]),
@@ -218,8 +217,8 @@ function _device_noise_sources(cc,component_index,op;temperature=300.)
     elseif kind===:opamp
         model=parameters[:model]
         positive,negative,output,positive_rail,negative_rail=terminals
-        branch=cc.branches[component_index]
-        state=cc.states[(component_index,:dominant_pole)]
+        branch=batch.branch_unknowns[device]
+        state=only(batch.state_unknowns[device])
         pole=2π*model.gain_bandwidth/max(model.dc_gain,1.)
         voltage_group=abs(model.voltage_current_noise_correlation)>0 ?
             Symbol(owner,".input_noise") : nothing
@@ -279,10 +278,12 @@ end
 function noise_sources(cc,op;temperature=300.)
     sources=NoiseSource[]
     groups=NoiseCorrelationGroup[]
-    for component_index in eachindex(cc.circuit.components)
-        local_sources,local_groups=_device_noise_sources(cc,component_index,op;temperature)
-        append!(sources,local_sources)
-        append!(groups,local_groups)
+    for batch in cc.parameters.batches
+        for device in eachindex(batch.parameters)
+            local_sources,local_groups=_device_noise_sources(cc,batch,device,op;temperature)
+            append!(sources,local_sources)
+            append!(groups,local_groups)
+        end
     end
     sources,groups
 end
@@ -310,13 +311,12 @@ end
 
 function _noise_output_direct(cc,observable,source)
     observable.kind===:current||return 0.
-    target=observable.target isa Component ? observable.target.name :
-        Symbol(observable.target)
-    component_index=_findcomponent(cc,target)
-    component_index===nothing&&return 0.
-    component=cc.circuit.components[component_index]
-    component.kind in (:resistor,:conductance)||return 0.
-    startswith(String(source.id),String(component.name)*".") ? 1. : 0.
+    target=String(observable.target)
+    located=_hierarchical_device(cc,target)
+    located===nothing&&return 0.
+    batch,_=located
+    _batch_kind(batch) in (:resistor,:conductance)||return 0.
+    startswith(String(source.id),target*".") ? 1. : 0.
 end
 
 function noise(c,frequency_specification;output,input=nothing,points=100,scale=:log,
@@ -327,7 +327,7 @@ function noise(c,frequency_specification;output,input=nothing,points=100,scale=:
     any(iszero,frequencies)&&throw(AnalysisValidationError(
         "stationary noise frequencies must be positive because power-law noise is undefined at DC"))
     cc=compile(c)
-    diagnostics=filter(diagnostic->diagnostic.severity===:error,check(cc.circuit))
+    diagnostics=filter(diagnostic->diagnostic.severity===:error,check(cc.design))
     isempty(diagnostics)||throw(CircuitValidationError(diagnostics))
     if bias===nothing
         point=_require_converged(
@@ -436,9 +436,8 @@ function noise_figure(result::NoiseResult;source_resistance)
     resistance=Float64(source_resistance)
     resistance>0&&isfinite(resistance)||throw(ArgumentError(
         "source resistance must be finite and positive"))
-    input_index=_findcomponent(result.compiled,result.input_source)
-    input_index!==nothing&&
-        result.compiled.circuit.components[input_index].kind===:voltage_source||
+    located=_hierarchical_device(result.compiled,result.input_source)
+    located!==nothing&&_batch_kind(first(located))===:voltage_source||
         throw(ArgumentError("noise figure with source_resistance requires a voltage input source"))
     temperature=Float64(result.stats[:temperature])
     source_psd=4*_BOLTZMANN*temperature*resistance
@@ -462,9 +461,13 @@ report(result::NoiseResult)=Dict(
 
 function _noise_validity_warnings(compiled,initial=String[])
     warnings=copy(initial)
-    for component in compiled.circuit.components
-        component.kind in (:nmos,:pmos)||continue
-        push!(warnings,"$(component.name): Level1MOSFET noise excludes body-diode, junction, substrate, and foundry BSIM mechanisms")
+    for batch in compiled.parameters.batches
+        _batch_kind(batch) in (:nmos,:pmos)||continue
+        for device in eachindex(batch.parameters)
+            instance_name,device_name=_locator_device_name(compiled.design,batch.locators[device])
+            name=isempty(instance_name) ? device_name : string(instance_name,'.',device_name)
+            push!(warnings,"$(name): Level1MOSFET noise excludes body-diode, junction, substrate, and foundry BSIM mechanisms")
+        end
     end
     warnings
 end

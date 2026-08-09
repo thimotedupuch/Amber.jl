@@ -15,7 +15,7 @@ using LinearAlgebra: norm
     expected=.5model.transconductance*(2.5V-model.threshold_voltage)^2*(1+model.channel_length_modulation*3V)
     @test current(nresult,:M1)[1]≈expected rtol=2e-10
     @test region(nresult,:M1)==Saturation
-    @test available_observables(only(filter(x->x.name===:M1,BiasedNMOS().components)))==(:voltage,:current,:power)
+    @test available_observables(only(devices(BiasedNMOS();kind=:nmos)))==(:voltage,:current,:power)
 
     @circuit BiasedPMOS() begin
         gnd=ground(); supply=node(); drain=node(); gate=node()
@@ -58,7 +58,8 @@ using LinearAlgebra: norm
     serialized=serialize_circuit(CMOSInverter())
     restored=deserialize_circuit(serialized)
     @test serialize_circuit(restored)==serialized
-    @test restored.components[3].parameters[:model] isa Level1MOSFET
+    restored_device=Amber._hierarchical_device(compile(restored),:PullUp)
+    @test restored_device[1].parameters[restored_device[2]].model isa Level1MOSFET
 
     compiled=compile(CMOSInverter()); point=operating_point(compiled).values[:,1]
     previous=point .- range(1e-7,4e-7;length=compiled.n); α=2e5

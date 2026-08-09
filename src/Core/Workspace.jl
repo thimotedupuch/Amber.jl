@@ -163,6 +163,52 @@ function _assemble_batch!(workspace, batch::PrimitiveBatch{Val{:vccs}}, state, d
     nothing
 end
 
+function _assemble_batch!(workspace, batch::PrimitiveBatch{Val{:behavioral_current_source}}, state, derivative, t, α, mode, source_scale, temperature)
+    residual = workspace.residual; nzval = workspace.jacobian.nzval
+    @inbounds for device in eachindex(batch.parameters)
+        q = ntuple(index -> batch.terminals[index][device], 10)
+        controls = ntuple(index -> _workspace_value(state, q[2index + 1]) -
+            _workspace_value(state, q[2index + 2]), 4)
+        parameters = batch.parameters[device]
+        current = parameters.current(controls, t)
+        gradient = parameters.gradient(controls, t)
+        length(gradient) == 4 || throw(ArgumentError("behavioral current gradient must have four entries"))
+        _workspace_add!(residual, q[1], current); _workspace_add!(residual, q[2], -current)
+        ordinal = 0
+        for row_sign in (1, -1), control in 1:4, control_sign in (1, -1)
+            ordinal += 1
+            _workspace_stamp!(nzval, batch.jacobian_slots[ordinal, device],
+                row_sign * control_sign * gradient[control])
+        end
+    end
+    nothing
+end
+
+function _assemble_batch!(workspace, batch::PrimitiveBatch{Val{:behavioral_voltage_source}}, state, derivative, t, α, mode, source_scale, temperature)
+    residual = workspace.residual; nzval = workspace.jacobian.nzval
+    @inbounds for device in eachindex(batch.parameters)
+        q = ntuple(index -> batch.terminals[index][device], 10)
+        branch = batch.branch_unknowns[device]
+        controls = ntuple(index -> _workspace_value(state, q[2index + 1]) -
+            _workspace_value(state, q[2index + 2]), 4)
+        parameters = batch.parameters[device]
+        imposed_voltage = parameters.voltage(controls, t)
+        gradient = parameters.gradient(controls, t)
+        length(gradient) == 4 || throw(ArgumentError("behavioral voltage gradient must have four entries"))
+        current = state[Int(branch)]
+        _workspace_add!(residual, q[1], current); _workspace_add!(residual, q[2], -current)
+        residual[Int(branch)] += _workspace_value(state, q[1]) -
+            _workspace_value(state, q[2]) - imposed_voltage
+        values = (one(current), -one(current), one(current), -one(current),
+            -gradient[1], gradient[1], -gradient[2], gradient[2],
+            -gradient[3], gradient[3], -gradient[4], gradient[4])
+        for ordinal in eachindex(values)
+            _workspace_stamp!(nzval, batch.jacobian_slots[ordinal, device], values[ordinal])
+        end
+    end
+    nothing
+end
+
 function _assemble_batch!(workspace, batch::PrimitiveBatch{Val{:vcvs}}, state, derivative, t, α, mode, source_scale, temperature)
     residual = workspace.residual; nzval = workspace.jacobian.nzval
     @inbounds for device in eachindex(batch.parameters)
@@ -334,6 +380,8 @@ _inplace_batch_supported(::PrimitiveBatch{Val{:resistor}}) = true
 _inplace_batch_supported(::PrimitiveBatch{Val{:conductance}}) = true
 _inplace_batch_supported(::PrimitiveBatch{Val{:capacitor}}) = true
 _inplace_batch_supported(::PrimitiveBatch{Val{:current_source}}) = true
+_inplace_batch_supported(::PrimitiveBatch{Val{:behavioral_current_source}}) = true
+_inplace_batch_supported(::PrimitiveBatch{Val{:behavioral_voltage_source}}) = true
 _inplace_batch_supported(::PrimitiveBatch{Val{:voltage_source}}) = true
 _inplace_batch_supported(::PrimitiveBatch{Val{:inductor}}) = true
 _inplace_batch_supported(::PrimitiveBatch{Val{:vccs}}) = true
@@ -353,6 +401,8 @@ _linear_batch(::PrimitiveBatch{Val{:resistor}}) = true
 _linear_batch(::PrimitiveBatch{Val{:conductance}}) = true
 _linear_batch(::PrimitiveBatch{Val{:capacitor}}) = true
 _linear_batch(::PrimitiveBatch{Val{:current_source}}) = true
+_linear_batch(::PrimitiveBatch{Val{:behavioral_current_source}}) = false
+_linear_batch(::PrimitiveBatch{Val{:behavioral_voltage_source}}) = false
 _linear_batch(::PrimitiveBatch{Val{:voltage_source}}) = true
 _linear_batch(::PrimitiveBatch{Val{:inductor}}) = true
 _linear_batch(::PrimitiveBatch{Val{:vccs}}) = true

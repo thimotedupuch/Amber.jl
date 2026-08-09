@@ -34,17 +34,17 @@ ports. Its load capacitor represents the next stage's wiring and input load in
 addition to the MOSFETs' intrinsic gate capacitances.
 
 ```@example cmos_ring
-@circuit RingStage(
+@subcircuit RingStage(
     input,
     output,
-    supply;
+    supply,
+    reference;
     load_capacitance=5pF,
     initial_output=nothing,
 ) begin
-    gnd = ground()
     PullUp = pmos(output, input, supply, supply; model=ring_pmos)
-    PullDown = nmos(output, input, gnd, gnd; model=ring_nmos)
-    Load = capacitor(output, gnd; value=load_capacitance)
+    PullDown = nmos(output, input, reference, reference; model=ring_nmos)
+    Load = capacitor(output, reference; value=load_capacitance)
     if initial_output !== nothing
         initial_voltage(Load, initial_output)
     end
@@ -70,15 +70,15 @@ small capacitor offsets provide an explicit, reproducible startup perturbation.
     stage4 = node()
     stage5 = node()
     VDD = voltage_source(supply, gnd; dc=supply_voltage)
-    First = RingStage(stage5, stage1, supply; load_capacitance,
+    First = RingStage(stage5, stage1, supply, gnd; load_capacitance,
         initial_output=supply_voltage / 2 + startup_offset)
-    Second = RingStage(stage1, stage2, supply; load_capacitance,
+    Second = RingStage(stage1, stage2, supply, gnd; load_capacitance,
         initial_output=supply_voltage / 2 - startup_offset)
-    Third = RingStage(stage2, stage3, supply; load_capacitance,
+    Third = RingStage(stage2, stage3, supply, gnd; load_capacitance,
         initial_output=supply_voltage / 2 + startup_offset)
-    Fourth = RingStage(stage3, stage4, supply; load_capacitance,
+    Fourth = RingStage(stage3, stage4, supply, gnd; load_capacitance,
         initial_output=supply_voltage / 2 - startup_offset)
-    Fifth = RingStage(stage4, stage5, supply; load_capacitance,
+    Fifth = RingStage(stage4, stage5, supply, gnd; load_capacitance,
         initial_output=supply_voltage / 2 + startup_offset)
     observe(
         voltage(stage1),
@@ -91,7 +91,7 @@ small capacitor offsets provide an explicit, reproducible startup perturbation.
 end
 
 oscillator = CMOSRingOscillator()
-(count(x -> x.kind in (:nmos, :pmos), oscillator.components), check(oscillator))
+(count(x -> x.kind in (:nmos, :pmos), devices(oscillator)), check(oscillator))
 ```
 
 Run long enough for the perturbation to grow and the amplitude to settle. No

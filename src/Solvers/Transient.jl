@@ -18,7 +18,7 @@ end
 function transient(c,p::Pair;overrides=nothing,kw...)
     cc=compile(c)
     updates=_override_pairs(overrides)
-    updated=isempty(updates) ? cc : with_parameters(cc,(String(first(pair))=>last(pair) for pair in updates)...)
+    updated=isempty(updates) ? cc : with_parameters(cc,(String(first(update))=>last(update) for update in updates)...)
     _transient(updated,p;kw...)
 end
 

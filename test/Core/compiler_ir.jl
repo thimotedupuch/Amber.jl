@@ -67,6 +67,12 @@ end
     @test compile(updated) === updated
     @test_throws TopologyParameterError with_parameters(compiled, "stage[1].R1.package" => SMD0603())
     @test_throws KeyError with_parameters(compiled, "stage[99].R1.value" => 2kΩ)
+    @test_throws ParameterUpdateError with_parameters(compiled, "stage[1].R1.value" => 1 + 2im)
+
+    model=Level1MOSFET()
+    changed_model=with_model_parameter(model,:threshold_voltage,1.25)
+    @test model_parameters(changed_model).threshold_voltage==1.25
+    @test model.threshold_voltage!=changed_model.threshold_voltage
 
     workspace = SimulationWorkspace(compiled)
     state_values = collect(range(0.1, 1.0; length=compiled.n))

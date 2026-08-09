@@ -4,7 +4,7 @@
 
 ```@example op
 using Amber
-c = Circuit(:diode_bias)
+c = CircuitBuilder(:diode_bias)
 vdd = node!(c, :vdd)
 anode = node!(c, :anode)
 gnd = ground!(c)
@@ -12,7 +12,8 @@ add!(c, voltage_source(vdd, gnd; dc=5.0); name=:supply)
 add!(c, resistor(vdd, anode; value=2.2kΩ); name=:bias)
 add!(c, diode(anode, gnd); name=:d1)
 observe!(c, voltage(anode))
-r = operating_point(c)
+design = finish(c)
+r = operating_point(design)
 (r.stats[:status], voltage(r, :anode)[1])
 ```
 
@@ -26,7 +27,7 @@ solver = SolverOptions(
     current_abstol=1e-12,
     linear_solver=SuiteSparseLU(ordering=:amd),
 )
-r = operating_point(c; solver)
+r = operating_point(design; solver)
 r.stats[:status]
 ```
 

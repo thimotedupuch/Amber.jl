@@ -69,7 +69,7 @@ function _linear_output_selector(cc,observable::Observable)
             selector[Int(batch.branch_unknowns[device])]=1.; return selector
         elseif _batch_kind(batch) in (:resistor,:conductance)
             conductance=_batch_kind(batch)===:resistor ? batch.conductance[device] : batch.parameters[device].value
-            positive=Int(batch.terminals[1][device]); negative=Int(batch.terminals[2][device])
+            positive=Int(_batch_terminal(batch,1,device)); negative=Int(_batch_terminal(batch,2,device))
             positive>0&&(selector[positive]+=conductance); negative>0&&(selector[negative]-=conductance)
             return selector
         end

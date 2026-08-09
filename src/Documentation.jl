@@ -22,6 +22,8 @@
 @doc """Construct a two-terminal conductance.""" conductance
 @doc """Construct an independent voltage source with DC, AC, and/or transient specifications.""" voltage_source
 @doc """Construct an independent current source with DC, AC, and/or transient specifications.""" current_source
+@doc """Construct an analytic nonlinear current source controlled by up to four differential voltages.""" behavioral_current_source
+@doc """Construct an analytic nonlinear voltage constraint controlled by up to four differential voltages.""" behavioral_voltage_source
 @doc """Construct a source in the circuit DSL, dispatching from its specification.""" source
 @doc """Construct a junction diode.""" diode
 @doc """Construct an NPN bipolar transistor with collector, base, and emitter terminals.""" npn

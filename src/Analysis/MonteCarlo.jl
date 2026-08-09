@@ -112,21 +112,31 @@ function _normalized_variations(variations)
     output
 end
 
-function _automatic_tolerance_draws!(draws,circuit,rng,explicit_paths)
-    for component in circuit.components
-        haskey(component.parameters,:tolerance)||continue
-        path=Symbol(component.name,".value"); path in explicit_paths&&continue
-        nominal=get(component.parameters,:value,nothing); tolerance=component.parameters[:tolerance]
-        nominal isa Real&&tolerance isa Real||throw(ArgumentError("$(component.name) tolerance requires a numeric value and tolerance"))
-        isfinite(tolerance)&&tolerance>=0||throw(ArgumentError("$(component.name) tolerance must be finite and non-negative"))
+function _compiled_device_records(compiled)
+    records=NamedTuple[]
+    for batch in compiled.parameters.batches, device in eachindex(batch.parameters)
+        instance_name,device_name=_locator_device_name(compiled.design,batch.locators[device])
+        path=isempty(instance_name) ? device_name : string(instance_name,'.',device_name)
+        push!(records,(batch,device,path,kind=_batch_kind(batch),parameters=batch.parameters[device]))
+    end
+    records
+end
+
+function _automatic_tolerance_draws!(draws,compiled,rng,explicit_paths)
+    for component in _compiled_device_records(compiled)
+        hasproperty(component.parameters,:tolerance)||continue
+        path=Symbol(component.path,".value"); path in explicit_paths&&continue
+        nominal=get(component.parameters,:value,nothing); tolerance=component.parameters.tolerance
+        nominal isa Real&&tolerance isa Real||throw(ArgumentError("$(component.path) tolerance requires a numeric value and tolerance"))
+        isfinite(tolerance)&&tolerance>=0||throw(ArgumentError("$(component.path) tolerance must be finite and non-negative"))
         draws[path]=Float64(nominal)*(1+(2rand(rng)-1)*Float64(tolerance))
     end
 end
 
-function _matched_group_draws!(draws,circuit,rng,explicit_paths)
+function _matched_group_draws!(draws,compiled,rng,explicit_paths)
     groups=Dict{Symbol,Vector{Any}}()
     definitions=Dict{Symbol,MatchedGroup}()
-    for component in circuit.components
+    for component in _compiled_device_records(compiled)
         match=get(component.parameters,:match,nothing)
         match isa MatchedGroup||continue
         component.kind===:npn||throw(ArgumentError("matched groups are currently supported only for NPN devices"))
@@ -138,8 +148,8 @@ function _matched_group_draws!(draws,circuit,rng,explicit_paths)
         common_weight=sqrt(match.correlation); local_weight=sqrt(1-match.correlation)
         for component in components
             model=component.parameters[:model]
-            saturation_path=Symbol(component.name,".saturation_current")
-            beta_path=Symbol(component.name,".forward_beta")
+            saturation_path=Symbol(component.path,".saturation_current")
+            beta_path=Symbol(component.path,".forward_beta")
             if saturation_path ∉ explicit_paths
                 delta_vbe=match.sigma_vbe*(common_weight*common_vbe+local_weight*randn(rng))
                 draws[saturation_path]=Float64(model.saturation_current)*exp(-delta_vbe/.025852)
@@ -152,21 +162,23 @@ function _matched_group_draws!(draws,circuit,rng,explicit_paths)
     end
 end
 
-function _apply_monte_carlo_draws!(circuit,draws)
-    compiled=compile(circuit)
-    _apply_overrides!(compiled,draws)
-    compiled.circuit
-end
+_apply_monte_carlo_draws(compiled,draws)=with_parameters(compiled,collect(pairs(draws))...)
 
-function _validate_variation_paths(circuit,paths)
+function _validate_variation_paths(compiled,paths)
     for path in paths
-        parts=split(String(path),'.'); length(parts)>=2||throw(ArgumentError("variation path $(path) must have the form Component.parameter"))
-        component_name=Symbol(join(parts[1:end-1],'.')); key=Symbol(parts[end])
-        component_index=findfirst(component->component.name===component_name,circuit.components)
-        component_index===nothing&&throw(ArgumentError("variation path $(path) refers to an unknown component"))
-        component=circuit.components[component_index]
-        haskey(component.parameters,key)||(haskey(component.parameters,:model)&&haskey(component.parameters[:model].data,key))||
-            throw(ArgumentError("variation path $(path) refers to an unknown parameter"))
+        selector=_parse_parameter_selector(String(path))
+        matched_device=false; matched_parameter=false
+        for batch in compiled.parameters.batches, device in eachindex(batch.parameters)
+            instance_name,device_name=_locator_device_name(compiled.design,batch.locators[device])
+            _matches_selector(instance_name,device_name,selector[1],selector[2],selector[3])||continue
+            matched_device=true
+            parameters=batch.parameters[device]
+            matched_parameter |= selector[4]===:value&&batch isa ResistorBatch ||
+                hasproperty(parameters,selector[4]) ||
+                hasproperty(parameters,:model)&&hasproperty(model_parameters(parameters.model),selector[4])
+        end
+        matched_device||throw(ArgumentError("variation path $(path) refers to an unknown component"))
+        matched_parameter||throw(ArgumentError("variation path $(path) refers to an unknown parameter"))
     end
 end
 
@@ -193,23 +205,23 @@ function monte_carlo(circuit;analysis=OperatingPoint(),samples::Integer=1000,see
     all_paths=vcat(first.(combined),correlated_paths)
     length(unique(all_paths))==length(all_paths)||throw(ArgumentError("variation paths must be unique across independent and correlated variations"))
     base=compile(circuit); normalized=combined
-    _validate_variation_paths(base.circuit,all_paths)
+    _validate_variation_paths(base,all_paths)
     explicit_paths=Set(all_paths); metric_function=_monte_carlo_metric(metric,metrics)
     master=Random.Xoshiro(seed); seeds=rand(master,UInt64,samples)
     values=Any[nothing for _ in 1:samples]; parameters=[Dict{Symbol,Float64}() for _ in 1:samples]
     converged=falses(samples); failures=MonteCarloFailure[]
     failure_lock=ReentrantLock()
     function run_sample(sample)
-        rng=Random.Xoshiro(seeds[sample]); trial=deepcopy(base.circuit); draws=parameters[sample]
+        rng=Random.Xoshiro(seeds[sample]); draws=parameters[sample]
         try
             for (path,variation) in normalized; draws[path]=_draw(rng,variation) end
             for group in correlated
                 group_draw=group.means+group.factor*randn(rng,length(group.paths))
                 for (path,value) in zip(group.paths,group_draw); draws[path]=value end
             end
-            _automatic_tolerance_draws!(draws,trial,rng,explicit_paths)
-            _matched_group_draws!(draws,trial,rng,explicit_paths)
-            trial=_apply_monte_carlo_draws!(trial,draws)
+            _automatic_tolerance_draws!(draws,base,rng,explicit_paths)
+            _matched_group_draws!(draws,base,rng,explicit_paths)
+            trial=_apply_monte_carlo_draws(base,draws)
             simulation=_require_converged(simulate(trial,analysis),"Monte Carlo sample $(sample)")
             values[sample]=metric_function(simulation); converged[sample]=true
             on_sample===nothing||on_sample(sample,values[sample],draws)
@@ -237,7 +249,7 @@ end
 
 function replay_sample(result::MonteCarloResult,circuit,index::Integer;metric=identity)
     checkbounds(result.values,index)
-    trial=deepcopy(compile(circuit).circuit); trial=_apply_monte_carlo_draws!(trial,result.parameters[index])
+    trial=_apply_monte_carlo_draws(compile(circuit),result.parameters[index])
     simulation=_require_converged(simulate(trial,result.analysis),"Monte Carlo replay $(index)")
     metric(simulation)
 end

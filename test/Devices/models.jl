@@ -8,11 +8,11 @@
     @test 120dB≈1e6
     @test 180°≈π
     practical=PracticalLowPassForElaboration=RealisticRC()
-    @test any(x->x.name==Symbol("R1.package_inductance"),practical.components)
-    @test any(x->x.name==Symbol("C1.esr"),practical.components)
+    @test any(x->string(x.path)=="R1.package_inductance",devices(practical))
+    @test any(x->string(x.path)=="C1.esr",devices(practical))
     rectifier=HalfWaveRectifier()
-    @test any(x->x.name==Symbol("D1.series_resistance"),rectifier.components)
-    @test count(x->startswith(String(x.name),"C1.da"),rectifier.components)==6
+    @test any(x->string(x.path)=="D1.series_resistance",devices(rectifier))
+    @test count(x->startswith(string(x.path),"C1.da"),devices(rectifier))==6
     diode_model=JunctionDiode(junction_capacitance=15pF,transit_time=2ns)
     for diode_voltage in range(-1V,.6V;length=20)
         step=1e-6
@@ -24,7 +24,7 @@
     sampler=getfield(sampler_module,:SampleAndHold)()
     @test resolve(sampler,"S1.clock_feedthrough").kind==:device
     @test resolve(sampler,"Buffer.input_capacitance").kind==:device
-    @test count(x->occursin("bias_current",x.path),devices(sampler))==2
+    @test count(x->occursin("bias_current",string(x.path)),devices(sampler))==2
     @circuit PracticalInductor() begin
         inductor_ground=ground(); inductor_node=node(); source=voltage_source(inductor_node,inductor_ground;dc=1V)
         L1=inductor(inductor_node,inductor_ground;value=1mH,winding_resistance=2Ω,parallel_capacitance=5pF)

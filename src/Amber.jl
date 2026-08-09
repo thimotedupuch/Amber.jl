@@ -19,6 +19,7 @@ export UnknownKind, UnknownLayout, EquationKind, EquationLayout
 export NodeVoltageUnknown, BranchCurrentUnknown, DeviceStateUnknown, PartitionInterfaceUnknown
 export KCLCurrentEquation, VoltageConstraintEquation, DynamicStateEquation, DeviceAuxiliaryEquation
 export PrimitiveBatch, ResistorBatch, with_parameters, TopologyParameterError
+export ParameterUpdateError, model_parameters, with_model_parameter
 export SimulationWorkspace, residual!, jacobian!, residual_jacobian!
 export AbstractLinearSolver, SuiteSparseLU, SolverOptions
 export ConvergenceError
@@ -29,11 +30,15 @@ export explain, explain_failure
 export circuit_snapshot, serialize_circuit, deserialize_circuit, save_circuit, load_circuit
 export node, ground, resistor, capacitor, inductor, conductance
 export voltage_source, current_source, diode, npn, nmos, pmos, opamp, analog_switch
+export behavioral_current_source
+export behavioral_voltage_source
 export transconductance, voltage_controlled_voltage_source
 export current_controlled_current_source, current_controlled_voltage_source
 export voltage, current, power, charge, state, initial_voltage
+export observation, observations
 export differential_capacitance
 export operating_point, transient, small_signal, simulate, run, sweep
+export SweepFailure, SweepResult
 export NoiseSource, NoiseCorrelationGroup, NoiseSourceContribution
 export noise, NoiseResult, noise_psd, noise_density
 export input_referred_noise_psd, input_referred_noise_density, noise_contributions, noise_figure

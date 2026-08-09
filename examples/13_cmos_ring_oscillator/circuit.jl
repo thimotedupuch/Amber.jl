@@ -8,12 +8,11 @@ const RING_PMOS=Level1MOSFET(threshold_voltage=.7V,
     gate_source_capacitance=2pF,gate_drain_capacitance=.5pF)
 
 """One loaded CMOS inverter stage with explicit signal and supply ports."""
-@circuit RingStage(input,output,supply;load_capacitance=5pF,
+@subcircuit RingStage(input,output,supply,reference;load_capacitance=5pF,
         initial_output=nothing) begin
-    gnd=ground()
     PullUp=pmos(output,input,supply,supply;model=RING_PMOS)
-    PullDown=nmos(output,input,gnd,gnd;model=RING_NMOS)
-    Load=capacitor(output,gnd;value=load_capacitance)
+    PullDown=nmos(output,input,reference,reference;model=RING_NMOS)
+    Load=capacitor(output,reference;value=load_capacitance)
     if initial_output!==nothing
         initial_voltage(Load,initial_output)
     end
@@ -25,15 +24,15 @@ end
     gnd=ground(); supply=node()
     stage1=node(); stage2=node(); stage3=node(); stage4=node(); stage5=node()
     VDD=voltage_source(supply,gnd;dc=supply_voltage)
-    First=RingStage(stage5,stage1,supply;load_capacitance,
+    First=RingStage(stage5,stage1,supply,gnd;load_capacitance,
         initial_output=supply_voltage/2+startup_offset)
-    Second=RingStage(stage1,stage2,supply;load_capacitance,
+    Second=RingStage(stage1,stage2,supply,gnd;load_capacitance,
         initial_output=supply_voltage/2-startup_offset)
-    Third=RingStage(stage2,stage3,supply;load_capacitance,
+    Third=RingStage(stage2,stage3,supply,gnd;load_capacitance,
         initial_output=supply_voltage/2+startup_offset)
-    Fourth=RingStage(stage3,stage4,supply;load_capacitance,
+    Fourth=RingStage(stage3,stage4,supply,gnd;load_capacitance,
         initial_output=supply_voltage/2-startup_offset)
-    Fifth=RingStage(stage4,stage5,supply;load_capacitance,
+    Fifth=RingStage(stage4,stage5,supply,gnd;load_capacitance,
         initial_output=supply_voltage/2+startup_offset)
     observe(voltage(stage1),voltage(stage2),voltage(stage3),voltage(stage4),
         voltage(stage5),current(VDD))

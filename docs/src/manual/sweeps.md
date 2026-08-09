@@ -9,7 +9,7 @@ For small custom studies, ordinary Julia is equally expressive:
 ```@example sweep_manual
 using Amber
 function divider(rbottom)
-    c = Circuit(:divider)
+    c = CircuitBuilder(:divider)
     top = node!(c, :top)
     out = node!(c, :out)
     gnd = ground!(c)
@@ -17,7 +17,7 @@ function divider(rbottom)
     add!(c, resistor(top, out; value=1kΩ); name=:rt)
     add!(c, resistor(out, gnd; value=rbottom); name=:rb)
     observe!(c, voltage(out))
-    voltage(operating_point(c), :out)[1]
+    voltage(operating_point(finish(c)), :out)[1]
 end
 
 [divider(r) for r in (500.0, 1kΩ, 2kΩ)]

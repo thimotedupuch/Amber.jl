@@ -9,12 +9,13 @@ Amber treats diagnosability as part of the numerical API.
 
 ```@example diagnostics
 using Amber
-c = Circuit(:diagnostic_example)
+c = CircuitBuilder(:diagnostic_example)
 n = node!(c, :floating)
 ground!(c)
 add!(c, resistor(n, n; value=1kΩ); name=:r)
+design = finish(c)
 try
-    operating_point(c)
+    operating_point(design)
 catch err
     explain_failure(err)
 end

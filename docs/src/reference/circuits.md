@@ -1,11 +1,10 @@
 # Circuits
 
 ```@docs
-Circuit
-Node
-Ground
-Component
 AbstractCircuitDefinition
+CircuitDesign
+CircuitBuilder
+SubcircuitTemplate
 NameId
 NameSegment
 CompiledTopology
@@ -16,7 +15,7 @@ EquationLayout
 PrimitiveBatch
 ResistorBatch
 SimulationWorkspace
-circuit
+finish
 node!
 ground!
 add!

@@ -32,7 +32,7 @@ function ConductanceCrossbar(;
     all(>=(0), conductances) ||
         throw(ArgumentError("physical conductances must be nonnegative"))
 
-    c = Circuit(:ConductanceCrossbar)
+    c = CircuitBuilder(:ConductanceCrossbar)
     gnd = ground!(c, :gnd)
     positive_rail = node!(c, :positive_rail)
     negative_rail = node!(c, :negative_rail)
@@ -80,7 +80,7 @@ function ConductanceCrossbar(;
         observe!(c, voltage(output_nodes[row]); name=Symbol(:output_, row))
     end
 
-    c
+    finish(c)
 end
 ```
 

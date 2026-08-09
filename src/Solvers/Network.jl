@@ -1,6 +1,6 @@
 struct Port
-    positive::Union{Symbol,String,AbstractNode}
-    negative::Union{Symbol,String,AbstractNode}
+    positive::Union{Symbol,String}
+    negative::Union{Symbol,String}
     reference_impedance::Float64
     name::Union{Nothing,Symbol}
     function Port(positive,negative;reference_impedance=50.,name=nothing)
@@ -20,19 +20,10 @@ end
 
 frequencies(result::NetworkResult)=result.frequencies
 
-_port_node_name(node::AbstractNode)=node.name
-_port_node_name(node::Union{Symbol,String})=node
 function _port_node_index(cc,node)
-    name=_port_node_name(node)
-    if cc.design !== nothing
-        index=_hierarchical_net_index(cc,name)
-        index===nothing&&throw(KeyError(name))
-        return Int(index)
-    end
-    index=_findnode(cc,name)
-    index===nothing&&throw(KeyError(name))
-    circuit_node=cc.circuit.nodes[index]
-    circuit_node.id==0 ? 0 : cc.node_index[circuit_node.id]
+    index=_hierarchical_net_index(cc,node)
+    index===nothing&&throw(KeyError(node))
+    Int(index)
 end
 
 function _port_selector(cc,port::Port)

@@ -19,6 +19,8 @@ const _DEVICE_SPECS = Dict{Symbol,DeviceContract}(
     :nmos=>_contract(4;dc_path=true,noise=true), :pmos=>_contract(4;dc_path=true,noise=true),
     :switch=>_contract(4;dc_path=true,noise=true),
     :opamp=>_contract(5;branch=true,states=[:dominant_pole],dc_path=true,noise=true),
+    :behavioral_current_source=>_contract(10),
+    :behavioral_voltage_source=>_contract(10;branch=true,dc_path=true),
 )
 device_contract(kind::Symbol)=get(_DEVICE_SPECS,kind,nothing)
 device_contract(::Type{Val{K}}) where {K}=device_contract(K)

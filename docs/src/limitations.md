@@ -2,6 +2,8 @@
 
 Amber is an early-stage simulator with a deliberately compact scope.
 
+> **TO REWRITE:** Re-audit this list against the retained hierarchy and current compiled APIs.
+
 - MOSFETs use a transparent level-1 model, not BSIM or foundry-qualified model cards; subthreshold, body-diode, junction-charge, and short-channel effects are absent.
 - Semiconductor models are educational/engineering compact models, not foundry-qualified libraries.
 - Behavioral op-amp slew-rate and output-current-limit fields are not fully enforced.

@@ -1,5 +1,16 @@
 abstract type AbstractWaveform end
 
+"""Return the named numerical parameters exposed by a device model."""
+model_parameters(model)=throw(ArgumentError("model $(typeof(model)) does not implement model_parameters"))
+
+"""Return a model copy with one numerical parameter replaced.
+
+User-defined model types can participate in compiled parameter updates by
+implementing `model_parameters(model)` and `with_model_parameter(model, name, value)`.
+"""
+with_model_parameter(model,name::Symbol,value)=throw(ArgumentError(
+    "model $(typeof(model)) does not implement with_model_parameter"))
+
 Base.@kwdef struct Step <: AbstractWaveform
     low::Float64=0.; high::Float64=1.; at::Float64=0.; rise::Float64=0.
 end
@@ -80,6 +91,11 @@ for (T,defaults) in ((:ThinFilm,:(;tc1=0.,temperature_coefficient=0.,voltage_coe
         end
         Base.@constprop :aggressive Base.getproperty(x::$T,s::Symbol)=
             s===:data ? getfield(x,:data) : getproperty(getfield(x,:data),s)
+        model_parameters(x::$T)=x.data
+        function with_model_parameter(x::$T,name::Symbol,value)
+            hasproperty(x.data,name)||throw(ArgumentError("model $(nameof($T)) has no parameter $(name)"))
+            $T(merge(x.data,NamedTuple{(name,)}((value,))))
+        end
     end
 end
 

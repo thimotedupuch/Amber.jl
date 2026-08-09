@@ -33,7 +33,7 @@
     @test operating_point(getfield(modules[4],:DifferentialPair)()).stats[:converged]
     @test isempty(check(getfield(modules[5],:WienOscillator)()))
     @test isempty(check(getfield(modules[6],:SampleAndHold)()))
-    @test length(getfield(modules[7],:RLGCLine)(sections=5).components)==22
+    @test summary(getfield(modules[7],:RLGCLine)(sections=5)).primitive_devices==22
     @test !isempty(check(getfield(modules[8],:ContradictorySources)()))
     @test !isempty(check(getfield(modules[8],:FloatingInput)()))
     buck=getfield(modules[9],:BuckConverter)()
@@ -52,7 +52,7 @@
     @test isempty(check(inverter))
     ring=getfield(modules[13],:CMOSRingOscillator)()
     @test isempty(check(ring))
-    @test count(x->x.kind in (:nmos,:pmos),ring.components)==10
+    @test count(x->x.kind in (:nmos,:pmos),devices(ring))==10
     ring_start=transient(ring,0s=>300ns;max_step=1ns,saveat=1ns)
     ring_metrics=harmonic_analysis(ring_start;signal=voltage(:stage5),interval=100ns=>300ns)
     @test ring_start.stats[:converged]
