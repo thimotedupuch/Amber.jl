@@ -1,0 +1,28 @@
+amber_makie_version = "0.1.0"
+handle_type = "PlotHandle"
+theme = "current"
+view_type = "NamedTuple"
+warnings = []
+
+[axis_limits]
+
+[measurements]
+
+[provenance]
+amber_version = "0.1.0"
+analysis = "Noise"
+topology_fingerprint = "e196c18842b4cb003ff56f355d81832af80a4d9a"
+unit_system = "SI"
+warnings = []
+
+    [provenance.statistics]
+    bias_source = "operating_point"
+    converged = true
+    correlation_group_count = 0
+    partial = false
+    points = 180
+    roundoff_psd_corrections = 0
+    source_count = 2
+    status = "converged"
+    temperature = 300.0
+    warnings = []

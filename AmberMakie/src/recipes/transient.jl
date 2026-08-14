@@ -18,9 +18,13 @@ function traceplot(position, result::Amber.SimulationResult; signals, interval=n
         findall(x -> first(interval) <= x <= last(interval), result.axis)
     isempty(selected) && throw(ArgumentError("interval contains no samples"))
     slot = _position(position)
-    ax = Makie.Axis(slot; xlabel="Time (s)", ylabel=only(unique(view.unit for view in views)), axis...)
+    units = unique(view.unit for view in views)
+    mixed_units = length(units) > 1
+    ax = Makie.Axis(slot; xlabel="Time (s)",
+        ylabel=mixed_units ? "Value (mixed units)" : only(units), axis...)
     plots = [Makie.lines!(ax, view.axis[selected], _transform(view.values[selected], transform);
-        label=view.label, kwargs...) for view in views]
+        label=mixed_units ? "$(view.label) [$(view.unit)]" : view.label, kwargs...)
+        for view in views]
     Makie.axislegend(ax)
     PlotHandle(slot, (trace=ax,), plots, views)
 end

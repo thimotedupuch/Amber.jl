@@ -28,6 +28,15 @@ setinterval!(handle.cursors, 1e3 => 10e3)
 close(handle)                    # disconnects all event subscriptions
 ```
 
+Transient and PSS workbenches accept multiple Amber observables and provide a
+domain-specific signal selector. Mixed voltage/current/power collections are
+shown with per-trace units and can be selected programmatically:
+
+```julia
+handle = workbench(transient_result; signals=[:output, current(:V1)])
+selectsignal!(handle, current(:V1))
+```
+
 Warnings and Amber provenance snapshots are available as `handle.warnings` and
 `handle.provenance` for workbench panels and export tooling.
 

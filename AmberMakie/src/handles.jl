@@ -177,4 +177,15 @@ function selectcomponent!(handle::WorkbenchHandle, name)
     handle
 end
 
+function selectsignal!(handle::WorkbenchHandle, signal)
+    handle.closed && throw(ArgumentError("workbench is closed"))
+    selected = get(handle.measurements, :selected_signal, nothing)
+    selected === nothing && throw(ArgumentError("workbench does not support signal selection"))
+    choices = get(handle.measurements, :signal_choices, Any[])
+    index = findfirst(choice -> isequal(choice, signal), choices)
+    index === nothing && throw(KeyError(signal))
+    selected[] = choices[index]
+    handle
+end
+
 _position(position) = position isa Makie.Figure ? position[1, 1] : position

@@ -81,7 +81,7 @@ _new_factorization(system, solver::AbstractLinearSolver) =
 function _newton(cc,z0,previous,t,α;reltol=1e-7,abstol=1e-10,maxiters=60,
         mode=:time,source_scale=1.,gmin=0.,temperature=300.,forcing=nothing,workspace=nothing,
         line_search_minimum=1/256,voltage_abstol=max(abstol,1e-9),state_abstol=abstol,
-        linear_solver=SuiteSparseLU())
+        linear_solver=SuiteSparseLU(),history=nothing)
     workspace === nothing && cc.parameters !== nothing && (workspace = SimulationWorkspace(cc))
     z=copy(z0); factorization=workspace === nothing ? nothing : workspace.factorization
     linear_hierarchy=workspace !== nothing && _all_linear(cc.parameters.batches)
@@ -137,7 +137,13 @@ function _newton(cc,z0,previous,t,α;reltol=1e-7,abstol=1e-10,maxiters=60,
             error isa LinearAlgebra.SingularException||rethrow()
             throw(LinearSolveError("Newton matrix is singular at iteration $(it)"))
         end
-        all(isfinite,Δ)||return z,it,false
+        if !all(isfinite,Δ)
+            history === nothing || push!(history, (iteration=length(history)+1,
+                local_iteration=it,residual_norm=norm(r,Inf),update_norm=Inf,
+                damping=0.,source_scale=Float64(source_scale),gmin=Float64(gmin),
+                converged=false))
+            return z,it,false
+        end
         # Account for roundoff in equations containing large, cancelling
         # terms (notably high-gain controlled sources).  This floor alone is
         # not a convergence test: the Newton update below must also be small,
@@ -145,7 +151,14 @@ function _newton(cc,z0,previous,t,α;reltol=1e-7,abstol=1e-10,maxiters=60,
         # voltage merely because their absolute KCL residual is tiny.
         numerical_floor=32eps(Float64)*max(opnorm(J,Inf)*max(norm(z,Inf),1),1)
         residual_converged=norm(r,Inf)<=abstol+numerical_floor
-        residual_converged&&_update_converged(cc,z,Δ,reltol,abstol,voltage_abstol,state_abstol)&&return z,it,true
+        if residual_converged&&_update_converged(cc,z,Δ,reltol,abstol,
+                voltage_abstol,state_abstol)
+            history === nothing || push!(history, (iteration=length(history)+1,
+                local_iteration=it,residual_norm=norm(r,Inf),update_norm=norm(Δ,Inf),
+                damping=0.,source_scale=Float64(source_scale),gmin=Float64(gmin),
+                converged=true))
+            return z,it,true
+        end
         damping=1.; nr=norm(r)
         while damping>=line_search_minimum
             candidate=workspace === nothing ? z+damping*Δ : workspace.candidate
@@ -162,6 +175,10 @@ function _newton(cc,z0,previous,t,α;reltol=1e-7,abstol=1e-10,maxiters=60,
             norm(candidate_residual)<=nr&&break
             damping/=2
         end
+        history === nothing || push!(history, (iteration=length(history)+1,
+            local_iteration=it,residual_norm=norm(r,Inf),update_norm=norm(Δ,Inf),
+            damping=Float64(damping),source_scale=Float64(source_scale),
+            gmin=Float64(gmin),converged=false))
         @inbounds @simd for index in eachindex(z); z[index]+=damping*Δ[index] end
         all(isfinite,z)||return z,it,false
     end

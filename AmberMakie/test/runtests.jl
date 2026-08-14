@@ -242,8 +242,12 @@ end
     @test cursor.classification === :fundamental
     @test cursor.harmonic_order == 1
     @test cursor.frequency == 1.0
-    @test hasproperty(spectrumplot(Makie.Figure()[1, 1], result;
-        scale=:dbv, band=0.0 => 1.0, fundamental=1.0).axes, :spectrum)
+    spectrum_handle = spectrumplot(Makie.Figure()[1, 1], result;
+        scale=:dbv, band=0.0 => 1.0, fundamental=1.0)
+    @test hasproperty(spectrum_handle.axes, :spectrum)
+    @test startswith(copyrecipe(spectrum_handle), "handle = spectrumplot")
+    @test occursin("Makie.xlims!", copyrecipe(spectrum_handle))
+    @test occursin("handle.plots.spectrum", copyrecipe(spectrum_handle))
     @test_throws ArgumentError spectrumplot(Makie.Figure()[1, 1], result; scale=:dbfs)
 end
 
@@ -254,6 +258,15 @@ end
     end
     transient_result = transient(MakieSignal(), 0s => 4ms;
         initial=:discharged, saveat=20μs, method=:bdf2)
+    transient_workbench = workbench(transient_result;
+        signals=[:output, current(:V1)])
+    @test length(transient_workbench.measurements[:signal_choices]) == 2
+    selectsignal!(transient_workbench, current(:V1))
+    @test transient_workbench.measurements[:selected_signal][] == current(:V1)
+    @test !transient_workbench.plots[1].visible[]
+    @test transient_workbench.plots[2].visible[]
+    @test occursin("selectsignal!", copyrecipe(transient_workbench))
+    close(transient_workbench)
     spectrogram = spectrogramview(transient_result; signal=:output, samples=64,
         overlap=0.5, window=:hann)
     @test size(spectrogram.psd) == (length(spectrogram.frequencies), length(spectrogram.times))
@@ -298,7 +311,7 @@ end
     mode = floquet_mode(pss, :dominant)
     @test mode.multiplier ≈ 1.1
     @test sum(mode.participation) ≈ 1
-    pss_workbench = workbench(pss; signals=:output)
+    pss_workbench = workbench(pss; signals=[:output, current(:V1)])
     @test hasproperty(pss_workbench.axes, :mode_participation)
     @test hasproperty(pss_workbench.axes, :linked_state)
     @test pss_workbench.measurements[:selected_mode][].multiplier ≈ 1.1
@@ -309,6 +322,10 @@ end
     @test pss_workbench.selection[][1] == :mode_1
     @test pss_workbench.measurements[:selected_state][] ==
         argmax(pss_workbench.measurements[:selected_mode][].participation)
+    selectsignal!(pss_workbench, current(:V1))
+    @test pss_workbench.selection[][3] == Symbol(string(current(:V1)))
+    @test !pss_workbench.plots.traces[1].visible[]
+    @test pss_workbench.plots.traces[2].visible[]
     close(pss_workbench)
     harmonic_result = harmonic_analysis(transient_result; signal=:output,
         fundamental=1e3, harmonics=3)
@@ -336,6 +353,12 @@ end
     selectcomponent!(operating_workbench, "R1")
     @test operating_workbench.selection[] == [:R1]
     @test operating_workbench.measurements[:convergence].converged
+    @test hasproperty(operating_workbench.axes, :convergence)
+    @test operating_workbench.measurements[:convergence].history_available
+    @test !isempty(operating_workbench.measurements[:convergence].history)
+    @test length(operating_workbench.measurements[:convergence].history) ==
+        operating_workbench.measurements[:convergence].iterations
+    @test operating_workbench.measurements[:convergence].dominant_residual === nothing
     close(operating_workbench)
     power_handle = powerdashboard(Makie.Figure()[1, 1], operating_point_result;
         output=:R2)
@@ -456,7 +479,11 @@ end
     metadata = TOML.parsefile(path * ".toml")
     @test metadata["provenance"] isa Dict
     @test metadata["measurements"] isa Dict
+    @test metadata["measurements"]["spectrum_cursor"]["frequency"] == 0.0
+    @test metadata["measurements"]["spectrum_cursor"]["classification"] == "dc"
     @test metadata["axis_limits"]["spectrum"]["x"] isa Vector
+    @test AmberMakie._metadata_value((1, :two)) == Any[1, "two"]
+    @test AmberMakie._metadata_value([1 2; 3 4]) == [[1, 2], [3, 4]]
     @test occursin("setcursor!", copyrecipe(handle))
     @test occursin("Makie.xlims!", copyrecipe(handle))
     close(handle)

@@ -30,11 +30,18 @@ _metadata_value(value::VersionNumber) = string(value)
 _metadata_value(value::Complex) = Dict("real" => real(value), "imag" => imag(value))
 _metadata_value(value::Pair) = Dict("first" => _metadata_value(first(value)),
     "last" => _metadata_value(last(value)))
+_metadata_value(value::Tuple) = [_metadata_value(item) for item in value]
 _metadata_value(value::NamedTuple) = Dict(String(key) => _metadata_value(item)
     for (key, item) in pairs(value))
 _metadata_value(value::AbstractDict) = Dict(String(key) => _metadata_value(item)
     for (key, item) in pairs(value) if !(item isa Function))
-_metadata_value(value::AbstractArray) = [_metadata_value(item) for item in value]
+_metadata_value(value::AbstractRange) = [_metadata_value(item) for item in value]
+function _metadata_value(value::AbstractArray)
+    ndims(value) <= 1 && return [_metadata_value(item) for item in value]
+    ndims(value) == 2 && return [[_metadata_value(value[row, column])
+        for column in axes(value, 2)] for row in axes(value, 1)]
+    [_metadata_value(selectdim(value, 1, index)) for index in axes(value, 1)]
+end
 _metadata_value(value::Makie.Observable) = _metadata_value(value[])
 function _metadata_value(value)
     if value isa Function
@@ -42,6 +49,12 @@ function _metadata_value(value)
     elseif hasproperty(value, :value) && getproperty(value, :value) isa Makie.Observable
         return Dict("type" => string(typeof(value)),
             "value" => _metadata_value(getproperty(value, :value)[]))
+    elseif parentmodule(typeof(value)) === (@__MODULE__) && isstructtype(typeof(value))
+        output = Dict{String,Any}("type" => string(nameof(typeof(value))))
+        for field in fieldnames(typeof(value))
+            output[String(field)] = _metadata_value(getfield(value, field))
+        end
+        return output
     end
     Dict("type" => string(typeof(value)))
 end
@@ -74,17 +87,32 @@ end
 
 function copyrecipe(handle::PlotHandle)
     view = handle.view
-    view isa SpectrumView && return "spectrumplot(position, result)"
-    view isa SpectrogramView && return "spectrogramplot(position, result; signal=$(repr(view.signal)), window=$(repr(view.window)), overlap=$(view.overlap))"
-    view isa NoiseView && return "noiseplot(position, result; referred=$(repr(view.referred)))"
-    view isa NoiseContributionView && return "noisecontributionplot(position, result; referred=$(repr(view.referred)), band=$(repr(view.band)))"
-    view isa NetworkView && return "networkplot(position, result; parameter=$(repr(view.parameter)), element=$(repr(view.element)))"
-    view isa TraceView && return "traceplot(position, result; signals=[signal]) # displayed as $(repr(view.label))"
-    if view isa NamedTuple && haskey(view, :alignment) && haskey(view, :delta)
-        return "compareplot(position, results; signals, alignment=$(repr(view.alignment)), delta=$(repr(view.delta)), tolerance=$(repr(view.tolerance)))"
+    call = if view isa SpectrumView
+        "spectrumplot(position, result)"
+    elseif view isa SpectrogramView
+        "spectrogramplot(position, result; signal=$(repr(view.signal)), window=$(repr(view.window)), overlap=$(view.overlap))"
+    elseif view isa NoiseView
+        "noiseplot(position, result; referred=$(repr(view.referred)))"
+    elseif view isa NoiseContributionView
+        "noisecontributionplot(position, result; referred=$(repr(view.referred)), band=$(repr(view.band)))"
+    elseif view isa NetworkView
+        "networkplot(position, result; parameter=$(repr(view.parameter)), element=$(repr(view.element)))"
+    elseif view isa TraceView
+        "traceplot(position, result; signals=[signal]) # displayed as $(repr(view.label))"
+    elseif view isa EyeDiagramView
+        "eyediagramplot(position, result; signal=$(repr(view.signal)), period=$(view.period), unit_intervals=$(view.unit_intervals))"
+    elseif view isa OperatingPointView
+        "operatingpointplot(position, result)"
+    elseif view isa NamedTuple && haskey(view, :alignment) && haskey(view, :delta)
+        "compareplot(position, results; signals, alignment=$(repr(view.alignment)), delta=$(repr(view.delta)), tolerance=$(repr(view.tolerance)))"
+    elseif view isa NamedTuple && haskey(view, :jitter) && haskey(view, :kind)
+        jitter = view.jitter
+        "jitterplot(position, result; signal=$(repr(jitter.signal)), nominal_period=$(jitter.nominal_period), threshold=$(jitter.threshold), edge=$(repr(jitter.edge)), kind=$(repr(view.kind)))"
+    else
+        nothing
     end
-    recipe = "# Recreate $(nameof(typeof(view))) with its AmberMakie semantic plot function"
-    recipe * _axis_recipe(handle.axes)
+    call === nothing && return "# No self-contained copy recipe is available for $(nameof(typeof(view))); retain the original data arguments."
+    "handle = $(call)$(_axis_recipe(handle.axes))$(_style_recipe(handle.plots))"
 end
 
 function _axis_recipe(axes; handle_name="handle")
@@ -149,10 +177,13 @@ function copyrecipe(handle::WorkbenchHandle)
         push!(selectors, "selectcomponent!(handle, $(repr(handle.measurements[:selected][])))")
     end
     for key in (:selected_order, :selected_sideband, :mode_index,
-            :selected_input, :selected_output, :selected_parameter, :selected_element)
+            :selected_input, :selected_output, :selected_parameter, :selected_element,
+            :selected_state)
         haskey(handle.measurements, key) || continue
         push!(selectors, "handle.measurements[$(repr(key))][] = $(repr(handle.measurements[key][]))")
     end
+    haskey(handle.measurements, :selected_signal) &&
+        push!(selectors, "selectsignal!(handle, $(repr(handle.measurements[:selected_signal][])))")
     isolated = get(handle.measurements, :isolated_trace, nothing)
     isolated === nothing || isolated[] === nothing ||
         push!(selectors, "isolatetrace!(handle, $(repr(isolated[])))")

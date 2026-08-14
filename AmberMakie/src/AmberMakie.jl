@@ -20,7 +20,7 @@ export safeoperatingareaplot, powerdashboard, poleparticipationplot, waterfallpl
 export FloquetModeReadout, floquet_mode
 export sweepplot, ensembleplot, correlationplot, compareplot
 export yieldplot, failureplot, parametermatrixplot, sampleplot
-export rank_correlation, selectsample!, replay_sample!, selectcomponent!
+export rank_correlation, selectsample!, replay_sample!, selectcomponent!, selectsignal!
 export isolatetrace!, toggletrace!, showalltraces!, helptext
 export outlier_samples
 export StudyHandle, explore, runstudy!, setparameter!, pin!

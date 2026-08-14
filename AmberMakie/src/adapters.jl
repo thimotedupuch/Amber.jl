@@ -221,6 +221,9 @@ function operatingpointview(result::Amber.SimulationResult; query="", kind=nothi
         continuation_steps=get(stats, :continuation_steps, nothing),
         rejected_steps=get(stats, :rejected_continuation_steps, nothing),
         failed_steps=copy(get(stats, :failed_continuation_steps, Int[])),
+        dominant_residual=get(stats, :dominant_residual, nothing),
+        history=copy(get(stats, :residual_history, Any[])),
+        history_available=haskey(stats, :residual_history),
         temperature=get(stats, :temperature, nothing))
     OperatingPointView(node_rows, device_rows, convergence, _warnings(stats),
         _provenance(result))

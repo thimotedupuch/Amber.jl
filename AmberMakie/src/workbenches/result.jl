@@ -108,15 +108,40 @@ function _operatingpoint_workbench(result::Amber.SimulationResult)
     end
     Makie.Label(figure[5, 2], details; halign=:left, justification=:left)
     convergence = view.convergence
+    failed_steps = isempty(convergence.failed_steps) ? "none" :
+        join(convergence.failed_steps, ", ")
+    residual = convergence.dominant_residual === nothing ? "n/a" :
+        "row $(convergence.dominant_residual.row), ‖r‖∞=$(engineering(convergence.dominant_residual.norm))"
+    history = convergence.history_available ?
+        "$(length(convergence.history)) retained samples" : "not retained by solver"
     convergence_text = "Convergence\nStatus: $(convergence.converged ? "converged" : "failed")\n" *
         "Strategy: $(something(convergence.strategy, "n/a"))\nIterations: $(something(convergence.iterations, "n/a"))\n" *
-        "Continuation steps: $(something(convergence.continuation_steps, "n/a"))\nRejected steps: $(something(convergence.rejected_steps, "n/a"))"
+        "Continuation steps: $(something(convergence.continuation_steps, "n/a"))\nRejected steps: $(something(convergence.rejected_steps, "n/a"))\n" *
+        "Failed steps: $(failed_steps)\nDominant residual: $(residual)\nHistory: $(history)"
     Makie.Label(figure[6, 2], convergence_text; halign=:left, justification=:left,
         color=convergence.converged ? :gray35 : _AMBER_COLORS.invalid)
+    convergence_axis = Makie.Axis(figure[6:7, 1]; xlabel="Newton iteration",
+        ylabel="Norm", yscale=log10, title="Operating-point convergence history")
+    convergence_plots = Any[]
+    if convergence.history_available && !isempty(convergence.history)
+        iterations = getproperty.(convergence.history, :iteration)
+        residuals = max.(getproperty.(convergence.history, :residual_norm), eps(Float64))
+        updates = max.(getproperty.(convergence.history, :update_norm), eps(Float64))
+        push!(convergence_plots, Makie.lines!(convergence_axis, iterations, residuals;
+            label="Residual ‖r‖∞", color=_AMBER_COLORS.invalid))
+        push!(convergence_plots, Makie.lines!(convergence_axis, iterations, updates;
+            label="Update ‖Δx‖∞", color=_AMBER_COLORS.output, linestyle=:dash))
+        Makie.axislegend(convergence_axis)
+    else
+        Makie.text!(convergence_axis, 0.5, 0.5;
+            text="Iteration history was not retained", space=:relative,
+            align=(:center, :center), color=:gray45)
+    end
     inspector = Makie.DataInspector(figure)
-    axes = plot_handle.axes
+    axes = merge(plot_handle.axes, (convergence=convergence_axis,))
     plots = merge(plot_handle.plots,
-        (node_highlight=node_highlight, device_highlight=device_highlight))
+        (node_highlight=node_highlight, device_highlight=device_highlight,
+            convergence=convergence_plots))
     measurements = Dict{Symbol,Any}(:selected => selected, :browser => menu,
         :search => search, :search_results => search_results,
         :selection_names => last.(options), :convergence => convergence)
@@ -157,6 +182,11 @@ function _smallsignal_workbench(result::Amber.SimulationResult; input, output,
     Makie.linkxaxes!(magnitude_axis, phase_axis)
     nyquist_axis = Makie.Axis(figure[1:4, 2]; xlabel="Real", ylabel="Imaginary",
         aspect=Makie.DataAspect())
+    # Both columns contain aspect-aware axes and menus, so Auto sizing follows
+    # the controls' intrinsic widths and can collapse the plots. Reserve the
+    # canvas explicitly for the Bode and Nyquist views.
+    Makie.colsize!(figure.layout, 1, Makie.Relative(0.62))
+    Makie.colsize!(figure.layout, 2, Makie.Relative(0.38))
     magnitude_plot = Makie.lines!(magnitude_axis, frequencies, gain)
     phase_plot = Makie.lines!(phase_axis, frequencies, phase)
     nyquist_plot = Makie.lines!(nyquist_axis,
@@ -183,10 +213,10 @@ function _smallsignal_workbench(result::Amber.SimulationResult; input, output,
 
     Makie.Label(figure[5, 1], "Input")
     input_menu = Makie.Menu(figure[6, 1];
-        options=[(string(choice), choice) for choice in input_choices], default=1)
+        options=[(_signal_label(choice), choice) for choice in input_choices], default=1)
     Makie.Label(figure[5, 2], "Output")
     output_menu = Makie.Menu(figure[6, 2];
-        options=[(string(choice), choice) for choice in output_choices], default=1)
+        options=[(_signal_label(choice), choice) for choice in output_choices], default=1)
     subscriptions = Any[]
     push!(subscriptions, Makie.on(input_menu.selection) do choice
         choice === nothing || (selected_input[] = choice)
@@ -281,9 +311,35 @@ function workbench(result::Amber.SimulationResult; signals=nothing, input=nothin
         throw(ArgumentError("no workbench is available for $(typeof(result.analysis))"))
     end
     workbench_handle = _workbench_handle(figure, handle)
-    result.analysis isa Union{Amber.Transient,Amber.TransientNoise} &&
-        (workbench_handle.measurements[:copyrecipe_kwargs] =
-            Dict(:signals => repr(signals)))
+    if result.analysis isa Union{Amber.Transient,Amber.TransientNoise}
+        signal_choices = signals isa AbstractVector || signals isa Tuple ?
+            collect(signals) : [signals]
+        selected_signal = Makie.Observable{Any}(first(signal_choices))
+        Makie.Label(figure[6, 2], "Signal selector"; halign=:left)
+        signal_control = Makie.Menu(figure[7, 2];
+            options=[(string(signal), signal) for signal in signal_choices], default=1)
+        push!(workbench_handle.measurements[:control_subscriptions],
+            Makie.on(signal_control.selection) do signal
+                signal === nothing || (selected_signal[] = signal)
+            end)
+        push!(workbench_handle.measurements[:control_subscriptions],
+            Makie.on(selected_signal) do signal
+                index = findfirst(choice -> isequal(choice, signal), signal_choices)
+                index === nothing && return
+                foreach(eachindex(handle.plots)) do candidate
+                    _plot_observable(handle.plots[candidate], :visible)[] =
+                        candidate == index
+                end
+                workbench_handle.selection[] = [Symbol(string(signal))]
+            end)
+        workbench_handle.measurements[:selected_signal] = selected_signal
+        workbench_handle.measurements[:signal_choices] = signal_choices
+        workbench_handle.measurements[:signal_control] = signal_control
+        workbench_handle.measurements[:copyrecipe_kwargs] =
+            Dict(:signals => repr(signals))
+        workbench_handle.measurements[:help] =
+            "Choose a signal to isolate it, or use Show all to compare every trace; click sets A and Shift-click sets B."
+    end
     _contextualize!(workbench_handle)
 end
 
@@ -323,7 +379,9 @@ function workbench(result::Amber.SpectrumResult; fundamental=nothing, view=:auto
     end
     measurements = Dict{Symbol,Any}(:cursors => cursors.readout,
         :interval => cursors.interval_readout, :spectrum_cursor => readout,
-        :band_power => band_power, :band_control => slider)
+        :band_power => band_power, :band_control => slider,
+        :copyrecipe_kwargs => fundamental === nothing ? Dict{Symbol,String}() :
+            Dict(:fundamental => repr(fundamental)))
     _contextualize!(WorkbenchHandle(figure, plot_handle.axes,
         merge(plot_handle.plots, (cursor=marker,)), Makie.Observable(Symbol[]),
         cursors, measurements, _warnings(result.stats), _provenance(result), cleanup,
@@ -426,7 +484,8 @@ function workbench(result::Amber.NoiseResult; referred=:output, view=:auto)
         noise_contributions=contribution_plot)
     measurements = Dict{Symbol,Any}(:cursors => cursors.readout,
         :interval => cursors.interval_readout, :band_rms => band_rms,
-        :contributions => selected_contributions, :band_control => slider)
+        :contributions => selected_contributions, :band_control => slider,
+        :copyrecipe_kwargs => Dict(:referred => repr(referred)))
     warnings = _warnings(result.stats)
     cleanup = () -> begin
         _close!(cursors)
@@ -491,7 +550,9 @@ function workbench(result::Amber.PhaseNoiseResult; carrier_frequency=nothing,
     measurements = Dict{Symbol,Any}(:cursors => cursors.readout,
         :interval => cursors.interval_readout, :integrated_phase => integrated,
         :band_control => slider, :contributions => selected_contributions,
-        :validity => validity)
+        :validity => validity,
+        :copyrecipe_kwargs => Dict(:carrier_frequency => repr(carrier_frequency),
+            :band => repr(band)))
     axes = (phase_noise=handle.axes.phase_noise,
         noise_budget=budget.axes.noise_budget,
         phase_contributions=contribution_axis)
@@ -553,7 +614,14 @@ function workbench(result::Amber.PeriodicNoiseResult; view=:auto, scale=:db,
     measurements = Dict{Symbol,Any}(:cursors => cursors.readout,
         :interval => cursors.interval_readout, :selected_sideband => selected_sideband,
         :sideband_readout => sideband_readout, :sideband_control => sideband_control,
-        :pss => pss)
+        :pss => pss, :copyrecipe_kwargs => begin
+            kwargs = Dict{Symbol,String}(:scale => repr(scale))
+            if pss !== nothing
+                kwargs[:pss] = "pss"
+                kwargs[:signals] = repr(signals)
+            end
+            kwargs
+        end)
     axes = (periodic_noise=handle.axes.periodic_noise,
         orbit=orbit_handle === nothing ? nothing : orbit_handle.axes.trace)
     plots = (sidebands=handle.plots.sidebands, selected_sideband=sideband_line,
@@ -617,9 +685,13 @@ function workbench(result::Amber.NetworkResult; parameter=:s, element=(1, 1), vi
     Makie.xlims!(smith_axis, -1.08, 1.08); Makie.ylims!(smith_axis, -1.08, 1.08)
 
     impedance_axis = _frequency_axis(figure[3, 2], frequencies;
-        ylabel="Resistance / transfer resistance (Ω)")
+        ylabel="Real Z (Ω)")
     reactance_axis = _frequency_axis(figure[4, 2], frequencies;
-        xlabel="Frequency (Hz)", ylabel="Reactance / transfer reactance (Ω)")
+        xlabel="Frequency (Hz)", ylabel="Imaginary Z (Ω)")
+    # Aspect-aware Smith axes and intrinsic-width controls otherwise leave both
+    # top-level columns at their minimum widths in static backends.
+    Makie.colsize!(figure.layout, 1, Makie.Relative(0.52))
+    Makie.colsize!(figure.layout, 2, Makie.Relative(0.48))
     Makie.linkxaxes!(impedance_axis, reactance_axis)
     impedance_plot = Makie.lines!(impedance_axis, frequencies,
         Makie.lift(values -> real.(values), impedance_values))
@@ -783,9 +855,26 @@ function workbench(result::Amber.PSSResult; signals, view=:auto)
         color=_AMBER_COLORS.warning, marker=:diamond, markersize=14)
     selector = Makie.Slider(figure[4, 2]; range=eachindex(modes),
         startvalue=selected_index[], snap=true)
+    signal_choices = signals isa AbstractVector || signals isa Tuple ?
+        collect(signals) : [signals]
+    selected_signal = Makie.Observable{Any}(first(signal_choices))
+    Makie.Label(figure[7, 2], "Orbit signal selector"; halign=:left)
+    signal_control = Makie.Menu(figure[8, 2];
+        options=[(string(signal), signal) for signal in signal_choices], default=1)
     subscriptions = Any[]
     push!(subscriptions, Makie.on(selector.value) do index
         selected_index[] = Int(index)
+    end)
+    push!(subscriptions, Makie.on(signal_control.selection) do signal
+        signal === nothing || (selected_signal[] = signal)
+    end)
+    push!(subscriptions, Makie.on(selected_signal) do signal
+        index = findfirst(choice -> isequal(choice, signal), signal_choices)
+        index === nothing && return
+        foreach(eachindex(plot_handle.plots.traces)) do candidate
+            _plot_observable(plot_handle.plots.traces[candidate], :visible)[] =
+                candidate == index
+        end
     end)
     push!(subscriptions, Makie.on(selected_mode) do mode
         selected_state[] = argmax(mode.participation)
@@ -841,6 +930,8 @@ function workbench(result::Amber.PSSResult; signals, view=:auto)
     measurements = Dict{Symbol,Any}(:cursors => cursors.readout,
         :interval => cursors.interval_readout, :selected_mode => selected_mode,
         :mode_index => selected_index, :mode_control => selector,
+        :selected_signal => selected_signal, :signal_choices => signal_choices,
+        :signal_control => signal_control,
         :selected_state => selected_state, :selected_state_label => selected_state_label,
         :state_trace => state_trace,
         :help => "Click a Floquet multiplier to select its mode; click participation bars to inspect the linked orbit state.",
@@ -849,8 +940,8 @@ function workbench(result::Amber.PSSResult; signals, view=:auto)
         _close!(cursors); foreach(Makie.off, subscriptions); empty!(subscriptions)
         delete!(figure, inspector)
     end
-    selection = Makie.lift(selected_index, selected_state) do mode, state
-        [Symbol("mode_$(mode)"), Symbol("state_$(state)")]
+    selection = Makie.lift(selected_index, selected_state, selected_signal) do mode, state, signal
+        [Symbol("mode_$(mode)"), Symbol("state_$(state)"), Symbol(string(signal))]
     end
     _contextualize!(WorkbenchHandle(figure, axes, plots, selection, cursors, measurements,
         _warnings(result.stats), _provenance(result), cleanup, false))
@@ -1068,7 +1159,16 @@ function workbench(result::Amber.MonteCarloResult; predicate=nothing, circuit=no
         :sample_range => 1:length(result.values), :sample_control => sample_slider,
         :replay_result => replay_result, :replay_text => replay_text,
         :outliers => outliers, :linked_parameter => isempty(available) ? nothing : first(available),
-        :help => "Click the histogram, parameter correlation, or a failure category to select and inspect that sample.")
+        :help => "Click the histogram, parameter correlation, or a failure category to select and inspect that sample.",
+        :copyrecipe_kwargs => begin
+            kwargs = Dict{Symbol,String}()
+            predicate === nothing || (kwargs[:predicate] = "predicate")
+            if circuit !== nothing
+                kwargs[:circuit] = "circuit"
+                kwargs[:metric] = "metric"
+            end
+            kwargs
+        end)
     if circuit !== nothing
         measurements[:replay] = function (sample)
             checkbounds(result.values, sample)
