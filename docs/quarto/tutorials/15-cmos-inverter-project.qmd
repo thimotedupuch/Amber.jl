@@ -1,0 +1,124 @@
+---
+title: "15. Project: characterize a CMOS inverter"
+subtitle: "Extract the voltage-transfer curve, switching point, and propagation delay"
+julia:
+  env: ["JULIA_PROJECT=../../../AmberMakie/docs"]
+---
+
+```{julia}
+#| include: false
+using Pkg
+Pkg.activate(joinpath(@__DIR__, "../../../AmberMakie/docs"))
+using Amber, AmberMakie, CairoMakie
+CairoMakie.activate!()
+set_theme!(theme_amber_light())
+```
+
+A CMOS inverter is small enough to understand device by device, but rich
+enough to demonstrate the two analyses at the heart of digital-cell
+characterization. A DC sweep reveals logic levels and switching threshold;
+a transient run reveals delay under a specified load.
+
+## Model the complementary pair
+
+The level-1 models include channel-length modulation, body effect, and gate
+capacitances. The PMOS is deliberately half as strong as the NMOS, so the
+transfer curve need not be perfectly symmetric.
+
+```{julia}
+const PROJECT_CMOS_NMOS = Level1MOSFET(threshold_voltage=0.7V,
+    transconductance=2mA/V^2, channel_length_modulation=0.03/V,
+    body_effect=0.35sqrt(V), surface_potential=0.35V,
+    gate_source_capacitance=8pF, gate_drain_capacitance=2pF)
+const PROJECT_CMOS_PMOS = Level1MOSFET(threshold_voltage=0.7V,
+    transconductance=1mA/V^2, channel_length_modulation=0.03/V,
+    body_effect=0.35sqrt(V), surface_potential=0.35V,
+    gate_source_capacitance=8pF, gate_drain_capacitance=2pF)
+
+@circuit ProjectCMOSInverter(; supply_voltage=5V, input_voltage=0V,
+        waveform=nothing, load_capacitance=20pF) begin
+    gnd = ground(); supply = node(); input = node(); output = node()
+    VDD = voltage_source(supply, gnd; dc=supply_voltage)
+    Input = voltage_source(input, gnd; dc=input_voltage, ac=1V, waveform)
+    PullUp = pmos(output, input, supply, supply; model=PROJECT_CMOS_PMOS)
+    PullDown = nmos(output, input, gnd, gnd; model=PROJECT_CMOS_NMOS)
+    Load = capacitor(output, gnd; value=load_capacitance)
+    observe(voltage(input), voltage(output), current(PullUp), current(PullDown),
+        power(PullUp), power(PullDown))
+end
+
+check(ProjectCMOSInverter())
+```
+
+## Extract the DC voltage-transfer characteristic
+
+Each point is a full nonlinear operating-point solution. Keeping the loop as
+ordinary Julia makes the experiment transparent and lets us derive any metric
+we want from the resulting arrays.
+
+```{julia}
+input_sweep = collect(range(0V, 5V; length=101))
+output_sweep = [only(voltage(
+    operating_point(ProjectCMOSInverter(input_voltage=value)), :output))
+    for value in input_sweep]
+
+switching_index = argmin(abs.(output_sweep .- input_sweep))
+switching_voltage = input_sweep[switching_index]
+low_output = last(output_sweep)
+high_output = first(output_sweep)
+
+(switching_voltage, low_output, high_output)
+```
+
+```{julia}
+transfer_figure = Figure(size=(760, 610))
+axis = Axis(transfer_figure[1, 1];
+    xlabel="Input voltage (V)", ylabel="Output voltage (V)",
+    title="DC voltage-transfer characteristic", aspect=1)
+lines!(axis, input_sweep, output_sweep; color="#0072B2", linewidth=3)
+lines!(axis, input_sweep, input_sweep; color=(:gray40, 0.65), linestyle=:dash)
+scatter!(axis, [switching_voltage], [output_sweep[switching_index]];
+    color="#D55E00", markersize=14)
+transfer_figure
+```
+
+The dashed line is $V_{out}=V_{in}$. Its intersection with the transfer curve
+is the inverter's static switching point for these device strengths.
+
+## Drive a capacitive load
+
+Now the same cell receives a 10 MHz pulse input with 1 ns edges. Exact event
+handling prevents the integrator from stepping across an edge, while the
+transistor capacitances and explicit 20 pF load determine the output dynamics.
+
+```{julia}
+switching_circuit = ProjectCMOSInverter(
+    waveform=Pulse(low=0V, high=5V, frequency=10MHz,
+        duty_cycle=0.5, rise=1ns, fall=1ns))
+waveforms = transient(switching_circuit, 0s => 500ns;
+    event_mode=:exact, max_step=1ns, saveat=0.5ns)
+
+delay = propagation_delay(waveforms;
+    input=voltage(:input), output=voltage(:output))
+
+(propagation_delay=delay, load_capacitance=20pF)
+```
+
+```{julia}
+switching_figure = Figure(size=(1000, 560))
+traceplot(switching_figure[1, 1], waveforms; signals=[:input, :output],
+    interval=250ns => 500ns)
+Label(switching_figure[0, 1], "Loaded CMOS inverter at 10 MHz"; fontsize=21)
+switching_figure
+```
+
+The opposite output transition is visible after every input edge. The reported
+threshold-crossing delay measures the first transition. Unequal PMOS and NMOS
+drive strengths also make the two edge shapes visibly different; changing their
+transconductance ratio is the natural next design experiment.
+
+::: {.callout-tip}
+After sizing the pair for delay and switching point, use Amber's Monte Carlo
+analysis to vary threshold voltage and transconductance, then reuse the
+AmberMakie yield and correlation views from tutorial 11.
+:::

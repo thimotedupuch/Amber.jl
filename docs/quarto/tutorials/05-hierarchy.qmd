@@ -1,0 +1,66 @@
+---
+title: "5. Reusable subcircuits"
+subtitle: "Compose a two-stage filter without losing names"
+julia:
+  env: ["JULIA_PROJECT=../../.."]
+---
+
+```{julia}
+#| include: false
+using Pkg
+Pkg.activate("../..")
+using Amber
+```
+
+Hierarchy is useful once a circuit contains a repeated idea. A subcircuit has
+explicit ports and parameters, then can be instantiated many times.
+
+```{julia}
+@subcircuit RCSection(input, output, reference; R=1kΩ, C=10nF) begin
+    R1 = resistor(input, output; value=R)
+    C1 = capacitor(output, reference; value=C)
+    observe(voltage(output), current(R1))
+end
+
+@circuit TwoStageLowPass begin
+    gnd = ground()
+    input = node()
+    middle = node()
+    output = node()
+
+    Source = voltage_source(input, gnd; ac=1V)
+    First = RCSection(input, middle, gnd; R=1kΩ, C=10nF)
+    Second = RCSection(middle, output, gnd; R=2kΩ, C=20nF)
+    Load = resistor(output, gnd; value=100kΩ)
+
+    observe(voltage(input), voltage(middle), voltage(output))
+end
+```
+
+Assignments name the instances `First` and `Second`. Their internal elements
+therefore have paths such as `First.R1` and `Second.C1`.
+
+```{julia}
+filter = TwoStageLowPass();
+instances(filter)
+devices(filter; under="First")
+println(describe(filter))
+```
+
+Run the same analysis as for a flat circuit:
+
+```{julia}
+response = small_signal(filter, 10Hz => 1MHz; source=:Source, points=301);
+first_stage = voltage(response, Symbol("First.output"))
+final_output = voltage(response, :output)
+
+(magnitude(first_stage[1]), magnitude(final_output[end]))
+```
+
+Port nets can be addressed using either their top-level name (`middle`) or a
+qualified subcircuit port (`First.output`). Internal nets and devices require
+their hierarchy-qualified path.
+
+Hierarchy does not create a separate numerical simulator. Amber elaborates the
+design into one compiled topology while retaining paths for results,
+parameters, and diagnostics.

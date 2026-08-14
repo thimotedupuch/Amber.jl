@@ -1,0 +1,84 @@
+---
+title: "1. Your first circuit"
+subtitle: "Describe a voltage divider and inspect its structure"
+julia:
+  env: ["JULIA_PROJECT=../../.."]
+---
+
+```{julia}
+#| include: false
+using Pkg
+Pkg.activate("../..")
+using Amber
+```
+
+## A circuit is a Julia definition
+
+The `@circuit` block records topology. Create a reference node with `ground()`,
+ordinary electrical nodes with `node()`, and components by passing their
+terminal nodes.
+
+```{julia}
+@circuit VoltageDivider(; supply=5V, top=2kΩ, bottom=1kΩ) begin
+    gnd = ground()
+    input = node()
+    output = node()
+
+    Source = voltage_source(input, gnd; dc=supply)
+    Rtop = resistor(input, output; value=top)
+    Rbottom = resistor(output, gnd; value=bottom)
+
+    observe(voltage(output), current(Rtop))
+end
+```
+
+Names on the left—`Source`, `Rtop`, and `Rbottom`—become stable device names.
+Likewise, `input` and `output` become net names. Those names are how you later
+ask for a result.
+
+Instantiate the definition just like a Julia function:
+
+```{julia}
+divider = VoltageDivider();
+custom_divider = VoltageDivider(supply=3.3V, top=10kΩ, bottom=10kΩ);
+```
+
+Keyword parameters make a topology reusable without rebuilding it by hand.
+
+## Check before solving
+
+`check` performs structural validation without running an analysis. An empty
+vector means that no structural problem was found.
+
+```{julia}
+check(divider)
+```
+
+`explain` gives a compact human-readable summary, while `summary`, `nets`, and
+`devices` return data that programs can inspect.
+
+```{julia}
+println(explain(divider))
+summary(divider)
+nets(divider)
+devices(divider)
+```
+
+## Read the topology literally
+
+Every terminal is explicit. `voltage_source(input, gnd)` constrains `input`
+relative to ground. The two resistors share `output`, so Kirchhoff's current
+law will be enforced there.
+
+The expected divider voltage is
+
+$$
+V_{out}=V_{supply}\frac{R_{bottom}}{R_{top}+R_{bottom}}.
+$$
+
+The next notebook asks Amber to solve it.
+
+::: {.callout-tip}
+Use meaningful Julia identifiers. They survive into diagnostics and result
+lookups, which makes a large circuit much easier to navigate.
+:::

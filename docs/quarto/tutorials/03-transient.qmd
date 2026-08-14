@@ -1,0 +1,79 @@
+---
+title: "3. Transient analysis"
+subtitle: "Follow an RC circuit through time"
+julia:
+  env: ["JULIA_PROJECT=../../.."]
+---
+
+```{julia}
+#| include: false
+using Pkg
+Pkg.activate("../..")
+using Amber
+```
+
+Transient analysis solves the circuit's differential equations. Sources may
+carry a waveform, and capacitors and inductors retain dynamic state.
+
+```{julia}
+@circuit RCStep(; R=10kΩ, C=10nF) begin
+    gnd = ground()
+    input = node()
+    output = node()
+    Source = voltage_source(
+        input,
+        gnd;
+        dc=0V,
+        waveform=Step(low=0V, high=1V, at=100μs, rise=1μs),
+    )
+    R1 = resistor(input, output; value=R)
+    C1 = capacitor(output, gnd; value=C)
+    observe(voltage(input), voltage(output), current(C1))
+end
+
+circuit = RCStep();
+result = transient(circuit, 0s => 600μs; saveat=2μs, max_step=2μs);
+```
+
+The interval is written as a Julia pair, `start => stop`. `saveat` controls the
+returned sample grid; `max_step` limits how far the integrator may advance.
+
+## Work with traces
+
+```{julia}
+time = result.axis
+input_voltage = voltage(result, :input)
+output_voltage = voltage(result, :output)
+
+@assert length(time) == length(output_voltage)
+(first(time), last(time), output_voltage[end])
+```
+
+For an ideal RC step beginning at $t_0$, the response is
+
+$$
+V_{out}(t)=V_{step}\left(1-e^{-(t-t_0)/(RC)}\right).
+$$
+
+Compare the simulated point one time constant after the step:
+
+```{julia}
+τ = 10kΩ * 10nF
+target_time = 100μs + τ
+index = argmin(abs.(time .- target_time))
+expected = 1V * (1 - exp(-1))
+
+(time=time[index], simulated=output_voltage[index], expected)
+```
+
+## Trust, but verify
+
+```{julia}
+result.stats[:converged]
+get(result.stats, :rejected_steps, 0)
+result.stats[:warnings]
+```
+
+Reduce `max_step` and compare a measurement when sharp edges or fast nonlinear
+events matter. A dense output plot does not by itself prove time-step
+convergence.

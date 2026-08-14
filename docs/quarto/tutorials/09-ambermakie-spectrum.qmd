@@ -1,0 +1,66 @@
+---
+title: "9. Spectrum and harmonics"
+subtitle: "Move from a periodic waveform to distortion metrics"
+julia:
+  env: ["JULIA_PROJECT=../../../AmberMakie/docs"]
+---
+
+```{julia}
+#| include: false
+using Pkg
+Pkg.activate(joinpath(@__DIR__, "../../../AmberMakie/docs"))
+using Amber, AmberMakie, CairoMakie
+CairoMakie.activate!()
+set_theme!(theme_amber_light())
+```
+
+Spectrum analysis starts with an ordinary transient result. The example drives
+an RC filter with a pulse train, then uses the settled part of the waveform for
+the FFT so startup does not dominate the result.
+
+```{julia}
+@circuit MakiePulseFilter() begin
+    gnd = ground()
+    input = node()
+    output = node()
+    Source = voltage_source(input, gnd;
+        waveform=Pulse(low=0V, high=1V, frequency=10kHz,
+            duty_cycle=0.35, rise=1μs, fall=1μs))
+    R1 = resistor(input, output; value=1kΩ)
+    C1 = capacitor(output, gnd; value=10nF)
+end
+
+transient_result = transient(MakiePulseFilter(), 0s => 2ms;
+    saveat=0.5μs, max_step=0.5μs)
+settled_interval = 500μs => 2ms
+spectral = spectrum(transient_result;
+    signal=:output, window=:hann, interval=settled_interval)
+harmonics = harmonic_analysis(transient_result;
+    signal=:output, fundamental=10kHz, harmonics=10,
+    interval=settled_interval);
+```
+
+```{julia}
+figure = Figure(size=(1100, 540))
+spectrumplot(figure[1, 1], spectral;
+    frequency_scale=:log, include_dc=false, fundamental=10kHz,
+    color="#0072B2")
+harmonicplot(figure[1, 2], harmonics)
+Label(figure[0, :], "Filtered pulse train: spectrum and harmonics"; fontsize=20)
+figure
+```
+
+The harmonic result carries measurements as data, rather than text scraped
+from a plot.
+
+```{julia}
+(
+    thd_percent=100harmonics.thd,
+    sinad_db=harmonics.sinad,
+    sfdr_db=harmonics.sfdr,
+    reported_harmonics=length(harmonics.harmonics),
+)
+```
+
+Changing `scale` on `spectrumplot` switches among RMS amplitude, PSD, dBV,
+dBFS, and dBm. The underlying `SpectrumResult` is unchanged.

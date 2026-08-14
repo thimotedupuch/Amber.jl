@@ -1,0 +1,65 @@
+---
+title: "8. Frequency response"
+subtitle: "Read gain, phase, and complex-plane behavior together"
+julia:
+  env: ["JULIA_PROJECT=../../../AmberMakie/docs"]
+---
+
+```{julia}
+#| include: false
+using Pkg
+Pkg.activate(joinpath(@__DIR__, "../../../AmberMakie/docs"))
+using Amber, AmberMakie, CairoMakie
+CairoMakie.activate!()
+set_theme!(theme_amber_light())
+```
+
+A Bode plot answers how much a circuit amplifies and shifts each frequency. A
+Nyquist plot shows the same complex response as a path in the complex plane.
+AmberMakie can place both views in one figure without recomputing the analysis.
+
+```{julia}
+@circuit MakieLowPass(; R=10kΩ, C=10nF) begin
+    gnd = ground()
+    input = node()
+    output = node()
+    Source = voltage_source(input, gnd; dc=0V, ac=1V)
+    R1 = resistor(input, output; value=R)
+    C1 = capacitor(output, gnd; value=C)
+end
+
+response = small_signal(MakieLowPass(), 10Hz => 1MHz;
+    source=:Source, points=301, scale=:log)
+view = frequencyview(response;
+    input=voltage(:input), output=voltage(:output));
+```
+
+```{julia}
+figure = Figure(size=(1100, 600))
+bodeplot(figure[1, 1], response;
+    input=voltage(:input), output=voltage(:output), color="#0072B2")
+nyquistplot(figure[1, 2], view; color="#D55E00")
+Label(figure[0, :], "RC low-pass in two coordinate systems"; fontsize=20)
+figure
+```
+
+The numerical result remains available beside the plot. Here we find the
+sample nearest the analytic pole and print the values a reader should expect
+to see.
+
+```{julia}
+expected_corner = inv(2π * 10kΩ * 10nF)
+i = argmin(abs.(view.frequencies .- expected_corner))
+
+(
+    expected_corner_hz=expected_corner,
+    sampled_frequency_hz=view.frequencies[i],
+    gain_db=20log10(abs(view.response[i])),
+    phase_degrees=rad2deg(angle(view.response[i])),
+)
+```
+
+::: {.callout-note}
+Both views describe the small-signal linearization around the operating point.
+Clipping and slew-rate limits require a transient analysis.
+:::

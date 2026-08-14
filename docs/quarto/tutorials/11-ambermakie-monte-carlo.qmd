@@ -1,0 +1,83 @@
+---
+title: "11. Monte Carlo and yield"
+subtitle: "Explore a distribution without losing failed samples"
+julia:
+  env: ["JULIA_PROJECT=../../../AmberMakie/docs"]
+---
+
+```{julia}
+#| include: false
+using Pkg
+Pkg.activate(joinpath(@__DIR__, "../../../AmberMakie/docs"))
+using Amber, AmberMakie, CairoMakie
+using Random, Statistics
+CairoMakie.activate!()
+set_theme!(theme_amber_light())
+```
+
+Monte Carlo analysis turns component tolerances into a distribution of a
+design metric. Here the metric is the DC output of a resistive divider and the
+two resistor values vary independently.
+
+```{julia}
+@circuit MakieRandomDivider() begin
+    gnd = ground()
+    input = node()
+    output = node()
+    Source = voltage_source(input, gnd; dc=1V)
+    Rtop = resistor(input, output; value=10kΩ)
+    Rbottom = resistor(output, gnd; value=10kΩ)
+end
+
+metric(result) = only(voltage(result, :output))
+ensemble = monte_carlo(MakieRandomDivider(); samples=300, seed=2026,
+    variations=Dict(
+        Symbol("Rtop.value") => Gaussian(10kΩ, 500Ω),
+        Symbol("Rbottom.value") => Gaussian(10kΩ, 500Ω),
+    ),
+    metric=metric);
+```
+
+`ensembleplot` shows the metric distribution, while `correlationplot` answers
+which varied parameter drives it. Failed simulations remain represented in
+AmberMakie rather than silently disappearing from the study.
+
+```{julia}
+figure = Figure(size=(1150, 560))
+ensembleplot(figure[1, 1], ensemble;
+    metric=:output_voltage, bins=28, color="#0072B2")
+correlationplot(figure[1, 2], ensemble;
+    parameter=Symbol("Rtop.value"), metric=:output_voltage,
+    color=(:black, 0.30), markersize=6)
+Label(figure[0, :], "Divider output across component variation"; fontsize=20)
+figure
+```
+
+## Turn the distribution into a specification
+
+Suppose the output must remain between 0.47 V and 0.53 V. `yieldplot` displays
+the pass/fail split, and the Julia cell computes the exact yield printed below
+it.
+
+```{julia}
+yield_figure = Figure(size=(800, 500))
+yieldplot(yield_figure[1, 1], ensemble; limits=0.47 => 0.53)
+Label(yield_figure[0, 1], "Yield for 0.50 V ± 30 mV"; fontsize=20)
+yield_figure
+```
+
+```{julia}
+values = Float64[value for value in ensemble.values if value !== nothing]
+passed = count(value -> 0.47 <= value <= 0.53, values)
+
+(
+    converged=length(values),
+    failed=count(!, ensemble.converged),
+    mean_voltage=mean(values),
+    standard_deviation=std(values),
+    yield_percent=100passed / length(values),
+)
+```
+
+Because the seed and every sampled parameter set are stored in the result, a
+surprising sample can be selected and replayed in the Monte Carlo workbench.

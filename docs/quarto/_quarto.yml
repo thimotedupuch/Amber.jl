@@ -1,0 +1,49 @@
+project:
+  type: website
+  output-dir: _site
+
+website:
+  title: "Amber.jl"
+  page-navigation: true
+  sidebar:
+    style: docked
+    search: true
+    contents:
+      - index.qmd
+      - section: "Learn Amber"
+        contents:
+          - tutorials/01-first-circuit.qmd
+          - tutorials/02-operating-point.qmd
+          - tutorials/03-transient.qmd
+          - tutorials/04-small-signal.qmd
+          - tutorials/05-hierarchy.qmd
+          - tutorials/06-diagnostics.qmd
+      - section: "Plot and explore with AmberMakie"
+        contents:
+          - tutorials/07-ambermakie-first-plot.qmd
+          - tutorials/08-ambermakie-frequency-response.qmd
+          - tutorials/09-ambermakie-spectrum.qmd
+          - tutorials/10-ambermakie-noise.qmd
+          - tutorials/11-ambermakie-monte-carlo.qmd
+      - section: "More ambitious projects"
+        contents:
+          - tutorials/12-buck-converter-project.qmd
+          - tutorials/13-cmos-ring-oscillator-project.qmd
+          - tutorials/14-hodgkin-huxley-project.qmd
+          - tutorials/15-cmos-inverter-project.qmd
+
+format:
+  html:
+    theme:
+      light: [cosmo, amber.scss]
+      dark: [darkly, amber.scss]
+    toc: true
+    code-copy: true
+    code-overflow: wrap
+    link-external-newwindow: true
+    include-after-body: theme-persistence.html
+
+execute:
+  enabled: true
+  execute-dir: project
+  freeze: auto
