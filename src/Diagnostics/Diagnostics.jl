@@ -6,13 +6,77 @@ end
 struct CircuitValidationError <: Exception
     diagnostics::Vector{Diagnostic}
 end
-Base.showerror(io::IO,error::CircuitValidationError)=print(io,join(getfield.(error.diagnostics,:message),'\n'))
+function Base.showerror(io::IO,error::CircuitValidationError)
+    print(io,"Circuit validation failed:")
+    for diagnostic in error.diagnostics
+        print(io,"\n- ",diagnostic.message)
+    end
+end
 
 struct AnalysisValidationError <: Exception
     message::String
 end
-Base.showerror(io::IO,error::AnalysisValidationError)=print(io,error.message)
+Base.showerror(io::IO,error::AnalysisValidationError)=print(io,"Invalid analysis: ",error.message)
 Base.show(io::IO,d::Diagnostic)=print(io,d.message)
+
+struct CircuitLookupError <: Exception
+    kind::Symbol
+    name::String
+    candidates::Vector{String}
+end
+
+function _edit_distance(a::AbstractString,b::AbstractString)
+    previous=collect(0:length(b))
+    for (i,left) in enumerate(a)
+        current=Vector{Int}(undef,length(previous)); current[1]=i
+        for (j,right) in enumerate(b)
+            current[j+1]=min(current[j]+1,previous[j+1]+1,previous[j]+(left!=right))
+        end
+        previous=current
+    end
+    last(previous)
+end
+
+function Base.showerror(io::IO,error::CircuitLookupError)
+    label=replace(String(error.kind),'_'=>' ')
+    print(io,"Unknown ",label," `",error.name,"`.")
+    isempty(error.candidates)&&return
+    ranked=sort(error.candidates;by=candidate->(_edit_distance(lowercase(error.name),lowercase(candidate)),candidate))
+    best=first(ranked)
+    threshold=max(2,cld(max(length(error.name),length(best)),3))
+    if _edit_distance(lowercase(error.name),lowercase(best))<=threshold
+        print(io," Did you mean `",best,"`?")
+    end
+    shown=join(first(ranked,min(5,length(ranked))),", ")
+    print(io," Available ",label,"s: ",shown)
+    length(ranked)>5&&print(io,", …")
+    print(io,'.')
+end
+
+function _net_labels(design,topology)
+    labels=Dict{Int32,Vector{String}}()
+    add(index,label)=index==0 ? nothing : push!(get!(labels,Int32(index),String[]),label)
+    mapping=topology.hierarchy.root_net_to_solver
+    for (local_index,segment) in enumerate(design.root_ir.net_names)
+        name=_render_segment((_name(design.names,segment.base),segment.index))
+        add(mapping[local_index],name)
+    end
+    for (instance_index,record) in enumerate(design.root.records)
+        prefix=string(InstancePath(_path_segments(design,record.path)))
+        template=design.templates.templates[Int(record.template)]
+        for (port_index,port) in enumerate(template.ports)
+            actual=design.root.connection_data[Int(record.connections.start)+port_index-1]
+            add(mapping[Int(actual)],string(prefix,'.',_name(template.names,port.name)))
+        end
+        for local_index in (length(template.ports)+1):length(template.body.net_names)
+            segment=template.body.net_names[local_index]
+            name=_render_segment((_name(template.names,segment.base),segment.index))
+            solver_index=topology.hierarchy.instance_internal_base[instance_index]+local_index-length(template.ports)-1
+            add(solver_index,string(prefix,'.',name))
+        end
+    end
+    labels
+end
 
 """Validate and compile a design in one hierarchy-elaboration pass."""
 function _check_and_compile(design::CircuitDesign)
@@ -74,8 +138,14 @@ function _check_and_compile(design::CircuitDesign)
             push!(reachable,neighbor); push!(queue,neighbor)
         end
     end
-    length(reachable)-1<net_count&&push!(diagnostics,Diagnostic(:error,
-        "One or more nets have no finite DC path to ground. Capacitors and current sources do not establish an absolute DC potential."))
+    if length(reachable)-1<net_count
+        labels=_net_labels(design,topology)
+        floating=sort!(String[first(get(labels,net,["net #$(net)"])) for net in Int32(1):Int32(net_count) if net ∉ reachable])
+        shown=join(first(floating,min(8,length(floating))),", ")
+        length(floating)>8&&(shown*=", …")
+        push!(diagnostics,Diagnostic(:error,
+            "Nets with no finite DC path to ground: $(shown). Capacitors and current sources do not establish an absolute DC potential; add a resistive bias path or another DC connection."))
+    end
 
     voltage_graph=[Tuple{Int32,Float64,String}[] for _ in 0:net_count]
     parent=collect(Int32(0):Int32(net_count))

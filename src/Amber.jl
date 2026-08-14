@@ -23,7 +23,7 @@ export ParameterUpdateError, model_parameters, with_model_parameter
 export SimulationWorkspace, residual!, jacobian!, residual_jacobian!
 export AbstractLinearSolver, SuiteSparseLU, SolverOptions
 export ConvergenceError
-export CircuitValidationError, AnalysisValidationError, LinearSolveError
+export CircuitValidationError, AnalysisValidationError, CircuitLookupError, LinearSolveError
 export CircuitSerializationError
 export node!, ground!, add!, observe!, observe, compile, check, describe
 export explain, explain_failure

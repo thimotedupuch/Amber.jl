@@ -329,7 +329,10 @@ function _assert_open(builder::CircuitBuilder)
 end
 function _assert_owned(builder::CircuitBuilder, handle)
     _assert_open(builder)
-    handle.owner == builder.owner && handle.generation == builder.generation || throw(BuilderOwnershipError("handle belongs to another CircuitBuilder or generation"))
+    handle.owner == builder.owner || throw(BuilderOwnershipError(
+        "cannot use a node or device handle from another CircuitBuilder; create the handle with node!(this_builder, ...) or ground!(this_builder, ...)"))
+    handle.generation == builder.generation || throw(BuilderOwnershipError(
+        "this builder handle is stale; obtain a new handle from the current CircuitBuilder generation"))
     handle
 end
 

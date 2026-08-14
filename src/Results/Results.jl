@@ -52,6 +52,16 @@ function _hierarchical_device(cc,name)
     nothing
 end
 
+function _net_names(cc)
+    sort!(unique!(reduce(vcat,values(_net_labels(cc.design,cc.topology));init=String[])))
+end
+
+function _device_names(cc)
+    sort!([string(item.path) for item in devices(cc.design;limit=typemax(Int))])
+end
+
+_lookup_error(kind,name,candidates)=CircuitLookupError(kind,String(name),candidates)
+
 function _observation_path(reference,body,names,prefix)
     if reference isa BuilderNet
         segment=body.net_names[Int(reference.id)]
@@ -107,7 +117,7 @@ end
 """Evaluate a named design observation from a simulation result."""
 function observation(result::SimulationResult,name::Union{Symbol,String})
     observable=_named_observable(result,name)
-    observable===nothing&&throw(KeyError(name))
+    observable===nothing&&throw(_lookup_error(:observation,name,String[string(entry.name) for entry in observations(result) if entry.name!==nothing]))
     _observable(result,observable)
 end
 
@@ -115,7 +125,7 @@ function voltage(r::SimulationResult,name::Union{Symbol,String})
     index=_hierarchical_net_index(r.compiled,name)
     if index===nothing
         observable=_named_observable(r,name)
-        observable===nothing&&throw(KeyError(name))
+        observable===nothing&&throw(_lookup_error(:net,name,_net_names(r.compiled)))
         observable.kind===:voltage||throw(ArgumentError("named observation $(name) is not a voltage"))
         return _observable(r,observable)
     end
@@ -123,7 +133,7 @@ function voltage(r::SimulationResult,name::Union{Symbol,String})
 end
 voltage(r::SimulationResult,a::Union{Symbol,String},b::Union{Symbol,String})=voltage(r,a)-voltage(r,b)
 function current(r::SimulationResult,name::Union{Symbol,String},branch=nothing)
-    located=_hierarchical_device(r.compiled,name); located===nothing&&throw(KeyError(name))
+    located=_hierarchical_device(r.compiled,name); located===nothing&&throw(_lookup_error(:device,name,_device_names(r.compiled)))
     batch,device=located
     kind=_batch_kind(batch)
     parameters=batch.parameters[device]
@@ -197,7 +207,7 @@ function _derivative(r::SimulationResult,values)
 end
 
 function power(r::SimulationResult,name::Union{Symbol,String})
-    located=_hierarchical_device(r.compiled,name); located===nothing&&throw(KeyError(name))
+    located=_hierarchical_device(r.compiled,name); located===nothing&&throw(_lookup_error(:device,name,_device_names(r.compiled)))
     batch,device=located; kind=_batch_kind(batch)
     terminal(index)=_unknown_trace(r,_batch_terminal(batch,index,device))
     if kind===:npn
@@ -212,7 +222,7 @@ function power(r::SimulationResult,name::Union{Symbol,String})
 end
 
 function charge(r::SimulationResult,name::Union{Symbol,String})
-    located=_hierarchical_device(r.compiled,name); located===nothing&&throw(KeyError(name))
+    located=_hierarchical_device(r.compiled,name); located===nothing&&throw(_lookup_error(:device,name,_device_names(r.compiled)))
     batch,device=located; kind=_batch_kind(batch)
     voltage_values=_unknown_trace(r,_batch_terminal(batch,1,device))-_unknown_trace(r,_batch_terminal(batch,2,device))
     kind===:capacitor&&return batch.parameters[device].value.*voltage_values
@@ -222,7 +232,7 @@ function charge(r::SimulationResult,name::Union{Symbol,String})
 end
 
 function state(r::SimulationResult,name::Union{Symbol,String},state_name::Symbol)
-    located=_hierarchical_device(r.compiled,name); located===nothing&&throw(KeyError(name))
+    located=_hierarchical_device(r.compiled,name); located===nothing&&throw(_lookup_error(:device,name,_device_names(r.compiled)))
     batch,device=located; batch isa PrimitiveBatch||throw(KeyError((name,state_name)))
     contract=device_contract(_batch_kind(batch)); state_index=findfirst(==(state_name),contract.states)
     state_index===nothing&&throw(KeyError((name,state_name)))
@@ -266,7 +276,7 @@ end
 
 @enum DeviceRegion Cutoff ForwardActive Saturation Triode
 function region(r::SimulationResult,name::Union{Symbol,String})
-    located=_hierarchical_device(r.compiled,name); located===nothing&&throw(KeyError(name))
+    located=_hierarchical_device(r.compiled,name); located===nothing&&throw(_lookup_error(:device,name,_device_names(r.compiled)))
     batch,device=located; kind=_batch_kind(batch)
     terminal(index)=_unknown_trace(r,_batch_terminal(batch,index,device))[1]
     if kind===:npn
