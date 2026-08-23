@@ -1,0 +1,4 @@
+interface:
+  display_name: "Simulate with Amber"
+  short_description: "Build, simulate, verify, and plot Amber circuits"
+  default_prompt: "Use $simulate-with-amber to model, simulate, validate, and report this circuit in Amber.jl."

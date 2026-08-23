@@ -1,0 +1,428 @@
+---
+name: simulate-with-amber
+description: Model, simulate, analyze, validate, extend, and visualize analog circuits and continuous-time dynamical systems with the unregistered Amber.jl package and optional AmberMakie. Use for circuit construction or debugging; DC, transient, AC, noise, periodic, RF/network, control, sweep, Monte Carlo, spectral, or timing analysis; plots and reproducible reports; and missing components or behavioral physical models implemented in Julia.
+---
+
+# Simulate with Amber
+
+Turn a circuit question into a reproducible Julia program, numerical evidence, and a concise engineering report. Treat simulation as an experiment: state assumptions, validate the topology, inspect convergence, check the answer independently, and preserve enough information to rerun it.
+
+## Follow this workflow
+
+1. Translate the request into topology, component values and models, sources, initial conditions, requested analyses, measured quantities, ranges, accuracy, and deliverables.
+2. Ask only for missing information that would materially change the circuit. Make ordinary engineering assumptions when safe and report them. Never invent foundry model parameters, hidden connectivity, safety limits, or measurement data.
+3. Select or create a dedicated Julia project. Preserve existing `Project.toml`, `Manifest.toml`, `pixi.toml`, and user changes.
+4. Install or activate Amber as described below. Add AmberMakie only when plots or an interactive workbench add value.
+5. Write ordinary `.jl` files for the circuit and simulation. Keep the input model separate from disposable outputs when the task is substantial.
+6. Run `check(circuit)` before expensive analyses. Resolve structural errors rather than suppressing them.
+7. Run the smallest analysis that answers the question, inspect solver status and warnings, then add sensitivity or convergence runs proportional to the risk.
+8. Compare against an analytic estimate, conservation law, limiting case, or a refined timestep/frequency grid.
+9. Deliver the code, assumptions, numerical results with units, convergence evidence, checks, and model limitations. Include plots only as supporting evidence.
+
+## Set up the environment safely
+
+Amber and AmberMakie are not registered Julia packages. Install them from `https://github.com/thimotedupuch/Amber.jl`; Amber is the root package and AmberMakie is the optional `AmberMakie` subpackage. Amber is always required: it constructs and simulates circuits and owns the result types. AmberMakie only visualizes results produced by Amber; it is neither a standalone simulator nor an alternative to Amber. Always install Amber first, and install AmberMakie only when the task needs graphs or an interactive workbench.
+
+### Choose the launcher
+
+Inspect, in order:
+
+```sh
+command -v pixi
+command -v julia
+```
+
+- If Pixi exists, prefer it even if Julia also exists. It gives the task a reproducible Julia runtime. Verify the created runtime with `pixi run julia --version`; if Pixi cannot create or execute a Julia environment after ordinary troubleshooting, treat it as unavailable, preserve the diagnostic, and use an existing system Julia.
+- If Pixi is absent but Julia exists, use Julia directly.
+- If neither exists, do not download Julia, Pixi, an installer, or an arbitrary binary. Stop and ask the user to install Pixi, then resume after they confirm it is available.
+- If a dependency command fails because network access is restricted, request the appropriate execution/network permission. Do not bypass the restriction.
+
+### Preferred Pixi setup
+
+Work inside the simulation directory. Reuse an existing Pixi project; otherwise initialize one:
+
+```sh
+pixi init --format pixi .
+pixi add "julia>=1.10"
+pixi run julia --version
+```
+
+A read-only global Pixi cache does not make Pixi unavailable. Retry with a writable task-local cache:
+
+```sh
+PIXI_CACHE_DIR="$PWD/.pixi-cache" pixi add "julia>=1.10"
+```
+
+Exclude `.pixi-cache/` from version control. If dependency resolution then needs restricted network access, request permission before abandoning Pixi. When a local Amber checkout and a working system Julia already provide a fully offline path, the Julia/local-path fallback is acceptable.
+
+Add Amber to the active Julia project:
+
+```sh
+pixi run julia --project=. -e 'using Pkg; Pkg.add(url="https://github.com/thimotedupuch/Amber.jl"); Pkg.instantiate()'
+```
+
+Only after Amber has been added, add AmberMakie when graphs are requested. Add CairoMakie as the rendering backend for headless or file-based plots:
+
+```sh
+pixi run julia --project=. -e 'using Pkg; Pkg.add(url="https://github.com/thimotedupuch/Amber.jl", subdir="AmberMakie"); Pkg.add("CairoMakie"); Pkg.instantiate()'
+```
+
+Run scripts as `pixi run julia --project=. simulate.jl`. Preserve `pixi.toml`, `pixi.lock`, `Project.toml`, and `Manifest.toml` with the result when reproducibility matters.
+
+### Julia-only fallback
+
+Use the same active-project convention:
+
+```sh
+julia --project=. -e 'using Pkg; Pkg.add(url="https://github.com/thimotedupuch/Amber.jl"); Pkg.instantiate()'
+julia --project=. simulate.jl
+```
+
+Add plotting only when needed and only after the preceding Amber installation:
+
+```sh
+julia --project=. -e 'using Pkg; Pkg.add(url="https://github.com/thimotedupuch/Amber.jl", subdir="AmberMakie"); Pkg.add("CairoMakie"); Pkg.instantiate()'
+```
+
+For a long-lived result, pin a known repository revision with `Pkg.add(url=URL, rev="commit-or-tag")`. If already working in an Amber checkout, do not fetch another copy: use `julia --project=.` for Amber itself, or develop the local paths into a separate simulation environment with `Pkg.develop(path="/path/to/Amber.jl")` and `Pkg.develop(path="/path/to/Amber.jl/AmberMakie")`.
+
+## Understand Amber's model
+
+Amber is an equation-oriented analog and multiphysics simulator written in Julia. A circuit definition elaborates into an immutable hierarchical `CircuitDesign`; `compile` lowers it to typed device batches, sparse residual/Jacobian structure, and reusable numerical workspaces. Analyses operate on that compiled representation and return structured results with provenance and diagnostics.
+
+Use SI suffixes such as `10kΩ`, `47nF`, `3.3V`, `1MHz`, and `300K`. They are readable `Float64` scale multipliers, not dimension-checking quantities. Keep dimensional reasoning explicit and label reported values.
+
+Amber provides:
+
+- passive `resistor`, `conductance`, `capacitor`, and `inductor` elements;
+- independent voltage/current sources with DC, AC, `Step`, `Sine`, or `Pulse` excitation;
+- voltage- and current-controlled sources;
+- junction diode, Gummel-Poon BJT, Level-1 MOSFET, behavioral op-amp, and analog switch models;
+- physical resistor/capacitor models such as thin film, SMD 0603, C0G, and Debye branches;
+- analytic behavioral current and voltage sources;
+- hierarchy, arrays, retained instance paths, named observations, fast parameter updates, tolerance metadata, deterministic persistence, and diagnostics;
+- operating point, implicit BDF transient, small-signal, noise and transient-noise, periodic steady state/noise, phase noise, ports and network parameters, control/loop gain, sweeps, Monte Carlo, spectra, harmonics, timing, and frequency-domain metrics.
+
+These models are useful engineering abstractions, not a promise of SPICE-deck compatibility or foundry-grade semiconductor accuracy. State which abstraction was used and its limits.
+
+## Construct circuits correctly
+
+Use `@circuit` for a reusable top-level design. Assign every important net and component to a Julia variable: the left-hand name becomes its stable lookup name.
+
+```julia
+using Amber
+
+@circuit Divider(; supply=5V, top=2kΩ, bottom=1kΩ) begin
+    gnd = ground()
+    vin = node()
+    out = node()
+    Source = voltage_source(vin, gnd; dc=supply)
+    Rtop = resistor(vin, out; value=top)
+    Rbottom = resistor(out, gnd; value=bottom)
+    observe(voltage(out); name=:output)
+end
+
+circuit = Divider()
+issues = check(circuit)
+isempty(issues) || error(join(string.(issues), "\n"))
+println(describe(circuit))
+```
+
+A top-level circuit must contain exactly the intended electrical reference through `ground()`. Capacitors and current sources do not establish a DC path. A floating island, contradictory ideal voltage constraints, or an ideal-inductor loop can make the operating point singular; use `check`, `explain`, and solver diagnostics to find these problems.
+
+Use `@subcircuit` for reusable hierarchy. Give it explicit ports, including a reference port, and instantiate it inside `@circuit`; do not call `ground()` inside the subcircuit. Use ordinary Julia parameters, loops, conditionals, helper functions, and collections in circuit definitions. For highly dynamic construction or libraries, prefer `CircuitBuilder`, `node!`, `ground!`, `add!`, `observe!`, `node_array!`, `instances!`, and `finish`.
+
+Terminal order defines sign. For a two-terminal device created as `(p, n)`, voltage is `V(p)-V(n)`, positive current flows from the first terminal to the second, and positive power is absorbed under the passive sign convention. Confirm the convention before comparing a source-delivered power value.
+
+Consequently, an independent voltage source supplying a passive load normally has negative `current(result, :Source)` and negative `power(result, :Source)`. Report Amber's signed value and, when useful, report the positive delivered quantity as its negation.
+
+Inspect hierarchy and names with `describe`, `summary`, `devices`, `nets`, and `resolve`. Use full instance paths such as `"First.R1"` when a local name is ambiguous.
+
+## Select and run analyses
+
+### Operating point
+
+Use the DC solution for bias, quiescent power, and nonlinear linearization:
+
+```julia
+op = operating_point(circuit)
+@assert get(op.stats, :converged, false)
+vout = only(voltage(op, :out))
+isource = only(current(op, :Source))
+psource = only(power(op, :Source))
+println(report(op))
+```
+
+An operating-point call can return a result carrying nonconvergence information. Always inspect `result.stats[:converged]`, warnings, `validity_report(result)`, or `explain_failure(result)` before trusting values. Small-signal and noise analyses require a converged bias and normally fail explicitly if it is unavailable.
+
+### Transient
+
+Use implicit `:bdf1` or `:bdf2` integration. Resolve the fastest edge, pole, or switching interval with `max_step`; use `event_mode=:exact` for `Step`, `Pulse`, and switch discontinuities. Specify `saveat` when a uniform output grid is needed for spectra or comparison.
+
+```julia
+tr = transient(circuit, 0s => 5ms;
+    initial=:discharged,
+    method=:bdf2,
+    max_step=1μs,
+    saveat=1μs,
+    event_mode=:exact,
+    reltol=1e-6,
+    abstol=1e-9)
+@assert tr.stats[:converged]
+t = tr.axis
+y = voltage(tr, :out)
+```
+
+Use `initial_voltage(capacitor, value)` and `initial_current(inductor, value)` in the design when the stored-energy state is known. Avoid `initial=:discharged` when real bias or precharge matters. Repeat a key measurement with a smaller `max_step` or tighter tolerances.
+
+### Small signal and control
+
+Set an AC amplitude on an independent source and identify it with `source`:
+
+```julia
+ac = small_signal(circuit, 10Hz => 10MHz;
+    source=:Source, points=301, scale=:log)
+H = transfer(ac; input=voltage(:vin), output=voltage(:out))
+fc = cutoff_frequencies(ac; input=voltage(:vin), output=voltage(:out))
+```
+
+The transfer endpoints are `Observable` objects such as `voltage(:vin)`, `voltage(:out)`, or `current(:R1)`, not bare symbols. Use `linearize` for a state-space/control representation and `loop_gain` for feedback stability when the topology and break point are meaningful.
+
+### Noise, periodic, RF, and statistical analyses
+
+- Use `noise(circuit, range; output=voltage(:out), input=:Source)` for device-source contributions, integrated noise, input referral, and noise figure.
+- Use `transient_noise` when sampled nonlinear/noisy behavior matters.
+- Use `periodic_steady_state`, `periodic_noise`, and `phase_noise` for driven periodic systems. Check that the assumed period and settling behavior match the circuit.
+- Define `Port` objects and use `port_response` for S, Y, Z, or ABCD network data. Do not model a port as an accidental extra ideal clamp.
+- Use `sweep` for deterministic parameter studies and `monte_carlo` for seeded Gaussian, log-normal, uniform, correlated, process, tolerance, or mismatch variation.
+- Use `spectrum`, `harmonic_analysis`, and timing/frequency metrics only on a sufficiently settled, sampled, and resolved interval.
+
+Compile once when only numerical parameters change:
+
+```julia
+compiled = compile(circuit)
+tuned = with_parameters(compiled, Symbol("Rtop.value") => 2.2kΩ)
+study = sweep(compiled, Symbol("Rtop.value") => range(1kΩ, 4kΩ; length=31);
+    analysis=OperatingPoint(), metric=r -> only(voltage(r, :out)))
+```
+
+Topology-changing parameters require rebuilding. Each sweep point retains either its result or structured failure; report `successful(study)` and `failure_rate(study)` rather than silently dropping failures.
+
+Use explicit seeds and preserve failures in Monte Carlo:
+
+```julia
+using Statistics
+
+mc = monte_carlo(circuit;
+    analysis=OperatingPoint(), samples=1000, seed=2026, parallel=true,
+    variations=Dict(
+        Symbol("Rtop.value") => Gaussian(2kΩ, 20Ω),
+        Symbol("Rbottom.value") => Gaussian(1kΩ, 10Ω)),
+    metric=r -> only(voltage(r, :out)))
+println((mean=mean(mc), std=std(mc), failures=failure_rate(mc)))
+```
+
+Use `replay_sample` to reproduce an outlier and `save_monte_carlo` for a versioned record.
+
+## Read results as data
+
+Use `voltage`, `current`, `power`, `charge`, `state`, and `observation`. `result.axis` is the primary time/frequency axis; `frequencies(result)` is explicit for frequency results. The accessors return vectors, including one-element vectors for operating points.
+
+Use `result_table(result)` for dependency-free rows, `provenance(result)` for inputs and solver metadata, `report(result)` for a concise summary, and `validity_report(result)` for model-domain warnings. Store important raw numbers in CSV/TOML or a Julia data artifact; a screenshot is not a result.
+
+Validate every important answer with at least one of:
+
+- a hand estimate such as divider ratio, RC corner, time constant, gain, or thermal-noise density;
+- KCL, energy, or power balance under Amber's sign convention;
+- a limiting case or symmetry check;
+- timestep, tolerance, frequency-grid, or sample-count refinement;
+- comparison with a datasheet, measured trace, or trusted reference model supplied by the user.
+
+## Use AmberMakie for visualization
+
+AmberMakie is Amber's optional visualization companion. Do all circuit construction and simulation with Amber first, then pass Amber result objects to AmberMakie recipes. Do not install or invoke AmberMakie for a simulation that does not need graphs. Use CairoMakie for deterministic PNG/SVG/PDF output in headless agent environments:
+
+```julia
+using Amber, AmberMakie, CairoMakie
+
+CairoMakie.activate!()
+set_theme!(theme_amber_light())
+
+fig = Figure(size=(1000, 550))
+traceplot(fig[1, 1], tr; signals=[voltage(:vin), voltage(:out), current(:R1)])
+save("transient.png", fig)
+
+bode = Figure(size=(1000, 600))
+bodeplot(bode[1, 1], ac; input=voltage(:vin), output=voltage(:out))
+save("bode.png", bode)
+```
+
+Use `spectrumplot`, `harmonicplot`, `noiseplot`, `integratednoiseplot`, `noisebudgetplot`, `networkplot`, `smithplot`, `operatingpointplot`, `diagnosticplot`, `sweepplot`, `ensembleplot`, `pssplot`, and `phasenoiseplot` for their corresponding result types. Use `workbench(result; ...)` for interactive exploration only when a display is available. Retain its handle and call `close(handle)` when finished. `savefigure(path, handle)` also writes reproducibility metadata where supported.
+
+Do not infer exact values from pixels. Compute metrics from result arrays and use plots to communicate behavior.
+
+## Easy complete example: RC step and bandwidth
+
+Save this as `simulate.jl` and run it through the selected launcher:
+
+```julia
+using Amber
+
+@circuit RCLowPass(; R=10kΩ, C=10nF) begin
+    gnd = ground()
+    vin = node()
+    out = node()
+    Source = voltage_source(vin, gnd; dc=0V, ac=1V,
+        waveform=Step(low=0V, high=1V, at=100μs, rise=1μs))
+    R1 = resistor(vin, out; value=R)
+    C1 = capacitor(out, gnd; value=C)
+    observe(voltage(out); name=:output)
+end
+
+R, C = 10kΩ, 10nF
+circuit = RCLowPass(; R, C)
+isempty(check(circuit)) || error(explain(circuit))
+
+ac = small_signal(circuit, 10Hz => 1MHz; source=:Source, points=301)
+tr = transient(circuit, 0s => 700μs; max_step=2μs, saveat=2μs,
+    event_mode=:exact)
+@assert ac.stats[:converged] && tr.stats[:converged]
+
+expected_fc = 1 / (2π * R * C)
+measured_fc = only(cutoff_frequencies(ac;
+    input=voltage(:vin), output=voltage(:out)))
+@assert isapprox(measured_fc, expected_fc; rtol=0.03)
+
+println((expected_corner_Hz=expected_fc,
+    simulated_corner_Hz=measured_fc,
+    final_output_V=observation(tr, :output)[end]))
+```
+
+## Advanced example: reusable hierarchy and yield
+
+Prefer hierarchy to copied component blocks. A subcircuit's reference is an explicit port:
+
+```julia
+using Amber, Statistics
+
+@subcircuit RCSection(input, output, reference; R=1kΩ, C=100nF) begin
+    R1 = resistor(input, output; value=R)
+    C1 = capacitor(output, reference; value=C)
+end
+
+@circuit TwoPole begin
+    gnd = ground(); input = node(); middle = node(); output = node()
+    Source = voltage_source(input, gnd; dc=0V, ac=1V)
+    First = RCSection(input, middle, gnd; R=1kΩ, C=100nF)
+    Second = RCSection(middle, output, gnd; R=2kΩ, C=47nF)
+end
+
+circuit = TwoPole()
+isempty(check(circuit)) || error(explain(circuit))
+ac = small_signal(circuit, 10Hz => 1MHz; source=:Source, points=501)
+
+mc = monte_carlo(circuit; samples=2000, seed=42,
+    analysis=SmallSignal([1kHz]; source=:Source),
+    variations=Dict(
+        Symbol("First.R1.value") => Gaussian(1kΩ, 10Ω),
+        Symbol("Second.C1.value") => LogNormal(log(47nF), 0.03)),
+    metric=r -> abs(only(transfer(r;
+        input=voltage(:input), output=voltage(:output)))))
+
+gain = transfer(ac; input=voltage(:input), output=voltage(:output))
+at_1kHz = argmin(abs.(frequencies(ac) .- 1kHz))
+println((nominal_gain_at_1kHz=abs(gain[at_1kHz]),
+    yield=yield_rate(mc, gain -> gain >= 0.1),
+    failures=failure_rate(mc)))
+```
+
+Increase the sample count for a final yield claim and report a confidence interval. Verify that each distribution represents the intended absolute, relative, process, or mismatch variation.
+
+## Write arbitrary Julia around Amber
+
+Amber circuit files are Julia programs, not a restricted netlist language. Define helper functions and structs; generate component arrays with loops; read user-supplied data; perform linear algebra and statistics; optimize parameters; calculate custom metrics; and write CSV/TOML summaries. Add Julia packages with `Pkg.add` only when they are genuinely needed and preserve the environment files.
+
+A useful layout is:
+
+```text
+simulation/
+├── pixi.toml and pixi.lock
+├── Project.toml and Manifest.toml
+├── circuit.jl        # parameters, models, topology
+├── simulate.jl       # analyses, assertions, numeric export
+├── plot.jl           # optional AmberMakie rendering
+└── results/           # generated tables, reports, figures
+```
+
+Use `include("circuit.jl")` from the drivers. Keep analytical checks as `@assert` or tests. Inspect the installed version with `pathof(Amber)` and read its source/docstrings if an API differs; Amber is evolving, so do not guess an unverified method signature.
+
+## Extend Amber when a component is missing
+
+Choose the least invasive faithful representation.
+
+### 1. Compose a subcircuit
+
+First assemble the missing device from existing primitives: add ESR, leakage, package parasitics, controlled sources, switches, or several model sections. Expose physical parameters through an `@subcircuit`. This retains every standard solver, result accessor, sparse compilation, serialization, and diagnostic facility.
+
+### 2. Use an analytic behavioral source
+
+Use `behavioral_current_source` or `behavioral_voltage_source` for a constitutive relation controlled by up to four differential voltages. Supply both the value and its analytic voltage gradient; the gradient is part of Newton's Jacobian and directly affects convergence.
+
+```julia
+behavioral_current_source(((ctrlp, ctrln),), outp, outn;
+    current=(v, t) -> tanh(v[1] / 25e-3),
+    gradient=(v, t) -> (sech(v[1] / 25e-3)^2 / 25e-3, 0.0, 0.0, 0.0))
+```
+
+The current flows from `outp` to `outn`; the voltage source imposes `V(outp)-V(outn)`. Return a four-entry gradient tuple, padding unused controls with zeros. Derive and finite-difference-check the gradient over the operating domain. Smooth discontinuities when physically reasonable; a mathematically abrupt law can destabilize Newton iteration.
+
+Map an arbitrary first-order ODE `x' = f(x,t)` into a circuit by representing each state `xᵢ` as the voltage on a 1 F capacitor to ground and driving it with current `-fᵢ(x,t)` from the state node to ground. Add a very large leakage resistor only to establish a DC reference, and initialize the capacitor. For example, `x'=-x` is:
+
+```julia
+@circuit Decay(; x0=1.0) begin
+    gnd = ground(); x = node()
+    Cx = capacitor(x, gnd; value=1.0)
+    resistor(x, gnd; value=1e15)
+    behavioral_current_source(((x, gnd),), x, gnd;
+        current=(v, t) -> v[1],
+        gradient=(v, t) -> (1.0, 0.0, 0.0, 0.0))
+    initial_voltage(Cx, x0)
+end
+```
+
+This pattern supports coupled thermal, mechanical, biological, and control states within the four-controls-per-source limit. Check scaling: ill-conditioned state magnitudes harm circuit solvers just as they harm generic ODE solvers.
+
+Behavioral closures may not be portable through deterministic circuit serialization. Preserve their Julia source as the authoritative model.
+
+### 3. Add a native primitive only when justified
+
+Modify Amber's core only if the user requested a reusable package feature or composition/behavioral sources cannot express the required branches, dynamic states, noise, or observables. Develop a local clone; never edit an opaque package-cache copy.
+
+Implement the device through the complete compiler contract:
+
+1. Add the public constructor/model in `src/Devices/` and export/include it from `src/Amber.jl`.
+2. Register the primitive for hierarchy elaboration in `src/Core/Hierarchy.jl`.
+3. Define its `DeviceContract` in `src/Core/EquationGraph.jl`: terminal count, branch unknowns, dynamic states, DC paths, noise sources, and observables.
+4. Add its residual/Jacobian sparsity shape and stamp-position emission in `src/Core/CompilerIR.jl`.
+5. Implement its typed batch assembly and `_inplace_batch_supported`/`_linear_batch` traits in `src/Core/Workspace.jl`, using precomputed slots. Stamp residuals, exact Jacobians, and dynamic terms with consistent signs.
+6. Extend result reconstruction for device current, power, charge, or state; model parameter replacement; noise inventory; diagnostics; and serialization wherever the device participates.
+7. Test terminal orientation, DC I-V behavior, analytic Jacobians against finite differences, transient state evolution, AC linearization, noise, KCL/power conservation, hierarchy paths, parameter updates, persistence, and relevant physical references.
+8. Run `julia --project=. -e 'using Pkg; Pkg.test()'` and targeted tests. Document model equations, parameter domains, temperature behavior, and limitations.
+
+Read adjacent implementations before changing internals. Amber's performance comes from explicit device contracts, static sparse stamp shapes, batched assembly, and workspace reuse; bypassing one layer can produce plausible but wrong answers or silently disable an analysis.
+
+## Report the outcome
+
+End with:
+
+- the interpreted circuit and every consequential assumption;
+- the retained Julia files and exact run command;
+- Amber/Julia revision or environment lock information;
+- analysis ranges, timestep/grid, tolerances, initial conditions, temperature, random seed, and sample count;
+- requested measurements with units and sign conventions;
+- convergence, diagnostic, refinement, and independent-check results;
+- failed sweep/Monte Carlo points rather than only successful samples;
+- limitations of device models and any behavioral or custom extension;
+- paths to tables and plots.
+
+Never claim hardware safety, regulatory compliance, or silicon accuracy from simulation alone. Distinguish a solver-converged result from a validated physical model.
