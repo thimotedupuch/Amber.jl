@@ -71,6 +71,7 @@ export provenance, report, validity_report, available_observables
 export result_table
 export compare, peak_to_peak, sampling_metrics, propagation_delay, overshoot
 export Step, Sine, Pulse, ThinFilm, SMD0603, C0G, DebyeBranches
+export ChargeBasedMOSFET, mosfet_operating_point, terminal_charges
 export JunctionDiode, GummelPoonBJT, Level1MOSFET, BehavioralOpAmp, VoltageControlledSwitch
 export SmoothSwitch, EventSwitch, IdealResistor, IdealCapacitor
 export @circuit
@@ -97,6 +98,7 @@ include("Core/Serialization.jl")
 include("Devices/Ideal.jl")
 include("Devices/Passive.jl")
 include("Devices/Semiconductor.jl")
+include("Devices/ChargeBasedMOSFET.jl")
 include("Devices/Behavioral.jl")
 include("Devices/Catalog.jl")
 include("Diagnostics/Diagnostics.jl")

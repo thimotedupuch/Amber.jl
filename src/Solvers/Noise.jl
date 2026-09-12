@@ -184,15 +184,17 @@ function _device_noise_sources(cc,batch,device,op;temperature=300.)
         model=parameters[:model]
         drain,gate,source,bulk=terminals
         channel,derivatives=_mosfet_channel(model,kind,_v(op,drain),_v(op,gate),
-            _v(op,source),_v(op,bulk))
+            _v(op,source),_v(op,bulk);temperature)
         gm=abs(derivatives[2])
+        noise_conductance=model isa ChargeBasedMOSFET ?
+            _charge_mos_evaluate(model,kind,(_v(op,drain),_v(op,gate),_v(op,source),_v(op,bulk));temperature).thermal_conductance : gm
         channel_id=Symbol(owner,".channel_thermal")
         gate_id=Symbol(owner,".induced_gate")
         group=model.induced_gate_noise_coefficient>0 ? Symbol(owner,".channel_gate") : nothing
         _push_source!(sources,:channel_thermal,owner,:thermal,
             _noise_injection(cc,drain,source),
             (_frequency,_bias,_time)->4*_BOLTZMANN*temperature*
-                model.channel_thermal_coefficient*gm;group)
+                model.channel_thermal_coefficient*noise_conductance;group)
         if model.induced_gate_noise_coefficient>0
             _push_source!(sources,:induced_gate,owner,:gate,
                 _noise_injection(cc,gate,source),
@@ -466,7 +468,7 @@ function _noise_validity_warnings(compiled,initial=String[])
         for device in eachindex(batch.parameters)
             instance_name,device_name=_locator_device_name(compiled.design,batch.locators[device])
             name=isempty(instance_name) ? device_name : string(instance_name,'.',device_name)
-            push!(warnings,"$(name): Level1MOSFET noise excludes body-diode, junction, substrate, and foundry BSIM mechanisms")
+            push!(warnings,"$(name): "*_mos_noise_warning(batch.parameters[device].model))
         end
     end
     warnings
@@ -476,3 +478,6 @@ function validity_report(result::NoiseResult)
     warnings=_noise_validity_warnings(result.compiled,result.stats[:warnings])
     Dict(:devices=>Dict{Symbol,Any}(),:warnings=>warnings)
 end
+
+_mos_noise_warning(::Level1MOSFET)="Level1MOSFET noise excludes body-diode, junction, substrate, and foundry BSIM mechanisms"
+_mos_noise_warning(::ChargeBasedMOSFET)="ChargeBasedMOSFET uses long-channel charge-based thermal noise and empirical flicker/gate noise; junction shot noise, substrate and foundry-calibrated mechanisms are excluded"

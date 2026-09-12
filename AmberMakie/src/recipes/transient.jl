@@ -20,8 +20,9 @@ function traceplot(position, result::Amber.SimulationResult; signals, interval=n
     slot = _position(position)
     units = unique(view.unit for view in views)
     mixed_units = length(units) > 1
-    ax = Makie.Axis(slot; xlabel="Time (s)",
-        ylabel=mixed_units ? "Value (mixed units)" : only(units), axis...)
+    ax = Makie.Axis(slot; merge((xlabel="Time (s)",
+        ylabel=mixed_units ? "Value (mixed units)" : only(units),
+        xtickformat=_engineering_ticks, ytickformat=_engineering_ticks), axis)...)
     plots = [Makie.lines!(ax, view.axis[selected], _transform(view.values[selected], transform);
         label=mixed_units ? "$(view.label) [$(view.unit)]" : view.label, kwargs...)
         for view in views]

@@ -66,6 +66,7 @@ DebyeBranches
 JunctionDiode
 GummelPoonBJT
 Level1MOSFET
+ChargeBasedMOSFET
 BehavioralOpAmp
 VoltageControlledSwitch
 SmoothSwitch

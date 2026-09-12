@@ -1,12 +1,17 @@
 function noiseplot(position, result::Amber.NoiseResult; referred=:output, kwargs...)
     view = noiseview(result; referred)
     slot = _position(position)
-    axis = _frequency_axis(slot, view.frequencies; yscale=log10, xlabel="Frequency (Hz)",
+    positive = filter(x -> isfinite(x) && x > 0, view.density)
+    logarithmic = !isempty(positive)
+    axis = _frequency_axis(slot, view.frequencies; yscale=logarithmic ? log10 : identity, xlabel="Frequency (Hz)",
         ylabel=string(titlecase(String(referred)), "-referred noise density (", view.unit, ")"))
-    axis.yminorticks = _log_minor_ticks(view.density)
-    axis.yminorticksvisible = true
-    axis.yminorgridvisible = true
-    plot = Makie.lines!(axis, view.frequencies, view.density; kwargs...)
+    if logarithmic
+        axis.yminorticks = _log_minor_ticks(positive)
+        axis.yminorticksvisible = true
+        axis.yminorgridvisible = true
+    end
+    displayed = logarithmic ? [isfinite(y) && y > 0 ? y : NaN for y in view.density] : view.density
+    plot = Makie.lines!(axis, view.frequencies, displayed; kwargs...)
     PlotHandle(slot, (noise=axis,), (noise=plot,), view)
 end
 
@@ -92,7 +97,10 @@ function noisebudgetplot(position,
             "Input-referred noise PSD (V²/Hz)")
     axis = _frequency_axis(slot, frequencies; xlabel="Frequency (Hz)", ylabel=unit,
         yscale=log10)
-    floor_value = max(eps(Float64), maximum(spectra) * 1e-15)
+    # Machine epsilon is dimensionless and can exceed an entire physical PSD.
+    positive = filter(x -> isfinite(x) && x > 0, vec(spectra))
+    isempty(positive) && (axis.yscale = identity)
+    floor_value = isempty(positive) ? 0.0 : max(floatmin(Float64), minimum(positive) * 1e-3)
     cumulative = fill(floor_value, length(frequencies))
     plots = Any[]
     for index in axes(spectra, 1)
@@ -103,7 +111,7 @@ function noisebudgetplot(position,
     end
     Makie.axislegend(axis; position=:lt)
     PlotHandle(slot, (noise_budget=axis,), (noise_budget=plots,),
-        (frequencies, labels, spectra, total=vec(sum(spectra; dims=1)), group,
+        (frequencies, labels, spectra, total=vec(sum(spectra; dims=1)), floor_value, group,
             referred=result isa Amber.PhaseNoiseResult ? :phase : referred,
             warnings=_warnings(result.stats), provenance=_provenance(result)))
 end

@@ -488,3 +488,7 @@ end
     @test occursin("Makie.xlims!", copyrecipe(handle))
     close(handle)
 end
+
+include("cmos_and_regressions.jl")
+
+include("cmos_studies.jl")

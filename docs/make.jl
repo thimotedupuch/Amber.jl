@@ -23,6 +23,7 @@ makedocs(
             "Hierarchy"=>"manual/hierarchy.md",
             "Units"=>"manual/units.md",
             "Devices and models"=>"manual/devices-and-models.md",
+            "Charge-based MOSFET"=>"manual/charge-based-mosfet.md",
             "Operating point"=>"manual/operating-point.md",
             "Transient analysis"=>"manual/transient.md",
             "Small-signal AC"=>"manual/small-signal.md",

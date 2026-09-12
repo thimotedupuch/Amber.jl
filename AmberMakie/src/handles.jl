@@ -77,6 +77,8 @@ function isolatetrace!(handle::WorkbenchHandle, name)
     for (label, plot) in entries
         _plot_observable(plot, :visible)[] = label == target
     end
+    callback = get(handle.measurements, :trace_selection_callback, nothing)
+    callback === nothing || callback(target)
     handle.measurements[:isolated_trace][] = target
     handle
 end
@@ -87,6 +89,8 @@ function showalltraces!(handle::WorkbenchHandle)
     for plot in values(_trace_entries(handle))
         _plot_observable(plot, :visible)[] = true
     end
+    callback = get(handle.measurements, :show_all_callback, nothing)
+    callback === nothing || callback()
     isolated = get(handle.measurements, :isolated_trace, nothing)
     isolated === nothing || (isolated[] = nothing)
     handle
@@ -184,7 +188,12 @@ function selectsignal!(handle::WorkbenchHandle, signal)
     choices = get(handle.measurements, :signal_choices, Any[])
     index = findfirst(choice -> isequal(choice, signal), choices)
     index === nothing && throw(KeyError(signal))
-    selected[] = choices[index]
+    control = get(handle.measurements, :signal_control, nothing)
+    if control !== nothing && control.i_selected[] != index
+        control.i_selected[] = index
+    else
+        selected[] = choices[index]
+    end
     handle
 end
 

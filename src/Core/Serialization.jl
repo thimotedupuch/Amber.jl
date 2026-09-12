@@ -9,7 +9,7 @@ Base.showerror(io::IO,error::CircuitSerializationError)=print(io,error.message)
 const _SERIALIZABLE_STRUCTS = Dict{String,Any}(
     String(nameof(type)) => type for type in (
         Step, Sine, Pulse, ThinFilm, SMD0603, C0G, DebyeBranches,
-        JunctionDiode, GummelPoonBJT, Level1MOSFET, BehavioralOpAmp,
+        JunctionDiode, GummelPoonBJT, Level1MOSFET, ChargeBasedMOSFET, BehavioralOpAmp,
         VoltageControlledSwitch, EventSwitch, SmoothSwitch,
         IdealResistor, IdealCapacitor, MatchedGroup, Differential,
     )
@@ -71,9 +71,9 @@ function _decode_value(encoded,nodes,components,depth::Int=0,max_depth::Int=64)
         elseif type === Differential
             return Differential(values[:positive], values[:negative])
         elseif type in (ThinFilm, SMD0603, C0G, DebyeBranches, JunctionDiode,
-                GummelPoonBJT, Level1MOSFET, BehavioralOpAmp,
+                GummelPoonBJT, Level1MOSFET, ChargeBasedMOSFET, BehavioralOpAmp,
                 VoltageControlledSwitch, EventSwitch, SmoothSwitch)
-            return type(values[:data])
+            return _validate_model_parameters(type(values[:data]))
         end
         return type(; values...)
     end

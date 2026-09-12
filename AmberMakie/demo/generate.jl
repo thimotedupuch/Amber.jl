@@ -7,7 +7,7 @@ using LinearAlgebra
 CairoMakie.activate!()
 set_theme!(theme_amber_light())
 
-const OUTPUT = joinpath(@__DIR__, "generated")
+const OUTPUT = get(ENV, "AMBERMAKIE_DEMO_OUTPUT", joinpath(@__DIR__, "generated"))
 mkpath(OUTPUT)
 
 @circuit DemoLowPass() begin
@@ -251,5 +251,29 @@ save_demo("29_transient_comparison.png", comparison_figure)
 report = reportfigure(noise_result)
 savefigure(joinpath(OUTPUT, "30_noise_report.png"), report)
 
-png_count = count(name -> endswith(name, ".png"), readdir(OUTPUT))
-println("Generated $(png_count) PNG demonstrators in $(OUTPUT)")
+
+# Native CMOS characterization: stored numerical bias grids, with no hidden
+# simulation in the plotting recipes.
+mos_model = ChargeBasedMOSFET(width=8μm, length=2μm,
+    channel_length_modulation=0.02)
+mos_view = mosfetview(mos_model; vgs=range(0.0, 1.5; length=101),
+    vds=[0.05, 0.6, 1.2])
+mos_handle = workbench(mos_view)
+selectbias!(mos_handle; vgs=0.9, vds=1.2)
+savefigure(joinpath(OUTPUT, "31_cmos_characterization.png"), mos_handle)
+close(mos_handle)
+
+mos_output_figure = Figure(size=(1100, 550))
+mosfetplot(mos_output_figure[1, 1], mosfetview(mos_model;
+    vgs=[0.6, 0.8, 1.0, 1.2], vds=range(0.0, 1.8; length=101)); x=:vds)
+capacitanceplot(mos_output_figure[1, 2], mos_view.points[61, 3])
+Label(mos_output_figure[0, :], "CMOS output characteristics and signed terminal capacitance"; fontsize=22)
+save(joinpath(OUTPUT, "32_cmos_output_and_capacitance.png"), mos_output_figure)
+
+mos_pview = mosfetview(mos_model; kind=:pmos, vgs=mos_view.vgs, vds=mos_view.vds)
+mos_phandle = workbench(mos_pview)
+selectbias!(mos_phandle; vgs=0.9, vds=1.2)
+save(joinpath(OUTPUT, "33_pmos_characterization.png"), mos_phandle.figure)
+close(mos_phandle)
+
+println("Generated ", count(endswith(".png"), readdir(OUTPUT)), " PNG demonstrators in ", OUTPUT)

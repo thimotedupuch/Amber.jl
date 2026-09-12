@@ -1,5 +1,7 @@
 abstract type AbstractWaveform end
 
+_validate_model_parameters(model)=model
+
 """Return the named numerical parameters exposed by a device model."""
 model_parameters(model)=throw(ArgumentError("model $(typeof(model)) does not implement model_parameters"))
 
@@ -69,6 +71,18 @@ for (T,defaults) in ((:ThinFilm,:(;tc1=0.,temperature_coefficient=0.,voltage_coe
         flicker_current_exponent=2.,flicker_frequency_exponent=1.,
         flicker_reference_frequency=1.,induced_gate_noise_coefficient=0.,
         gate_channel_correlation=0.0+0.0im)),
+    (:ChargeBasedMOSFET,:(;threshold_voltage=.7, slope_factor=1.3, channel_length_modulation=0.,
+        mobility=.04, oxide_capacitance=5e-3, width=1e-6, length=1e-6,
+        multiplicity=1., reference_temperature=300., threshold_temperature_coefficient=-1e-3,
+        mobility_temperature_exponent=-1.5, gate_source_overlap=0., gate_drain_overlap=0.,
+        gate_bulk_capacitance=0., drain_area=0., source_area=0.,
+        drain_perimeter=0., source_perimeter=0., junction_capacitance_density=1e-3,
+        junction_sidewall_capacitance=1e-10, junction_saturation_current_density=1e-6,
+        junction_potential=.7, junction_grading=.5,
+        channel_thermal_coefficient=1., flicker_coefficient=0.,
+        flicker_current_exponent=2., flicker_frequency_exponent=1.,
+        flicker_reference_frequency=1., induced_gate_noise_coefficient=0.,
+        gate_channel_correlation=0.0+0.0im)),
     (:BehavioralOpAmp,:(;dc_gain=1e5,gain_bandwidth=1e6,slew_rate=1e6,
         output_resistance=10.,output_current_limit=Inf,input_offset=0.,
         input_voltage_noise_density=0.,input_voltage_flicker_corner=0.,
@@ -87,17 +101,38 @@ for (T,defaults) in ((:ThinFilm,:(;tc1=0.,temperature_coefficient=0.,voltage_coe
             isempty(unknown)||throw(ArgumentError(
                 $(String(T))*" received unsupported parameter(s): "*
                     join(string.(unknown),", ")))
-            $T((;defaults...,kw...))
+            _validate_model_parameters($T((;defaults...,kw...)))
         end
         Base.@constprop :aggressive Base.getproperty(x::$T,s::Symbol)=
             s===:data ? getfield(x,:data) : getproperty(getfield(x,:data),s)
         model_parameters(x::$T)=x.data
         function with_model_parameter(x::$T,name::Symbol,value)
             hasproperty(x.data,name)||throw(ArgumentError("model $(nameof($T)) has no parameter $(name)"))
-            $T(merge(x.data,NamedTuple{(name,)}((value,))))
+            _validate_model_parameters($T(merge(x.data,NamedTuple{(name,)}((value,)))))
         end
     end
 end
 
 struct IdealResistor; value::Float64; end
 struct IdealCapacitor; value::Float64; end
+
+function _validate_model_parameters(model::ChargeBasedMOSFET)
+    for (name,value) in pairs(model.data)
+        value isa Number && isfinite(value) || throw(ArgumentError("$(name) must be finite"))
+    end
+    for name in (:mobility,:oxide_capacitance,:width,:length,:multiplicity,
+                 :reference_temperature,:junction_potential,:flicker_reference_frequency)
+        getproperty(model,name)>0 || throw(ArgumentError("$(name) must be positive"))
+    end
+    model.slope_factor>=1 || throw(ArgumentError("slope_factor must be at least one"))
+    0<=model.junction_grading<1 || throw(ArgumentError("junction_grading must lie in [0, 1)"))
+    for name in (:channel_length_modulation,:gate_source_overlap,:gate_drain_overlap,:gate_bulk_capacitance,
+                 :drain_area,:source_area,:drain_perimeter,:source_perimeter,
+                 :junction_capacitance_density,:junction_sidewall_capacitance,
+                 :junction_saturation_current_density,:channel_thermal_coefficient,
+                 :flicker_coefficient,:induced_gate_noise_coefficient)
+        getproperty(model,name)>=0 || throw(ArgumentError("$(name) must be non-negative"))
+    end
+    abs(model.gate_channel_correlation)<=1 || throw(ArgumentError("gate_channel_correlation magnitude must not exceed one"))
+    model
+end

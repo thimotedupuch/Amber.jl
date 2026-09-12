@@ -19,6 +19,7 @@ function spectrumplot(position, result::Amber.SpectrumResult; scale=:rms,
     else
         values = 10log10.(max.(view.amplitude_rms .^ 2 ./ impedance ./ 1e-3, floatmin(Float64))); ylabel = "Power (dBm into $(engineering(impedance; unit="Ω")))"
     end
+    frequency_scale === :log && include_dc && throw(ArgumentError("DC cannot be displayed on a logarithmic frequency axis; use include_dc=false"))
     indices = include_dc ? collect(eachindex(view.frequencies)) : findall(>(0), view.frequencies)
     slot = _position(position)
     axis = frequency_scale === :log ? _frequency_axis(slot, view.frequencies[indices];
@@ -64,11 +65,11 @@ function spectrogramplot(position, result::Amber.SimulationResult; signal, windo
     scale in (:psd, :db) || throw(ArgumentError("scale must be :psd or :db"))
     view = spectrogramview(result; signal, window, samples, overlap, nfft, detrend)
     values = scale === :psd ? view.psd : 10 .* log10.(max.(view.psd, 10.0^(floor_db / 10)))
-    slot = _position(position)
-    axis = Makie.Axis(slot; xlabel="Time (s)", ylabel="Frequency (Hz)")
+    slot = _position(position); layout = Makie.GridLayout(slot)
+    axis = Makie.Axis(layout[1, 1]; xlabel="Time (s)", ylabel="Frequency (Hz)")
     plot = Makie.heatmap!(axis, view.times, view.frequencies, permutedims(values); kwargs...)
-    Makie.Colorbar(slot[1, 2], plot; label=scale === :psd ? "PSD" : "PSD (dB/Hz)")
-    PlotHandle(slot, (spectrogram=axis,), (spectrogram=plot,), view)
+    Makie.Colorbar(layout[1, 2], plot; label=scale === :psd ? "PSD" : "PSD (dB/Hz)")
+    PlotHandle(layout, (spectrogram=axis,), (spectrogram=plot,), view)
 end
 
 function waterfallplot(position, x::AbstractVector, sweeps::AbstractVector,

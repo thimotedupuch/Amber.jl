@@ -15,7 +15,7 @@ plots, and typed workbench handles.
 
 ## Measurements
 
-Every workbench owns linked A/B cursors. Click in an axis to place cursor A and
+Time/frequency workbenches provide linked A/B cursors. Click in an axis to place cursor A and
 Shift-click to place cursor B. Readouts always snap to the original numerical data:
 
 ```julia
@@ -158,3 +158,63 @@ voltage conventions.
 Publication reports use structured measurement tables, analysis-specific notes,
 and explicit provenance blocks. `savefigure` writes the same measurements,
 warnings, axis limits, and provenance to a TOML sidecar.
+
+
+## CMOS characterization
+
+Characterize the native charge-based MOS model on a reproducible bias grid,
+then compose plots or open a dashboard:
+
+```julia
+using Amber, AmberMakie, CairoMakie
+model = ChargeBasedMOSFET(width=8μm, length=2μm,
+    channel_length_modulation=0.02)
+view = mosfetview(model; vgs=range(0.0, 1.5; length=101),
+    vds=[0.05, 0.6, 1.2], temperature=300)
+handle = workbench(view)
+selectbias!(handle; vgs=0.9, vds=1.2)
+savefigure("cmos.png", handle)
+close(handle)
+```
+
+The dashboard links transfer current, transconductance efficiency, intrinsic gain
+versus gm/ID, and gate capacitance through one selected gate/drain bias. Moving
+the slider or clicking a plot inspects stored data. `copyrecipe(handle)` retains
+the model, grid and selection; exported metadata contains physical parameters.
+
+- `mosfetplot(fig[1,1], view; scale=:log)` shows transfer-current families.
+- `gmidplot(fig[1,1], view)` shows gm/|ID| versus |ID|/(W × multiplicity), in A/m.
+- `mosfetplot(fig[1,1], view; quantity=:intrinsic_gain, x=:gm_over_id, scale=:log)` shows the gain/efficiency tradeoff.
+- `mosfetplot(fig[1,1], output_view; x=:vds)` shows output characteristics. Construct `output_view` with a dense drain grid and a few gate voltages.
+- `capacitanceplot(fig[1,1], view.points[i,j])` shows the **signed** terminal-charge Jacobian, in fF, with charge terminals as rows and voltage terminals as columns.
+
+Use `kind=:pmos` for PMOS. Grid voltages are polarity-normalized VSG/VSD in that
+case; current plots show magnitudes. Underlying operating points retain signed
+currents. Zero/nonfinite values are omitted on logarithmic plots without changing
+the stored data. These views inherit the model's documented long-channel limits.
+
+Further CMOS workflows can compose the existing transient, sweep and statistical
+plots: inverter transfer/noise margins, switching delay versus load, switching
+energy, current-mirror error, differential-pair offset, and temperature/geometry
+comparisons. Those are circuit-level studies; the transistor dashboard does not
+infer their performance from a single device.
+
+## Reproduce the rendering gallery
+
+`demo/generate.jl` renders the existing analysis gallery and the CMOS examples.
+Run it in an environment containing Amber, AmberMakie and CairoMakie. Set
+`AMBERMAKIE_DEMO_OUTPUT` to choose an output directory. CairoMakie is a test/demo
+backend dependency; the package itself remains backend-neutral.
+
+CMOS circuit studies now include:
+
+- `inverterview` / `inverterplot`: DC transfer, differential gain, switching
+  threshold, and unity-gain noise margins; accepts an Amber sweep or raw samples.
+- `switchingmetrics`, `switchingview` / `switchingplot`: 50% propagation delays
+  and integrated supply energy versus load and supply, with explicit windows.
+- `mismatchview` / `mismatchplot`: offset or mismatch empirical distributions
+  and mean ± standard deviation grouped by temperature and W/L, retaining failed
+  samples, seeds, and caller-provided simulation records.
+
+See [`demo/cmos_studies.jl`](demo/cmos_studies.jl) for runnable inverter and
+seeded transistor-pair examples. Statistical parameters are illustrative.

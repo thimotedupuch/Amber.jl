@@ -36,3 +36,5 @@ function _frequency_axis(position, frequencies; kwargs...)
         xminorticks=_log_minor_ticks(frequencies), xminorticksvisible=true,
         xminorgridvisible=true, xminorgridcolor=(:black, 0.075), kwargs...)
 end
+
+_engineering_ticks(values) = [strip(engineering(value; digits=3)) for value in values]

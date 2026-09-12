@@ -5,6 +5,8 @@ import Makie
 import LinearAlgebra
 import TOML
 
+export InverterView, inverterview, inverterplot, SwitchingView, switchingmetrics, switchingview, switchingplot, MismatchView, mismatchview, mismatchplot
+export selectbias!, MOSFETView, mosfetview, mosfetplot, gmidplot, capacitanceplot
 export TraceView, FrequencyView, SpectrumView, SpectrogramView, NoiseView, NoiseContributionView, NetworkView, EnsembleView, OperatingPointView, EyeDiagramView, JitterView
 export traceview, frequencyview, spectrumview, spectrogramview, noiseview, noisecontributionview, networkview, ensembleview, operatingpointview, eyediagramview, jitterview, diagnosticgroups
 export SpectrumCursorReadout, spectrum_cursor
@@ -45,6 +47,8 @@ include("recipes/periodic.jl")
 include("recipes/statistics.jl")
 include("recipes/diagnostics.jl")
 include("workbenches/result.jl")
+include("recipes/cmos.jl")
+include("recipes/cmos_studies.jl")
 include("workbenches/study.jl")
 include("export.jl")
 

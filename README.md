@@ -473,6 +473,23 @@ Nonuniform records are resampled and the operation is recorded in result
 warnings. Other helpers include `sampling_metrics`, `propagation_delay`,
 `compare`, `band_power`, `quality_factor`, and `notch_depth`.
 
+## Charge-based CMOS characterization
+
+`ChargeBasedMOSFET` adds continuous weak-to-strong inversion, explicit W/L and
+multiplicity, conserving terminal charges, optional junctions, and temperature
+laws. It is a bounded native long-channel model, not a foundry model.
+
+```julia
+mos = ChargeBasedMOSFET(width=8μm, length=2μm)
+point = mosfet_operating_point(mos, :nmos, 1.2V, 1V, 0V, 0V)
+point.gm_over_id
+point.capacitance_matrix           # signed dQi/dVj: drain, gate, source, bulk
+```
+
+The same model works with `nmos`/`pmos`, compiled parameter updates, AC,
+transient and noise. See [the model manual](docs/src/manual/charge-based-mosfet.md)
+for equations, geometry keywords, characterization sweeps and physical limits.
+
 ## Fast parameter studies
 
 ### Compile once, update values without changing topology
@@ -594,7 +611,7 @@ The core constructors are:
   `voltage_controlled_voltage_source`, `current_controlled_current_source`, and
   `current_controlled_voltage_source`.
 - Semiconductor: `diode` with `JunctionDiode`, `npn` with `GummelPoonBJT`, and
-  `nmos`/`pmos` with `Level1MOSFET`.
+  `nmos`/`pmos` with `Level1MOSFET` or `ChargeBasedMOSFET`.
 - Behavioral: `opamp` with `BehavioralOpAmp`, `analog_switch` with smooth or
   event switch models, and nonlinear `behavioral_current_source` /
   `behavioral_voltage_source` with user-supplied constitutive laws and analytic

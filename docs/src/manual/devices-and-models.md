@@ -5,10 +5,11 @@ Amber separates convenient device constructors from physical model values. Const
 - `JunctionDiode` implements exponential junction current, optional breakdown, series resistance, depletion/transit charge, separated carrier shot noise, and optional power-law noise.
 - `GummelPoonBJT` provides a compact NPN model with forward/reverse transport, Early effect, junction capacitances, base resistance, transport shot noise, and base-current power-law noise.
 - `Level1MOSFET` provides symmetric NMOS and PMOS channel equations with body effect, triode and saturation regions, channel-length modulation, fixed intrinsic gate capacitances, channel/gate noise, correlation, and power-law noise.
+- `ChargeBasedMOSFET` provides continuous inversion, explicit geometry, conserving terminal charges and temperature laws. See [Charge-based MOSFET](@ref).
 - `BehavioralOpAmp` models finite open-loop gain and bandwidth, rails, offset, bias currents, input capacitance, output resistance, and explicit input/output noise spectra.
 - `VoltageControlledSwitch` selects smooth or event-oriented resistance transitions and can model feedthrough and charge injection.
 
-These models are deliberately focused. They are useful for circuit reasoning and numerical experimentation, not drop-in foundry models. The MOSFET model is a level-1 model rather than BSIM, and some declared behavioral op-amp limits are reserved rather than enforced. Read [Physical model scope](@ref) and [Current limitations](@ref) before interpreting edge-of-validity results.
+These models are deliberately focused. They are useful for circuit reasoning and numerical experimentation, not drop-in foundry models. The MOSFET models cover Level 1 and a bounded charge-based long-channel formulation rather than BSIM, and some declared behavioral op-amp limits are reserved rather than enforced. Read [Physical model scope](@ref) and [Current limitations](@ref) before interpreting edge-of-validity results.
 
 ```@example models
 using Amber

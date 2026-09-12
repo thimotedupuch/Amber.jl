@@ -1,10 +1,20 @@
 diode(a,b;model=JunctionDiode(),kw...)=_component(:diode,a,b;model,kw...)
 npn(c,b,e;model=GummelPoonBJT(),kw...)=_component(:npn,c,b,e;model,kw...)
-nmos(d,g,s,b;model=Level1MOSFET(),kw...)=_component(:nmos,d,g,s,b;model,kw...)
-pmos(d,g,s,b;model=Level1MOSFET(),kw...)=_component(:pmos,d,g,s,b;model,kw...)
+function _mosfet_component(kind,d,g,s,b;model=Level1MOSFET(),width=nothing,length=nothing,
+        multiplicity=nothing,drain_area=nothing,source_area=nothing,
+        drain_perimeter=nothing,source_perimeter=nothing,kw...)
+    for (name,value) in pairs((;width,length,multiplicity,drain_area,source_area,drain_perimeter,source_perimeter))
+        value===nothing && continue
+        model isa ChargeBasedMOSFET || throw(ArgumentError("explicit MOS geometry requires ChargeBasedMOSFET"))
+        model=with_model_parameter(model,name,Float64(value))
+    end
+    _component(kind,d,g,s,b;model,kw...)
+end
+nmos(d,g,s,b;kw...)=_mosfet_component(:nmos,d,g,s,b;kw...)
+pmos(d,g,s,b;kw...)=_mosfet_component(:pmos,d,g,s,b;kw...)
 
 """Channel current leaving the drain and its derivatives with respect to d, g, s, b."""
-function _mosfet_channel(model::Level1MOSFET,kind::Symbol,vd,vg,vs,vb)
+function _mosfet_channel(model::Level1MOSFET,kind::Symbol,vd,vg,vs,vb;temperature=300.)
     data=getfield(model,:data)
     polarity=kind===:nmos ? 1. : -1.
     ud,ug,us,ub=polarity.*(vd,vg,vs,vb)

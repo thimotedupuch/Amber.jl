@@ -1,5 +1,7 @@
 function _handle_figure(handle)
-    handle isa WorkbenchHandle ? handle.figure : Makie.get_figure(handle.layout)
+    handle isa WorkbenchHandle && return handle.figure
+    layout = handle.layout
+    Makie.get_figure(layout isa Makie.GridLayout ? layout[1, 1] : layout)
 end
 
 function _view_metadata(view)
@@ -161,6 +163,11 @@ function _style_recipe(plots)
 end
 
 function _workbench_constructor(handle)
+    if haskey(handle.measurements, :mosfet_view)
+        view = handle.measurements[:mosfet_view]
+        return "model = Amber.ChargeBasedMOSFET(; $(repr(Amber.model_parameters(view.model)))...)\n" *
+            "view = mosfetview(model; kind=$(repr(view.kind)), vgs=$(repr(view.vgs)), vds=$(repr(view.vds)), vbs=$(view.vbs), temperature=$(view.temperature))\nhandle = workbench(view)"
+    end
     kwargs = get(handle.measurements, :copyrecipe_kwargs, Dict{Symbol,String}())
     isempty(kwargs) && return "handle = workbench(result)"
     rendered = join(("$(name)=$(code)" for (name, code) in pairs(kwargs)), ", ")
@@ -171,6 +178,12 @@ function copyrecipe(handle::WorkbenchHandle)
     cursor = handle.cursors === nothing ? "" :
         "\nsetcursor!(handle.cursors, :a, $(handle.cursors.a[]))\nsetcursor!(handle.cursors, :b, $(handle.cursors.b[]))\nsetinterval!(handle.cursors, $(repr(handle.cursors.interval[])))"
     selectors = String[]
+    if haskey(handle.measurements, :mosfet_view)
+        view = handle.measurements[:mosfet_view]
+        gate = view.vgs[handle.measurements[:selected_gate][]]
+        drain = view.vds[handle.measurements[:selected_drain][]]
+        push!(selectors, "selectbias!(handle; vgs=$(gate), vds=$(drain))")
+    end
     if haskey(handle.measurements, :selected_sample)
         push!(selectors, "selectsample!(handle, $(handle.measurements[:selected_sample][]))")
     elseif haskey(handle.measurements, :selected)

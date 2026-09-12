@@ -8,14 +8,14 @@ theme_amber_light() = Makie.Theme(
     backgroundcolor = :white,
     textcolor = :black,
     Axis = (backgroundcolor = :white, xgridcolor = (:black, 0.10), ygridcolor = (:black, 0.10)),
-    palette = (color = collect(values(_AMBER_COLORS)),),
+    palette = (color = unique(collect(values(_AMBER_COLORS))),),
 )
 
 theme_amber_dark() = Makie.Theme(
     backgroundcolor = "#15171A",
     textcolor = "#F2F2F2",
     Axis = (backgroundcolor = "#15171A", xgridcolor = (:white, 0.12), ygridcolor = (:white, 0.12)),
-    palette = (color = collect(values(_AMBER_COLORS)),),
+    palette = (color = unique(collect(values(_AMBER_COLORS))),),
 )
 
 theme_amber_publication() = Makie.merge(theme_amber_light(), Makie.Theme(

@@ -18,26 +18,37 @@ function _workbench_handle(figure, handle)
     primary === nothing && return WorkbenchHandle(figure, handle.axes, handle.plots,
         selection, nothing, Dict{Symbol,Any}(), String[], Dict(), () -> nothing, false)
     x, y, view = primary
+    y = copy(y)
+    selected_view = Makie.Observable{Any}(view)
+    sidebar = Makie.GridLayout(figure[1, 2]; tellheight=false, valign=:top)
+    Makie.colsize!(figure.layout, 1, Makie.Relative(0.72))
+    Makie.colsize!(figure.layout, 2, Makie.Relative(0.28))
     cursors = CursorState(x, y)
     foreach(axis -> _cursor_axis!(axis, cursors, x), values(handle.axes))
-    Makie.Label(figure[1, 2], "Measurement interval"; halign=:left)
-    interval_slider = Makie.IntervalSlider(figure[2, 2]; range=x, startvalues=(first(x), last(x)))
+    Makie.Label(sidebar[1, 1], "Measurement interval"; halign=:left)
+    interval_slider = Makie.IntervalSlider(sidebar[2, 1]; range=x, startvalues=(first(x), last(x)))
     push!(cursors.subscriptions, Makie.on(interval_slider.interval) do bounds
         setinterval!(cursors, first(bounds) => last(bounds))
     end)
-    cursor_text = Makie.lift(cursors.readout) do measurement
-        "A: $(engineering(measurement.a.x))\nB: $(engineering(measurement.b.x))\nΔx: $(engineering(measurement.delta_x))\nΔy: $(engineering(real(measurement.delta_y)))"
+    cursor_text = Makie.lift(cursors.readout, selected_view) do measurement, active
+        xunit = active isa TraceView ? "s" : "Hz"
+        yunit = active isa TraceView ? active.unit : ""
+        label = active isa TraceView ? active.label * "\n" : ""
+        label * "A: $(engineering(measurement.a.x; unit=xunit))\nB: $(engineering(measurement.b.x; unit=xunit))\nΔx: $(engineering(measurement.delta_x; unit=xunit))\nΔy: $(engineering(real(measurement.delta_y); unit=yunit))"
     end
-    interval_text = Makie.lift(cursors.interval_readout) do measurement
-        "RMS: $(engineering(measurement.rms))\nMean: $(engineering(measurement.mean))\nPeak-to-peak: $(engineering(measurement.peak_to_peak))"
+    interval_text = Makie.lift(cursors.interval_readout, selected_view) do measurement, active
+        unit = active isa TraceView ? active.unit : ""
+        "RMS: $(engineering(measurement.rms; unit))\nMean: $(engineering(measurement.mean; unit))\nPeak-to-peak: $(engineering(measurement.peak_to_peak; unit))"
     end
-    Makie.Label(figure[3, 2], cursor_text; halign=:left, justification=:left)
-    Makie.Label(figure[4, 2], interval_text; halign=:left, justification=:left)
+    Makie.Label(sidebar[3, 1], cursor_text; halign=:left, justification=:left)
+    Makie.Label(sidebar[4, 1], interval_text; halign=:left, justification=:left)
     warning_text = isempty(view.warnings) ? "No warnings" : "Warnings\n" * join(view.warnings, "\n")
-    Makie.Label(figure[5, 2], warning_text; halign=:left, justification=:left,
+    Makie.Label(sidebar[5, 1], warning_text; halign=:left, justification=:left,
         color=isempty(view.warnings) ? :gray40 : _AMBER_COLORS.warning)
     inspector = Makie.DataInspector(figure)
-    measurements = Dict{Symbol,Any}(:cursors => cursors.readout, :interval => cursors.interval_readout)
+    measurements = Dict{Symbol,Any}(:cursors => cursors.readout, :interval => cursors.interval_readout,
+        :cursor_values => y, :selected_view => selected_view, :sidebar => sidebar,
+        :cursor_text => cursor_text, :interval_text => interval_text)
     cleanup = () -> begin
         _close!(cursors)
         delete!(figure, inspector)
@@ -181,7 +192,7 @@ function _smallsignal_workbench(result::Amber.SimulationResult; input, output,
         xlabel="Frequency (Hz)", ylabel="Phase (°)")
     Makie.linkxaxes!(magnitude_axis, phase_axis)
     nyquist_axis = Makie.Axis(figure[1:4, 2]; xlabel="Real", ylabel="Imaginary",
-        aspect=Makie.DataAspect())
+        autolimitaspect=1)
     # Both columns contain aspect-aware axes and menus, so Auto sizing follows
     # the controls' intrinsic widths and can collapse the plots. Reserve the
     # canvas explicitly for the Bode and Nyquist views.
@@ -302,7 +313,7 @@ function workbench(result::Amber.SimulationResult; signals=nothing, input=nothin
     if result.analysis isa Union{Amber.Transient,Amber.TransientNoise}
         figure = _workbench_figure()
         signals === nothing && throw(ArgumentError("transient workbench requires `signals`"))
-        handle = traceplot(figure[1:5, 1], result; signals)
+        handle = traceplot(figure[1, 1], result; signals)
     elseif result.analysis isa Amber.SmallSignal
         (input === nothing || output === nothing) &&
             throw(ArgumentError("small-signal workbench requires `input` and `output`"))
@@ -315,9 +326,10 @@ function workbench(result::Amber.SimulationResult; signals=nothing, input=nothin
         signal_choices = signals isa AbstractVector || signals isa Tuple ?
             collect(signals) : [signals]
         selected_signal = Makie.Observable{Any}(first(signal_choices))
-        Makie.Label(figure[6, 2], "Signal selector"; halign=:left)
-        signal_control = Makie.Menu(figure[7, 2];
-            options=[(string(signal), signal) for signal in signal_choices], default=1)
+        sidebar = workbench_handle.measurements[:sidebar]
+        Makie.Label(sidebar[6, 1], "Signal selector"; halign=:left)
+        signal_control = Makie.Menu(sidebar[7, 1];
+            options=[(_signal_label(signal), signal) for signal in signal_choices], default=1)
         push!(workbench_handle.measurements[:control_subscriptions],
             Makie.on(signal_control.selection) do signal
                 signal === nothing || (selected_signal[] = signal)
@@ -330,8 +342,32 @@ function workbench(result::Amber.SimulationResult; signals=nothing, input=nothin
                     _plot_observable(handle.plots[candidate], :visible)[] =
                         candidate == index
                 end
+                active = handle.view[index]
+                handle.axes.trace.ylabel[] = active.unit
+                finite_values = filter(isfinite, real.(active.values))
+                if !isempty(finite_values)
+                    low, high = extrema(finite_values)
+                    padding = high == low ? (iszero(low) ? 1.0 : .05abs(low)) : .05(high-low)
+                    Makie.ylims!(handle.axes.trace, low-padding, high+padding)
+                end
+                copyto!(workbench_handle.measurements[:cursor_values], real.(active.values))
+                workbench_handle.measurements[:selected_view][] = active
+                cursors = workbench_handle.cursors
+                cursors.readout[] = cursor_readout(active.axis,
+                    workbench_handle.measurements[:cursor_values], cursors.a[], cursors.b[])
+                cursors.interval_readout[] = interval_readout(active.axis,
+                    workbench_handle.measurements[:cursor_values], cursors.interval[])
                 workbench_handle.selection[] = [Symbol(string(signal))]
             end)
+        workbench_handle.measurements[:trace_selection_callback] = name -> begin
+            index = findfirst(i -> name == "[$(i)]", eachindex(signal_choices))
+            index === nothing || selectsignal!(workbench_handle, signal_choices[index])
+        end
+        workbench_handle.measurements[:show_all_callback] = () -> begin
+            units = unique(view.unit for view in handle.view)
+            handle.axes.trace.ylabel[] = length(units) == 1 ? only(units) : "Value (mixed units)"
+            Makie.autolimits!(handle.axes.trace)
+        end
         workbench_handle.measurements[:selected_signal] = selected_signal
         workbench_handle.measurements[:signal_choices] = signal_choices
         workbench_handle.measurements[:signal_control] = signal_control
@@ -820,7 +856,7 @@ end
 function workbench(result::Amber.LoopGainResult; view=:auto)
     figure = _workbench_figure()
     _contextualize!(_workbench_handle(figure,
-        marginplot(figure[1:5, 1], result)))
+        marginplot(figure[1, 1], result)))
 end
 
 function workbench(result::Amber.PSSResult; signals, view=:auto)
@@ -860,7 +896,7 @@ function workbench(result::Amber.PSSResult; signals, view=:auto)
     selected_signal = Makie.Observable{Any}(first(signal_choices))
     Makie.Label(figure[7, 2], "Orbit signal selector"; halign=:left)
     signal_control = Makie.Menu(figure[8, 2];
-        options=[(string(signal), signal) for signal in signal_choices], default=1)
+        options=[(_signal_label(signal), signal) for signal in signal_choices], default=1)
     subscriptions = Any[]
     push!(subscriptions, Makie.on(selector.value) do index
         selected_index[] = Int(index)

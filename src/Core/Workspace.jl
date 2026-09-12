@@ -306,7 +306,22 @@ function _assemble_mosfet_batch!(workspace, batch, kind::Symbol, state, derivati
     @inbounds for device in eachindex(batch.parameters)
         q = ntuple(index -> batch.terminals[index][device], 4); model = batch.parameters[device].model
         vd, vg, vs, vb = (_workspace_value(state, q[index]) for index in 1:4)
-        channel, derivatives = _mosfet_channel(model, kind, vd, vg, vs, vb)
+        if model isa ChargeBasedMOSFET
+            evaluated=_charge_mos_evaluate(model,kind,(vd,vg,vs,vb);temperature)
+            rates=ntuple(i->_workspace_value(derivative,q[i]),4)
+            for row in 1:4
+                conductive=evaluated.currents[row]; charge=evaluated.charges[row]
+                current=conductive.value+sum(charge.gradient[j]*rates[j] for j in 1:4)
+                _workspace_add!(residual,q[row],current)
+                for column in 1:4
+                    tangent=conductive.gradient[column]+α*charge.gradient[column]+
+                        sum(charge.hessian[(j-1)*4+column]*rates[j] for j in 1:4)
+                    _workspace_matrix_stamp!(nzval,batch,device,4,row,column,tangent)
+                end
+            end
+            continue
+        end
+        channel, derivatives = _mosfet_channel(model, kind, vd, vg, vs, vb;temperature)
         _workspace_add!(residual, q[1], channel); _workspace_add!(residual, q[3], -channel)
         capacitances = ((2, 3, model.gate_source_capacitance), (2, 1, model.gate_drain_capacitance), (2, 4, model.gate_bulk_capacitance))
         for (a, b, capacitance) in capacitances

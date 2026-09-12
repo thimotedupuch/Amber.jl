@@ -166,6 +166,10 @@ function current(r::SimulationResult,name::Union{Symbol,String},branch=nothing)
         return collector
     elseif kind in (:nmos,:pmos)
         vd=terminal(1); vg=terminal(2); vs=terminal(3); bulk=terminal(4); model=parameters.model
+        if model isa ChargeBasedMOSFET
+            index=branch===:gate ? 2 : branch===:source ? 3 : branch===:bulk ? 4 : 1
+            return _charge_mos_current_trace(r,batch,device,index)
+        end
         channel=map((d,g,s,b)->_mosfet_channel(model,kind,real(d),real(g),real(s),real(b))[1],vd,vg,vs,bulk)
         igs=model.gate_source_capacitance.*_derivative(r,vg.-vs)
         igd=model.gate_drain_capacitance.*_derivative(r,vg.-vd)
@@ -286,6 +290,7 @@ function region(r::SimulationResult,name::Union{Symbol,String})
         polarity=kind===:nmos ? 1. : -1.; vd,vg,vs,vb=polarity.*(terminal(1),terminal(2),terminal(3),terminal(4))
         if vd<vs; vd,vs=vs,vd end
         model=batch.parameters[device].model
+        model isa ChargeBasedMOSFET && throw(ArgumentError("ChargeBasedMOSFET has continuous inversion; use mosfet_operating_point instead of discrete region labels"))
         threshold=model.threshold_voltage+model.body_effect*(sqrt(max(2model.surface_potential+vs-vb,eps()))-sqrt(2model.surface_potential))
         overdrive=vg-vs-threshold
         return overdrive<=0 ? Cutoff : vd-vs<overdrive ? Triode : Saturation
@@ -296,7 +301,7 @@ end
 _snapshot_value(value)=value
 _snapshot_value(value::AbstractWaveform)=string(typeof(value),NamedTuple{fieldnames(typeof(value))}(Tuple(getfield(value,key) for key in fieldnames(typeof(value)))))
 _snapshot_value(value::NamedTuple)=Dict(key=>_snapshot_value(item) for (key,item) in pairs(value))
-function _snapshot_value(value::Union{ThinFilm,SMD0603,C0G,DebyeBranches,JunctionDiode,GummelPoonBJT,Level1MOSFET,BehavioralOpAmp,VoltageControlledSwitch,SmoothSwitch,EventSwitch})
+function _snapshot_value(value::Union{ThinFilm,SMD0603,C0G,DebyeBranches,JunctionDiode,GummelPoonBJT,Level1MOSFET,ChargeBasedMOSFET,BehavioralOpAmp,VoltageControlledSwitch,SmoothSwitch,EventSwitch})
     Dict(:model=>string(typeof(value)),:parameters=>_snapshot_value(getfield(value,:data)))
 end
 function provenance(r)
@@ -344,7 +349,7 @@ function validity_report(r::SimulationResult)
             devices[path]=(ripple_current_rms=rms,rated_ripple_current=:unspecified)
             push!(warnings,"$(path): rated ripple current is unspecified; thermal validity cannot be evaluated")
         elseif r.analysis isa TransientNoise&&kind in (:nmos,:pmos)
-            push!(warnings,"$(path): Level1MOSFET noise excludes body-diode, junction, substrate, and foundry BSIM mechanisms")
+            push!(warnings,"$(path): "*_mos_noise_warning(batch.parameters[device].model))
         end
     end
     Dict(:devices=>devices,:warnings=>warnings)
@@ -352,4 +357,60 @@ end
 function available_observables(x)
     contract=device_contract(x.kind); contract===nothing&&throw(ArgumentError("unsupported device kind $(x.kind)"))
     contract.observables
+end
+
+function _charge_mos_result_evaluation(r,batch,device)
+    model=batch.parameters[device].model
+    temperature=get(r.stats,:temperature,300.)
+    if r.analysis isa SmallSignal
+        bias=r.stats[:operating_point]
+        voltages=ntuple(i->_workspace_value(bias,_batch_terminal(batch,i,device)),4)
+        return _charge_mos_evaluate(model,_batch_kind(batch),voltages;temperature)
+    end
+    traces=ntuple(i->_unknown_trace(r,_batch_terminal(batch,i,device)),4)
+    [_charge_mos_evaluate(model,_batch_kind(batch),
+        ntuple(i->real(traces[i][k]),4);temperature)
+        for k in eachindex(r.axis)]
+end
+
+function _charge_mos_current_trace(r,batch,device,index)
+    evaluated=_charge_mos_result_evaluation(r,batch,device)
+    if r.analysis isa SmallSignal
+        return [sum((evaluated.currents[index].gradient[j]+im*2π*f*evaluated.charges[index].gradient[j])*
+            _unknown_trace(r,_batch_terminal(batch,j,device))[k] for j in 1:4) for (k,f) in enumerate(r.axis)]
+    end
+    rates=ntuple(j->_derivative(r,_unknown_trace(r,_batch_terminal(batch,j,device))),4)
+    [e.currents[index].value+sum(e.charges[index].gradient[j]*rates[j][k] for j in 1:4)
+        for (k,e) in enumerate(evaluated)]
+end
+
+"""Return named drain/gate/source/bulk charge traces (AC returns charge phasors)."""
+function terminal_charges(r::SimulationResult,name::Union{Symbol,String})
+    located=_hierarchical_device(r.compiled,name)
+    located===nothing && throw(_lookup_error(:device,name,_device_names(r.compiled)))
+    batch,device=located
+    _batch_kind(batch) in (:nmos,:pmos) && batch.parameters[device].model isa ChargeBasedMOSFET ||
+        throw(ArgumentError("terminal_charges requires ChargeBasedMOSFET"))
+    e=_charge_mos_result_evaluation(r,batch,device)
+    traces=if r.analysis isa SmallSignal
+        ntuple(i->[sum(e.charges[i].gradient[j]*_unknown_trace(r,_batch_terminal(batch,j,device))[k]
+            for j in 1:4) for k in eachindex(r.axis)],4)
+    else
+        ntuple(i->[point.charges[i].value for point in e],4)
+    end
+    NamedTuple{(:drain,:gate,:source,:bulk)}(traces)
+end
+
+"""Characterize a ChargeBasedMOSFET instance at a solved DC operating point."""
+function mosfet_operating_point(r::SimulationResult,name::Union{Symbol,String})
+    r.analysis isa OperatingPoint || throw(ArgumentError("mosfet_operating_point requires an OperatingPoint result"))
+    get(r.stats,:converged,false) || throw(ArgumentError("operating point did not converge"))
+    located=_hierarchical_device(r.compiled,name)
+    located===nothing && throw(_lookup_error(:device,name,_device_names(r.compiled)))
+    batch,device=located
+    _batch_kind(batch) in (:nmos,:pmos) && batch.parameters[device].model isa ChargeBasedMOSFET ||
+        throw(ArgumentError("mosfet_operating_point requires ChargeBasedMOSFET"))
+    voltages=ntuple(i->_unknown_trace(r,_batch_terminal(batch,i,device))[1],4)
+    mosfet_operating_point(batch.parameters[device].model,_batch_kind(batch),voltages...;
+        temperature=get(r.stats,:temperature,300.))
 end

@@ -247,3 +247,16 @@ append!(_documented_units,[:dB=>"decibel amplitude conversion",:percent=>"percen
 for (name, description) in _documented_units
     @eval @doc $("Numeric SI scale factor for one " * description * ".") $name
 end
+
+@doc """
+    ChargeBasedMOSFET(; threshold_voltage=0.7, slope_factor=1.3, mobility=0.04,
+                       oxide_capacitance=5e-3, width=1e-6, length=1e-6, kw...)
+
+Native quasi-static long-channel model with continuous inversion, symmetric
+transport, geometry scaling, Ward–Dutton terminal charge partition, optional
+junctions/overlaps, and explicit temperature laws. Defaults are illustrative.
+Geometry is in SI units and may also be supplied to `nmos`/`pmos`.
+Use `mosfet_operating_point` for sizing quantities and `terminal_charges` for
+charge data. This is not a full EKV, SPICE Level 2, or foundry model. See the
+manual's Charge-based MOSFET page for equations, parameters and physical limits.
+""" ChargeBasedMOSFET

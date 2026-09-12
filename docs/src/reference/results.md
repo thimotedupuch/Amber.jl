@@ -8,6 +8,8 @@ voltage
 current
 power
 charge
+terminal_charges
+mosfet_operating_point
 state
 initial_voltage
 frequencies

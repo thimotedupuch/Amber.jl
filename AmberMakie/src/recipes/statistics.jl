@@ -11,7 +11,9 @@ function sweepplot(position, result::Amber.SweepResult; x=:parameter, metric=:va
     xs = x === :parameter ? view.parameter_values : view.indices
     all(value -> value isa Real, xs) || throw(ArgumentError("sweep x values must be real"))
     slot = _position(position); axis = Makie.Axis(slot; xlabel=result.selector, ylabel=string(metric))
-    curve = Makie.lines!(axis, Float64.(xs[success]), Float64.(view.metrics[success]); kwargs...)
+    # Retain the original grid: NaNs break the line at failed simulations.
+    displayed = [view.converged[i] ? Float64(view.metrics[i]) : NaN for i in eachindex(xs)]
+    curve = Makie.lines!(axis, Float64.(xs), displayed; kwargs...)
     failures = nothing
     if failed === :mark && any(.!view.converged)
         failed_indices = findall(.!view.converged)
@@ -332,8 +334,10 @@ function _finite_derivative(x, y)
     derivative[1] = (y[2] - y[1]) / (x[2] - x[1])
     derivative[end] = (y[end] - y[end - 1]) / (x[end] - x[end - 1])
     for index in 2:length(x)-1
-        derivative[index] = (y[index + 1] - y[index - 1]) /
-            (x[index + 1] - x[index - 1])
+        left = x[index] - x[index - 1]; right = x[index + 1] - x[index]
+        derivative[index] = -right / (left * (left + right)) * y[index - 1] +
+            (right - left) / (left * right) * y[index] +
+            left / (right * (left + right)) * y[index + 1]
     end
     derivative
 end
