@@ -21,6 +21,24 @@ transconductance
 voltage_controlled_voltage_source
 current_controlled_current_source
 current_controlled_voltage_source
+zener
+schottky
+led
+photodiode
+solar_cell
+njfet
+pjfet
+thermistor
+varistor
+voltage_controlled_resistor
+potentiometer
+analog_multiplier
+voltage_limiter
+comparator
+ideal_transformer
+bridge_rectifier
+crystal
+transmission_line
 ```
 
 `behavioral_current_source(controls, output_p, output_n; current, gradient)`

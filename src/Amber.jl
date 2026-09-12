@@ -30,6 +30,9 @@ export explain, explain_failure
 export circuit_snapshot, serialize_circuit, deserialize_circuit, save_circuit, load_circuit
 export node, ground, resistor, capacitor, inductor, conductance
 export voltage_source, current_source, diode, npn, nmos, pmos, opamp, analog_switch
+export zener, schottky, led, photodiode, solar_cell, njfet, pjfet
+export analog_multiplier, voltage_limiter, comparator, voltage_controlled_resistor
+export varistor, thermistor, potentiometer, ideal_transformer, bridge_rectifier, crystal, transmission_line
 export behavioral_current_source
 export behavioral_voltage_source
 export transconductance, voltage_controlled_voltage_source
@@ -95,6 +98,7 @@ include("Devices/Ideal.jl")
 include("Devices/Passive.jl")
 include("Devices/Semiconductor.jl")
 include("Devices/Behavioral.jl")
+include("Devices/Catalog.jl")
 include("Diagnostics/Diagnostics.jl")
 include("Core/EquationGraph.jl")
 include("Core/CompilerIR.jl")
