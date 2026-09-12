@@ -32,28 +32,48 @@ command -v pixi
 command -v julia
 ```
 
-- If Pixi exists, prefer it even if Julia also exists. It gives the task a reproducible Julia runtime. Verify the created runtime with `pixi run julia --version`; if Pixi cannot create or execute a Julia environment after ordinary troubleshooting, treat it as unavailable, preserve the diagnostic, and use an existing system Julia.
+- If Pixi exists, prefer it even if Julia also exists. Use the project-local Juliaup setup below and verify the created runtime with `pixi run julia --version`; if Pixi cannot create or execute a Julia environment after ordinary troubleshooting, treat it as unavailable, preserve the diagnostic, and use an existing system Julia.
 - If Pixi is absent but Julia exists, use Julia directly.
 - If neither exists, do not download Julia, Pixi, an installer, or an arbitrary binary. Stop and ask the user to install Pixi, then resume after they confirm it is available.
 - If a dependency command fails because network access is restricted, request the appropriate execution/network permission. Do not bypass the restriction.
 
 ### Preferred Pixi setup
 
-Work inside the simulation directory. Reuse an existing Pixi project; otherwise initialize one:
+Keep the runtime, Julia packages, and caches inside the simulation directory so users can remove the installation by deleting that directory. Work from that directory and set Pixi's cache location before running Pixi commands (repeat this export in each new shell):
 
 ```sh
-pixi init --format pixi .
-pixi add "julia>=1.10"
+export PIXI_CACHE_DIR="$PWD/.pixi-cache"
+```
+
+Reuse an existing `pixi.toml`, merging the dependency and tasks without overwriting unrelated settings. For a new Linux x86-64 workspace, create this `pixi.toml` (adapt `platforms` for another supported host):
+
+```toml
+[workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[dependencies]
+juliaup = "*"
+
+[tasks.juliaup]
+cmd = "juliaup"
+env = { JULIAUP_DEPOT_PATH = "$PIXI_PROJECT_ROOT/.pixi/juliaup" }
+
+[tasks.julia]
+cmd = "julia"
+env = { JULIAUP_DEPOT_PATH = "$PIXI_PROJECT_ROOT/.pixi/juliaup", JULIA_DEPOT_PATH = "$PIXI_PROJECT_ROOT/.pixi/julia-depot" }
+```
+
+Install Julia through the `juliaup` task; do not use `pixi add julia`. Use the `release` channel to install the latest stable Julia version:
+
+```sh
+pixi install
+pixi run juliaup add release
+pixi run juliaup default release
 pixi run julia --version
 ```
 
-A read-only global Pixi cache does not make Pixi unavailable. Retry with a writable task-local cache:
-
-```sh
-PIXI_CACHE_DIR="$PWD/.pixi-cache" pixi add "julia>=1.10"
-```
-
-Exclude `.pixi-cache/` from version control. If dependency resolution then needs restricted network access, request permission before abandoning Pixi. When a local Amber checkout and a working system Julia already provide a fully offline path, the Julia/local-path fallback is acceptable.
+Always invoke Julia and Juliaup through these tasks so their depots stay under `.pixi/`, including when installing packages or changing channels. The Juliaup default is local to this workspace's depot. Exclude `.pixi/` and `.pixi-cache/` from version control. A read-only global Pixi cache does not make Pixi unavailable: use the writable local cache above. If dependency resolution needs restricted network access, request permission before abandoning Pixi. When a local Amber checkout and a working system Julia already provide a fully offline path, the Julia/local-path fallback is acceptable.
 
 Add Amber to the active Julia project:
 
@@ -67,11 +87,19 @@ Only after Amber has been added, add AmberMakie when graphs are requested. Add C
 pixi run julia --project=. -e 'using Pkg; Pkg.add(url="https://github.com/thimotedupuch/Amber.jl", subdir="AmberMakie"); Pkg.add("CairoMakie"); Pkg.instantiate()'
 ```
 
-Run scripts as `pixi run julia --project=. simulate.jl`. Preserve `pixi.toml`, `pixi.lock`, `Project.toml`, and `Manifest.toml` with the result when reproducibility matters.
+Run scripts as `pixi run julia --project=. simulate.jl`. Preserve `pixi.toml`, `pixi.lock`, `Project.toml`, and `Manifest.toml` with the result when reproducibility matters. Juliaup downloads Julia separately from Pixi's lockfile: record `pixi run julia --version` and use an exact Julia version instead of the `release` channel when an exact runtime is required.
+
+To uninstall, delete the simulation directory after saving any wanted scripts and results. This removes its Pixi environment/cache, Juliaup runtime, and Julia package depot; the existing Pixi executable remains available for other projects.
 
 ### Julia-only fallback
 
-Use the same active-project convention:
+Use the same active-project convention and a local package depot. From the simulation directory, set this in each new shell before running any Julia command:
+
+```sh
+export JULIA_DEPOT_PATH="$PWD/.pixi/julia-depot"
+```
+
+The existing system Julia runtime remains outside the directory, but Amber and its Julia dependencies are installed locally:
 
 ```sh
 julia --project=. -e 'using Pkg; Pkg.add(url="https://github.com/thimotedupuch/Amber.jl"); Pkg.instantiate()'
