@@ -437,6 +437,7 @@ _hidden_name(name,suffix)=string(name,'.',suffix)
 
 function add!(builder::CircuitBuilder, component::PrimitiveDraft; name=string(_draft_kind(component),length(builder.primitives) + 1))
     kind=_draft_kind(component); parameters=component.parameters; terminals=component.terminals
+    kind in _CATALOG_COMPOSITES && return _add_catalog!(builder,component,name)
     if kind===:resistor
         package=get(parameters,:package,nothing)
         series_inductance=_model_value(package,:series_inductance)
@@ -779,7 +780,10 @@ end
 const _HIERARCHY_PRIMITIVES = (:resistor, :capacitor, :inductor, :conductance, :voltage_source, :current_source,
     :transconductance, :voltage_controlled_voltage_source, :current_controlled_current_source,
     :current_controlled_voltage_source, :diode, :npn, :nmos, :pmos, :opamp, :analog_switch,
-    :behavioral_current_source, :behavioral_voltage_source)
+    :behavioral_current_source, :behavioral_voltage_source,
+    :zener, :schottky, :led, :photodiode, :solar_cell, :njfet, :pjfet,
+    :analog_multiplier, :voltage_limiter, :comparator, :voltage_controlled_resistor,
+    :varistor, :thermistor, :potentiometer, :ideal_transformer, :bridge_rectifier, :crystal, :transmission_line)
 
 function _template_macro_rewrite(expression, builder)
     expression isa Expr || return expression

@@ -22,6 +22,7 @@ boundaries](#scope-and-model-boundaries) before using it for sign-off work.
 | --- | --- |
 | Circuit construction | `@circuit`, reusable `@subcircuit` templates, programmatic `CircuitBuilder`, arrays, loops, conditionals, retained instance paths, named observations |
 | Devices | R, G, C, L, independent and controlled sources, diodes, NPN BJTs, NMOS/PMOS, switches, behavioral op-amps, nonlinear behavioral sources |
+| Extended devices | Zener, Schottky, LED, photodiode, solar cell, N/P JFET, thermistor, varistor, controlled resistor, potentiometer, multiplier, limiter, comparator, ideal transformer, diode bridge, crystal, lumped RLGC line |
 | Physical details | resistor temperature/voltage coefficients and excess noise, package parasitics, capacitor loss and dielectric absorption, diode depletion/diffusion charge, BJT charge, MOS gate capacitances, matched devices |
 | Core analyses | operating point, BDF1/BDF2 transient, small-signal AC, parameter sweeps, periodic steady state |
 | Noise | stationary frequency-domain noise, input-referred noise, contribution budgets, integrated noise, stochastic transient noise, cyclostationary periodic noise, oscillator phase noise |
