@@ -33,8 +33,7 @@ function small_signal(c,p::Union{Pair,AbstractVector};points=p isa AbstractVecto
     elseif isempty(active)
         push!(warnings,"the circuit has no nonzero AC excitation")
     end
-    vals=zeros(ComplexF64,cc.n,length(fs)); _,Jz=residual_jacobian(cc,op,op,0.,0.;mode=:dc,temperature)
-    _,combined=residual_jacobian(cc,op,op,0.,1.;mode=:dc,temperature); Jd=combined-Jz; b=ac_excitation(cc;source)
+    vals=zeros(ComplexF64,cc.n,length(fs)); Jz,Jd=_static_dynamic_jacobians(cc,op;mode=:dc,temperature); b=ac_excitation(cc;source)
     for (j,f) in enumerate(fs); vals[:,j]=_solve_linear(Jz+im*2π*f*Jd,b,"small-signal matrix is singular at $(f) Hz") end
     analysis=SmallSignal(fs;source,temperature=Float64(temperature))
     stats=_finalize_stats!(Dict{Symbol,Any}(:converged=>true,:temperature=>Float64(temperature),:warnings=>warnings,:source=>source,:active_sources=>active,:operating_point=>copy(op)))

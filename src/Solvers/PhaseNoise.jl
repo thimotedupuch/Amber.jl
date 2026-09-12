@@ -58,27 +58,29 @@ function _phase_sensitivity(pss,times,values,temperature)
     cc=pss.orbit.compiled
     extended_times=vcat(times,first(times)+pss.period)
     extended_values=hcat(values,values[:,1])
-    transitions=Matrix{Float64}[]
+    # Discrete adjoint of conservative backward Euler:
+    # J_n δx_n = C_(n-1) δx_(n-1)/h + B_n δnoise_n.
+    # A state covector p_n must be mapped to residual space by J_n'^(-1)/h
+    # before projection onto B_n. This also works for singular MNA C.
+    systems=Matrix{Float64}[]
+    previous_dynamics=Matrix{Float64}[]
     for step in 2:length(extended_times)
         h=extended_times[step]-extended_times[step-1]
         point=extended_values[:,step]
-        _,g=residual_jacobian(cc,point,point,extended_times[step],0.;mode=:time,temperature)
-        _,combined=residual_jacobian(cc,point,point,extended_times[step],inv(h);
-            mode=:time,temperature)
-        dynamic=(combined-g)*h
-        transition=_solve_linear(combined,inv(h).*dynamic,
-            "oscillator variational transition is singular at time $(extended_times[step])")
-        push!(transitions,Matrix(transition))
+        g,c=_static_dynamic_jacobians(cc,point,extended_times[step];temperature)
+        _,cprevious=_static_dynamic_jacobians(cc,extended_values[:,step-1],extended_times[step-1];temperature)
+        push!(systems,Matrix(g+c/h))
+        push!(previous_dynamics,Matrix(cprevious))
     end
     adjoint_at_next=sensitivity
     for step in length(times):-1:1
-        adjoint_at_previous=transitions[step]'*adjoint_at_next
-        local_normalization=dot(adjoint_at_previous,tangents[:,step])
-        abs(local_normalization)>sqrt(eps(Float64))||throw(AnalysisValidationError(
-            "oscillator phase sensitivity normalization vanished along the orbit"))
-        adjoint_at_previous./=local_normalization
-        waveform[:,step]=adjoint_at_previous
-        adjoint_at_next=adjoint_at_previous
+        h=extended_times[step+1]-extended_times[step]
+        residual_adjoint=_solve_linear(systems[step]',adjoint_at_next,
+            "oscillator discrete adjoint is singular at time $(extended_times[step+1])")/h
+        # The residual is evaluated at the endpoint of this step.
+        endpoint=step==length(times) ? 1 : step+1
+        waveform[:,endpoint]=residual_adjoint
+        adjoint_at_next=previous_dynamics[step]'*residual_adjoint
     end
     waveform,multipliers[neutral_index]
 end
@@ -115,6 +117,8 @@ function phase_noise(pss::PSSResult,offset_specification;output,sidebands=-5:5,
         "phase noise requires a converged periodic steady state",copy(pss.stats)))
     pss.autonomous||throw(AnalysisValidationError(
         "phase noise requires an autonomous periodic steady-state result"))
+    pss.orbit.analysis.method===:bdf1||throw(AnalysisValidationError(
+        "phase noise requires a backward-Euler orbit for its discrete adjoint"))
     offsets=_frequency_grid(offset_specification;points,scale)
     any(iszero,offsets)&&throw(AnalysisValidationError(
         "phase-noise offset frequencies must be positive"))

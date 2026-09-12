@@ -354,9 +354,7 @@ function noise(c,frequency_specification;output,input=nothing,points=100,scale=:
     source_output=[zeros(Float64,length(frequencies)) for _ in sources]
     gains=input===nothing ? nothing : zeros(Float64,length(frequencies))
     corrections=0
-    _,Jz=residual_jacobian(cc,point,point,0.,0.;mode=:dc,temperature)
-    _,combined=residual_jacobian(cc,point,point,0.,1.;mode=:dc,temperature)
-    Jd=combined-Jz
+    Jz,Jd=_static_dynamic_jacobians(cc,point;mode=:dc,temperature)
     excitation=input===nothing ? nothing : _unit_source_excitation(cc,Symbol(input))
     for (frequency_index,frequency) in enumerate(frequencies)
         system=Jz+im*2π*frequency*Jd

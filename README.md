@@ -28,6 +28,7 @@ boundaries](#scope-and-model-boundaries) before using it for sign-off work.
 | Noise | stationary frequency-domain noise, input-referred noise, contribution budgets, integrated noise, stochastic transient noise, cyclostationary periodic noise, oscillator phase noise |
 | RF and control | multiport Z/Y/S/ABCD/H parameters, descriptor-system linearization, poles, zeros, stability, root locus, step/impulse response, bias-preserving loop gain and margins |
 | Measurements | voltage/current/power/charge/state traces, transfer functions, bandwidth, delay, resonances, FFT spectra, THD, THD+N, SNR, SINAD, SFDR, ENOB, sampling and propagation metrics |
+| Visualization (optional AmberMakie) | linked result workbenches, RF/control plots, eye and jitter views, CMOS bias dashboards, inverter noise margins, switching energy/delay, mismatch studies, figures with metadata |
 | Studies and reproducibility | copy-on-write parameter overrides, Monte Carlo with independent/correlated/process/matched variation, sample replay, failure retention, provenance, stable TOML serialization |
 | Diagnostics | structural validation, floating-net and ideal-constraint detection, hierarchy-aware lookup errors, dominant residual reporting, validity warnings |
 
@@ -254,7 +255,9 @@ than erasing the attempted run.
 
 ### Transient and event-aware simulation
 
-Amber implements native BDF1 and variable-step-coefficient BDF2 integration.
+Amber implements native BDF1 and variable-step-coefficient BDF2 integration of
+stored charge and flux. Nonlinear device charge history participates directly
+in the discrete equations, preserving the BDF charge balance.
 It supports fixed or adaptive stepping, operating-point or discharged initial
 states, capacitor initial voltage, and exact insertion of `Step`/`Pulse`
 waveform boundaries.
@@ -356,15 +359,18 @@ settling_time(step)
 root_locus(model, 0.0:0.1:2.0)
 ```
 
-For feedback loops, insert a zero-DC independent source as a probe. `loop_gain`
-checks that the probe preserves the operating point, then returns loop gain,
-sensitivity, complementary sensitivity, and stability margins.
+For a single-ended feedback loop, insert an ideal zero-volt voltage source
+in series with the loop wire. `loop_gain` uses Tian's two-injection method,
+including loading and reverse transmission. The wire must intersect all return
+paths being studied. The returned convention is `1 + L` for return difference;
+`loop_sensitivity` and `closed_loop_response` are the normalized quantities
+`1/(1+L)` and `L/(1+L)`, not arbitrary circuit input/output transfers.
 
 ```julia
 loop = loop_gain(
     circuit,
     10Hz => 10MHz;
-    probe=VoltageLoopProbe(:Probe, voltage(:feedback_node)),
+    probe=VoltageLoopProbe(:Probe, voltage(:feedback_node)), # either endpoint, relative to ground
 )
 
 gain_margin(loop)
@@ -372,6 +378,12 @@ phase_margin(loop)
 loop_sensitivity(loop)
 closed_loop_response(loop)
 ```
+
+Use `voltage(:endpoint, :reference)` for a separate reference node. A current
+probe requires both a zero-DC current source from a wire endpoint to reference
+and a zero-volt series sensing source:
+`CurrentLoopProbe(:Injection, current(:Sense))`. A driven open-loop amplifier
+transfer should be measured with `linearize` / `frequency_response`.
 
 ### Stationary and time-domain noise
 
@@ -487,8 +499,86 @@ point.capacitance_matrix           # signed dQi/dVj: drain, gate, source, bulk
 ```
 
 The same model works with `nmos`/`pmos`, compiled parameter updates, AC,
-transient and noise. See [the model manual](docs/src/manual/charge-based-mosfet.md)
-for equations, geometry keywords, characterization sweeps and physical limits.
+transient and noise. See the [model implementation](src/Devices/ChargeBasedMOSFET.jl) and
+[verification tests](test/Devices/charge_based_mosfet.jl) for equations,
+characterization sweeps, and conservation checks.
+
+Instance geometry can be set at construction or updated on a compiled circuit:
+
+```julia
+@circuit MOSBias begin
+    gnd = ground(); drain = node(); gate = node()
+    VD = voltage_source(drain, gnd; dc=1.2V)
+    VG = voltage_source(gate, gnd; dc=1V, ac=1V)
+    M1 = nmos(drain, gate, gnd, gnd;
+        model=ChargeBasedMOSFET(channel_length_modulation=0.02/V),
+        width=8μm, length=2μm)
+end
+
+compiled_mos = compile(MOSBias())
+wider = with_parameters(compiled_mos, "M1.width" => 12μm)
+bias = operating_point(wider; temperature=320K)
+characterization = mosfet_operating_point(bias, :M1)
+charges = terminal_charges(bias, :M1)
+```
+
+Characterization includes signed `gm`, `gds`, `gmb`, terminal currents and
+charges, inversion charges, `gm_over_id`, and intrinsic gain. `id` is channel
+current; `currents.drain` includes the optional body junction. AC terminal
+charges are phasors linearized at the DC bias. Junction areas and perimeters
+must be supplied explicitly; they are not inferred from W/L.
+
+## Visualization and CMOS studies with AmberMakie
+
+Install the companion and a rendering backend into an environment that already
+contains Amber:
+
+```julia
+using Pkg
+Pkg.add(url="https://github.com/thimotedupuch/Amber.jl", subdir="AmberMakie")
+Pkg.add("CairoMakie")
+```
+
+A transistor bias grid can be explored without constructing a circuit:
+
+```julia
+using Amber, AmberMakie, CairoMakie
+CairoMakie.activate!()
+
+view = mosfetview(ChargeBasedMOSFET(width=8μm, length=2μm,
+    channel_length_modulation=0.02/V);
+    vgs=range(0V, 1.5V; length=101), vds=[0.05V, 0.6V, 1.2V])
+handle = workbench(view)
+selectbias!(handle; vgs=0.9V, vds=1.2V)
+savefigure("mosfet.png", handle)     # figure plus a TOML metadata sidecar
+close(handle)
+```
+
+The dashboard links drain current, gm/ID, intrinsic gain, and gate capacitance.
+`mosfetplot`, `gmidplot`, and `capacitanceplot` also compose into ordinary Makie
+figures. For `kind=:pmos`, grid values are polarity-normalized VSG/VSD;
+underlying operating points retain signed currents.
+
+Circuit-level helpers cover:
+
+| Workflow | API and measurements |
+| --- | --- |
+| Inverter DC transfer | `inverterview` / `inverterplot`: transfer curve, differential gain, switching threshold, unity-gain noise margins from a sweep or raw samples |
+| Switching versus load and supply | `switchingmetrics`, `switchingview` / `switchingplot`: 50% propagation delays and delivered supply energy integrated over an explicit window |
+| Offset and mismatch | `mismatchview` / `mismatchplot`: empirical distributions and mean ± standard deviation grouped by temperature and geometry, retaining failures, seeds, and supplied simulation records |
+
+Switching energy includes leakage over the selected window; use a settled full
+cycle when reporting energy per cycle. See the runnable
+[CMOS studies demo](AmberMakie/demo/cmos_studies.jl) for inverter and seeded
+transistor-pair simulations. Variation parameters in that demo are illustrative.
+
+Other workbenches provide linked data cursors, noise integration bands, network
+matrix selection and Smith readouts, Floquet participation, and Monte Carlo
+sample browsing/replay. Eye diagrams and jitter views operate on transient
+records. `explore` runs parameter studies with caching and pinned results;
+`reportfigure`, `savefigure`, and `copyrecipe` support reproducible reporting.
+Use an interactive Makie backend for mouse-driven exploration and CairoMakie
+for headless exports. See the [AmberMakie guide](AmberMakie/README.md) for usage.
 
 ## Fast parameter studies
 
@@ -617,6 +707,24 @@ The core constructors are:
   `behavioral_voltage_source` with user-supplied constitutive laws and analytic
   gradients.
 
+The extended catalog adds these constructors, using existing primitives and
+analytic behavioral laws:
+
+| Family | Constructors |
+| --- | --- |
+| Junctions and light sensors | `zener`, `schottky`, `led`, `photodiode`, `solar_cell` |
+| JFETs | `njfet`, `pjfet` |
+| Signal conditioning | `analog_multiplier`, `voltage_limiter`, `comparator`, `voltage_controlled_resistor` |
+| Nonlinear and adjustable resistance | `varistor`, `thermistor`, `potentiometer` |
+| Composite networks | `ideal_transformer`, `bridge_rectifier`, `crystal`, `transmission_line` |
+
+Catalog defaults are illustrative: the comparator is smooth and memoryless
+(no delay or hysteresis), the thermistor uses a fixed supplied temperature, and
+the LED models an electrical junction without optical output. The transmission
+line is a lumped pi-section RLGC approximation whose R/L/G/C parameters are total
+line values. See the [catalog example](examples/18_device_catalog/circuit.jl)
+and [constructor docstrings](src/Devices/Catalog.jl) for terminal order and limits.
+
 Example physical models include:
 
 ```julia
@@ -684,7 +792,11 @@ Amber evaluates residuals in the descriptor form
 F(x, x', t) = 0
 ```
 
-and stamps analytic Jacobians with respect to both `x` and `x'`. The same device
+and separately assembles stored charge/flux `q(x)` and its Jacobian through
+`storage_jacobian!`. Transient integration uses `d(q(x))/dt + f(x,t) = 0`;
+frequency analyses assemble the static and dynamic matrices independently.
+The continuous residual API retains its derivatives at nonzero `x'`.
+The same device
 kernels therefore serve Newton DC, implicit BDF integration, AC linearization,
 descriptor control analysis, PSS variational analysis, and noise propagation.
 
@@ -730,7 +842,9 @@ Amber is intentionally transparent about what it does not yet model:
 
 - Semiconductor models are compact engineering models, not foundry-qualified
   BSIM libraries. The level-1 MOSFET omits subthreshold behavior, a body diode,
-  short-channel effects, and substrate networks.
+  short-channel effects, and substrate networks. `ChargeBasedMOSFET` adds
+  continuous inversion and optional junctions but omits short-channel and
+  non-quasi-static effects; its noise model omits junction shot noise.
 - Temperature dependence is partial; there is no electrothermal or self-heating
   solution.
 - Behavioral op-amp parameters are richer than the currently enforced device
@@ -768,6 +882,8 @@ The [example gallery](examples/) is executable and covers:
 - correlated Monte Carlo on a precision bridge;
 - CMOS transfer and propagation delay;
 - conductance-crossbar matrix multiplication;
+- a [light detector and transformer divider](examples/18_device_catalog/circuit.jl)
+  using the extended device catalog;
 - difficult nonlinear convergence and regenerative circuits; and
 - [systems beyond electronics](examples/17_beyond_electronics/), including
   thermal, SIR epidemic, Hodgkin-Huxley, Josephson-junction, and acoustic

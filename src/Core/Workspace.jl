@@ -17,6 +17,8 @@ mutable struct SimulationWorkspace{T}
     factorization::Any
     factorization_key::Any
     numeric_factorizations::Int
+    storage::Vector{T}
+    storage_jacobian::SparseMatrixCSC{T,Int}
 end
 
 function SimulationWorkspace(compiled::AbstractCompiledCircuit; scalar_type::Type{T}=Float64) where {T}
@@ -38,7 +40,7 @@ function SimulationWorkspace(compiled::AbstractCompiledCircuit; scalar_type::Typ
     end
     SimulationWorkspace(zeros(T, n), zeros(T, n), zeros(T, n), zeros(T, n), zeros(T, n), jacobian,
         scaled_jacobian, system, zeros(T, n), zeros(T, n), zeros(T, n), variable_scales,
-        zeros(T, n), zeros(T, n), nothing, nothing, 0)
+        zeros(T, n), zeros(T, n), nothing, nothing, 0, zeros(T,n), copy(jacobian))
 end
 
 @inline _workspace_value(values, index::Int32) = index == 0 ? zero(eltype(values)) : values[Int(index)]
@@ -258,7 +260,9 @@ function _assemble_batch!(workspace, batch::PrimitiveBatch{Val{:diode}}, state, 
         current, conductance = _diode_conduction(model, voltage, temperature)
         capacitance = differential_capacitance(model, voltage; temperature)
         current += capacitance * (_workspace_value(derivative, p) - _workspace_value(derivative, n))
-        _stamp_two_terminal!(residual, nzval, batch, device, current, conductance + α * capacitance)
+        rate=_workspace_value(derivative,p)-_workspace_value(derivative,n)
+        tangent=conductance+α*capacitance+_capacitance_slope(model,voltage;temperature)*rate
+        _stamp_two_terminal!(residual, nzval, batch, device, current, tangent)
     end
     nothing
 end

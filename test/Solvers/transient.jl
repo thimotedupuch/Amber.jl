@@ -11,6 +11,8 @@
     initialized=transient(InitializedCapacitor(),0s=>100μs;saveat=10μs)
     @test voltage(initialized,:output)[1]≈2V
     @test voltage(initialized,:output)[end]<2V
+    supplied=transient(InitializedCapacitor(),0s=>100μs;saveat=10μs,initial=[.5])
+    @test voltage(supplied,:output)[1]==.5
     compiled=compile(LowPass())
     overridden=simulate(compiled,Transient(0s=>200μs;saveat=10μs,overrides=Dict(Symbol("V1.waveform")=>Step(low=0V,high=2V,at=0s))))
     @test voltage(overridden,:vout)[end]>1V

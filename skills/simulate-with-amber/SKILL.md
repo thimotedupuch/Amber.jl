@@ -1,6 +1,6 @@
 ---
 name: simulate-with-amber
-description: Model, simulate, analyze, validate, extend, and visualize analog circuits and continuous-time dynamical systems with the unregistered Amber.jl package and optional AmberMakie. Use for circuit construction or debugging; DC, transient, AC, noise, periodic, RF/network, control, sweep, Monte Carlo, spectral, or timing analysis; plots and reproducible reports; and missing components or behavioral physical models implemented in Julia.
+description: Model, simulate, analyze, validate, extend, and visualize analog circuits and continuous-time dynamical systems with the unregistered Amber.jl package and optional AmberMakie. Use for circuit construction or debugging; DC, transient, AC, noise, periodic, RF/network, control, sweep, Monte Carlo, spectral, timing, or CMOS characterization; plots and reproducible reports; and missing components or behavioral physical models implemented in Julia.
 ---
 
 # Simulate with Amber
@@ -125,13 +125,63 @@ Amber provides:
 - passive `resistor`, `conductance`, `capacitor`, and `inductor` elements;
 - independent voltage/current sources with DC, AC, `Step`, `Sine`, or `Pulse` excitation;
 - voltage- and current-controlled sources;
-- junction diode, Gummel-Poon BJT, Level-1 MOSFET, behavioral op-amp, and analog switch models;
+- junction diode, Gummel-Poon BJT, Level-1 and charge-based MOSFET, behavioral op-amp, and analog switch models;
 - physical resistor/capacitor models such as thin film, SMD 0603, C0G, and Debye branches;
 - analytic behavioral current and voltage sources;
 - hierarchy, arrays, retained instance paths, named observations, fast parameter updates, tolerance metadata, deterministic persistence, and diagnostics;
 - operating point, implicit BDF transient, small-signal, noise and transient-noise, periodic steady state/noise, phase noise, ports and network parameters, control/loop gain, sweeps, Monte Carlo, spectra, harmonics, timing, and frequency-domain metrics.
 
 These models are useful engineering abstractions, not a promise of SPICE-deck compatibility or foundry-grade semiconductor accuracy. State which abstraction was used and its limits.
+
+## Choose devices and CMOS models
+
+Check the built-in catalog before writing a custom behavioral law. Available
+constructors include `zener`, `schottky`, `led`, `photodiode`, `solar_cell`,
+`njfet`, `pjfet`, `analog_multiplier`, `voltage_limiter`, `comparator`,
+`voltage_controlled_resistor`, `varistor`, `thermistor`, `potentiometer`,
+`ideal_transformer`, `bridge_rectifier`, `crystal`, and `transmission_line`.
+Read `src/Devices/Catalog.jl` in the Amber checkout for signatures and terminal
+order; `examples/18_device_catalog/circuit.jl` demonstrates their composition.
+
+Catalog models have specific limits: comparators have no delay or hysteresis;
+JFETs omit gate junctions and noise; thermistors evaluate a fixed supplied
+temperature without self-heating. Transmission-line R/L/G/C values are totals,
+split across lumped pi sections. Refine `sections` for the bandwidth of interest.
+Catalog composites elaborate into named internal primitives; inspect `devices`
+and `resolve` before choosing parameter-update paths or interpreting a wrapper's
+current. Built-in catalog laws support serialization; arbitrary user closures do
+not gain that support automatically.
+
+Use `Level1MOSFET` for simple strong-inversion experiments. Choose
+`ChargeBasedMOSFET` for continuous weak-to-strong inversion, geometry studies,
+conserving terminal charges, and optional body junctions. Both work with
+`nmos(drain, gate, source, bulk; model=...)` and `pmos(...)`.
+
+```julia
+model = ChargeBasedMOSFET(width=8μm, length=2μm,
+    channel_length_modulation=0.02/V)
+point = mosfet_operating_point(model, :nmos, 1.2V, 1V, 0V, 0V;
+    temperature=300K)  # absolute drain, gate, source, bulk voltages
+point.gm_over_id
+point.intrinsic_gain
+point.capacitance_matrix
+```
+
+For a solved circuit, use `mosfet_operating_point(op, :M1)` and
+`terminal_charges(op, :M1)`. Geometry keywords on `nmos`/`pmos` create immutable
+instance model copies; `with_parameters(compiled, "M1.width" => 12μm)` reuses
+topology. Use `mosfet_operating_point` for continuous inversion characterization
+instead of relying on categorical `region` labels.
+
+The capacitance matrix is signed ∂Qᵢ/∂Vⱼ in drain/gate/source/bulk order, not
+positive pairwise capacitors. `id` is channel current, whereas `currents.drain`
+includes the body junction. Supply junction areas/perimeters explicitly; W/L
+does not infer them. Defaults do not describe a fabrication process. The model
+omits short-channel effects, self-heating, non-quasi-static transport, and
+junction shot noise. Read `src/Devices/ChargeBasedMOSFET.jl` and
+`test/Devices/charge_based_mosfet.jl` for equations, temperature laws, and
+conservation checks. Refine the timestep when measuring nonlinear charge transfer;
+BDF integrates terminal voltages rather than finite differences of charge.
 
 ## Construct circuits correctly
 
@@ -201,7 +251,7 @@ t = tr.axis
 y = voltage(tr, :out)
 ```
 
-Use `initial_voltage(capacitor, value)` and `initial_current(inductor, value)` in the design when the stored-energy state is known. Avoid `initial=:discharged` when real bias or precharge matters. Repeat a key measurement with a smaller `max_step` or tighter tolerances.
+Use `initial_voltage(capacitor, value)` in the design for known capacitor precharge. There is no exported `initial_current` helper; inspect the installed transient API before prescribing other initial states. Avoid `initial=:discharged` when real bias or precharge matters. Repeat a key measurement with a smaller `max_step` or tighter tolerances.
 
 ### Small signal and control
 
@@ -220,8 +270,8 @@ The transfer endpoints are `Observable` objects such as `voltage(:vin)`, `voltag
 
 - Use `noise(circuit, range; output=voltage(:out), input=:Source)` for device-source contributions, integrated noise, input referral, and noise figure.
 - Use `transient_noise` when sampled nonlinear/noisy behavior matters.
-- Use `periodic_steady_state`, `periodic_noise`, and `phase_noise` for driven periodic systems. Check that the assumed period and settling behavior match the circuit.
-- Define `Port` objects and use `port_response` for S, Y, Z, or ABCD network data. Do not model a port as an accidental extra ideal clamp.
+- Use `periodic_steady_state` and `periodic_noise` for driven periodic systems. Oscillator `phase_noise` requires converged autonomous PSS (`autonomous=true`, `method=:bdf1`) with an isolated neutral Floquet mode; prescribed event timing is unsupported in autonomous PSS. Check settling and refine orbit sampling and sidebands.
+- Define `Port` objects and use `port_response` for S, Y, Z, ABCD, or hybrid H network data (ABCD/H require two ports). Do not model a port as an accidental extra ideal clamp.
 - Use `sweep` for deterministic parameter studies and `monte_carlo` for seeded Gaussian, log-normal, uniform, correlated, process, tolerance, or mismatch variation.
 - Use `spectrum`, `harmonic_analysis`, and timing/frequency metrics only on a sufficiently settled, sampled, and resolved interval.
 
@@ -288,6 +338,61 @@ save("bode.png", bode)
 Use `spectrumplot`, `harmonicplot`, `noiseplot`, `integratednoiseplot`, `noisebudgetplot`, `networkplot`, `smithplot`, `operatingpointplot`, `diagnosticplot`, `sweepplot`, `ensembleplot`, `pssplot`, and `phasenoiseplot` for their corresponding result types. Use `workbench(result; ...)` for interactive exploration only when a display is available. Retain its handle and call `close(handle)` when finished. `savefigure(path, handle)` also writes reproducibility metadata where supported.
 
 Do not infer exact values from pixels. Compute metrics from result arrays and use plots to communicate behavior.
+
+### CMOS dashboards and circuit studies
+
+Use `mosfetview` to evaluate a charge-based model on a bias grid, then
+`mosfetplot`, `gmidplot`, `capacitanceplot`, or `workbench(view)` to inspect it:
+
+```julia
+view = mosfetview(model; vgs=range(0V, 1.5V; length=101),
+    vds=[0.05V, 0.6V, 1.2V], temperature=300K)
+handle = workbench(view)
+selectbias!(handle; vgs=0.9V, vds=1.2V)
+savefigure("mosfet.png", handle)
+close(handle)
+```
+
+For `kind=:pmos`, grid biases mean positive VSG/VSD, while stored currents
+remain signed. `gmidplot` uses |ID|/(width × multiplicity) in A/m. A dense gate
+grid gives transfer curves; a dense drain grid gives output curves.
+
+Use circuit simulations for circuit performance:
+
+- `inverterview(sweep_result; output=:output)` and `inverterplot` extract DC
+  transfer, differential gain, switching threshold, and unity-gain noise margins.
+  Inspect warnings when the sweep does not resolve the required crossings.
+- `switchingmetrics(tr; input=:input, output=:output, supply=:VDD, vdd=1.8V,
+  window=100ns => 200ns)` measures 50% propagation delays and delivered supply
+  energy. The result overload negates Amber's absorbed source power. Energy
+  includes leakage over the entire window; select a settled full cycle for
+  energy/cycle. Missing or ambiguous output crossings produce `NaN` delays.
+- `switchingview(measure; loads, supplies)` calls a supplied simulation/metric
+  function on a load/supply grid and retains exceptions in `failures`;
+  `switchingplot` shows the measurements.
+- `mismatchview(groups)` / `mismatchplot` summarize caller-supplied offset or
+  mismatch samples by temperature and geometry. Retain seeds, failed samples,
+  and simulation records; these helpers do not invent a process distribution.
+
+Read `AmberMakie/demo/cmos_studies.jl` for complete inverter and seeded pair
+studies, and `AmberMakie/README.md` for plotting signatures and interpretation.
+
+### Interactive measurements and reproducible exports
+
+With an interactive backend, result workbenches link A/B data cursors and
+interval readouts. Use `setcursor!`, `setinterval!`, and `selectsignal!` for
+scripted selection. Noise views provide integration bands and ranked source
+budgets; network views provide matrix-element selection and Smith readouts.
+Monte Carlo workbenches accept `circuit` and `metric` for `selectsample!` and
+`replay_sample!`. `explore` / `runstudy!` support parameter controls, cached
+runs, and `pin!` comparisons; close study handles when finished.
+
+Use `eyediagramplot` and `jitterplot` for sampled eye masks, TIE, period jitter,
+and cycle-to-cycle jitter. Compute these from adequately resolved records.
+`reportfigure` builds publication reports, `savefigure` exports figures with
+TOML measurement/provenance sidecars, and `copyrecipe` reconstructs supported
+view settings. CairoMakie supports headless rendering; mouse-driven controls
+need an interactive backend.
 
 ## Easy complete example: RC step and bandwidth
 

@@ -2,4 +2,3 @@
 *.cov
 *.mem
 /coverage/
-/docs/build/

@@ -29,6 +29,7 @@ _draft_kind(::PrimitiveDraft{K}) where {K}=K
 voltage(n::AbstractNode)=Observable(:voltage,n,nothing)
 voltage(a::AbstractNode,b::AbstractNode)=Observable(:voltage,a,b)
 voltage(name::Union{Symbol,String})=Observable(:voltage,name,nothing)
+voltage(a::Union{Symbol,String},b::Union{Symbol,String})=Observable(:voltage,a,b)
 current(x,branch=nothing)=Observable(:current,x,branch)
 power(x)=Observable(:power,x,nothing)
 charge(x)=Observable(:charge,x,nothing)

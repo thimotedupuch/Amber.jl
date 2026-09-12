@@ -40,8 +40,7 @@ function port_response(c,frequency_specification::Union{Pair,AbstractVector};por
     isempty(port_list)&&throw(ArgumentError("at least one port is required"))
     fs=_small_signal_frequencies(frequency_specification;points=frequency_specification isa AbstractVector ? length(frequency_specification) : points,scale)
     cc=compile(c); operating_point_result=_require_converged(operating_point(cc;temperature,kw...),"network operating point"); op=operating_point_result.values[:,1]
-    _,G=residual_jacobian(cc,op,op,0.,0.;mode=:dc,temperature)
-    _,combined=residual_jacobian(cc,op,op,0.,1.;mode=:dc,temperature); E=combined-G
+    G,E=_static_dynamic_jacobians(cc,op;mode=:dc,temperature)
     selectors=hcat((_port_selector(cc,port) for port in port_list)...)
     count=length(port_list); z=zeros(ComplexF64,count,count,length(fs))
     for (frequency_index,frequency) in enumerate(fs)

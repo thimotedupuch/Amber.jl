@@ -144,7 +144,7 @@ function current(r::SimulationResult,name::Union{Symbol,String},branch=nothing)
     va=terminal(1); vb=terminal(2)
     kind===:resistor&&return (va-vb).*batch.conductance[device]
     kind===:conductance&&return (va-vb).*parameters.value
-    kind===:capacitor&&return parameters.value.*_derivative(r,va-vb).+
+    kind===:capacitor&&return parameters.value.*_storage_derivative(r,va-vb).+
         (hasproperty(parameters,:leakage_resistance) ? (va-vb)./parameters.leakage_resistance : zero(va))
     if kind===:current_source
         r.analysis isa SmallSignal&&return fill(ComplexF64(get(parameters,:ac,0.)),length(r.axis))
@@ -153,9 +153,17 @@ function current(r::SimulationResult,name::Union{Symbol,String},branch=nothing)
         return waveform===nothing ? fill(Float64(get(parameters,:dc,0.)),length(r.axis)) : waveform.(r.axis)
     elseif kind===:diode
         model=parameters.model; voltage_values=va-vb; temperature=get(r.stats,:temperature,300.)
+        if r.analysis isa SmallSignal
+            bias=r.stats[:operating_point]
+            v=_workspace_value(bias,_batch_terminal(batch,1,device))-
+                _workspace_value(bias,_batch_terminal(batch,2,device))
+            _,g=_diode_conduction(model,v,temperature)
+            c=differential_capacitance(model,v;temperature)
+            return (g .+ im.*2π.*r.axis.*c).*voltage_values
+        end
         conductive=map(value->_diode_conduction(model,real(value),temperature)[1],voltage_values)
-        capacitance=map(value->differential_capacitance(model,real(value);temperature),voltage_values)
-        return conductive.+capacitance.*_derivative(r,voltage_values)
+        charges=map(value->charge(model,real(value);temperature),voltage_values)
+        return conductive.+_storage_derivative(r,charges)
     elseif kind===:npn
         vc=terminal(1); vbias=terminal(2); ve=terminal(3); model=parameters.model
         vt=_thermal_voltage(get(r.stats,:temperature,300.)); If=model.saturation_current.*expm1.(clamp.((vbias.-ve)./vt,-80,40)); Ir=model.saturation_current.*expm1.(clamp.((vbias.-vc)./vt,-80,40))
@@ -187,6 +195,28 @@ function current(r::SimulationResult,name::Union{Symbol,String},branch=nothing)
         return parameters.gain.*_unknown_trace(r,batch.control_unknowns[device])
     end
     throw(ArgumentError("current is not implemented for device $(name) of kind $(kind)"))
+end
+
+# Use the actual BDF stencil where the full fixed integration grid is retained.
+# Other records (e.g. decimated adaptive output) use a derivative of the saved
+# charge trace; they cannot reconstruct unsaved integration histories.
+function _storage_derivative(r::SimulationResult,values)
+    orders=get(r.stats,:bdf_orders,nothing)
+    orders===nothing&&return _derivative(r,values)
+    length(values)<=1&&return zero(values)
+    derivative=similar(values)
+    for k in 2:length(values)
+        h=r.axis[k]-r.axis[k-1]
+        if orders[k]==2
+            ratio=h/(r.axis[k-1]-r.axis[k-2])
+            derivative[k]=((1+2ratio)/(1+ratio)*(values[k]-values[k-1])-
+                ratio^2/(1+ratio)*(values[k-1]-values[k-2]))/h
+        else
+            derivative[k]=(values[k]-values[k-1])/h
+        end
+    end
+    derivative[1]=derivative[2]
+    derivative
 end
 
 function _derivative(r::SimulationResult,values)
@@ -379,9 +409,8 @@ function _charge_mos_current_trace(r,batch,device,index)
         return [sum((evaluated.currents[index].gradient[j]+im*2π*f*evaluated.charges[index].gradient[j])*
             _unknown_trace(r,_batch_terminal(batch,j,device))[k] for j in 1:4) for (k,f) in enumerate(r.axis)]
     end
-    rates=ntuple(j->_derivative(r,_unknown_trace(r,_batch_terminal(batch,j,device))),4)
-    [e.currents[index].value+sum(e.charges[index].gradient[j]*rates[j][k] for j in 1:4)
-        for (k,e) in enumerate(evaluated)]
+    charges=[e.charges[index].value for e in evaluated]
+    [e.currents[index].value for e in evaluated].+_storage_derivative(r,charges)
 end
 
 """Return named drain/gate/source/bulk charge traces (AC returns charge phasors)."""

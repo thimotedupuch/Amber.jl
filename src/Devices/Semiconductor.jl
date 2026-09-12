@@ -68,7 +68,18 @@ end
 
 function charge(model::JunctionDiode,voltage::Real;temperature=300.)
     data=getfield(model,:data); vt=_thermal_voltage(temperature)*data.ideality
-    _junction_depletion(model,voltage)+data.transit_time*data.saturation_current*expm1(clamp(voltage/vt,-80,40))
+    forward,_=_limited_exponential(voltage/vt)
+    _junction_depletion(model,voltage)+data.transit_time*data.saturation_current*forward
+end
+
+# dC/dv, using exactly the same continuation as charge and capacitance.
+function _capacitance_slope(model::JunctionDiode,voltage;temperature=300.)
+    data=getfield(model,:data); potential=data.junction_potential
+    depletion=voltage<.9potential ? data.junction_capacitance*data.grading_coefficient/
+        potential*(1-voltage/potential)^(-data.grading_coefficient-1) : 0.
+    vt=_thermal_voltage(temperature)*data.ideality; argument=voltage/vt
+    diffusion=-80<argument<80 ? data.transit_time*data.saturation_current*exp(argument)/vt^2 : 0.
+    depletion+diffusion
 end
 
 function differential_capacitance(model::JunctionDiode,voltage::Real;temperature=300.)

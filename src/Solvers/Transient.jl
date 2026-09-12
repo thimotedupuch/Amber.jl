@@ -105,7 +105,9 @@ function _initial_transient_state(cc,initial;temperature=300.,workspace=nothing,
     elseif initial isa AbstractVector
         length(initial)==cc.n||throw(DimensionMismatch("initial state does not match the compiled circuit"))
         all(isfinite,initial)||throw(ArgumentError("initial state must be finite"))
-        z=Float64.(initial)
+        # A supplied state is authoritative, including during shooting and
+        # finite-difference perturbations of the initial state.
+        return Float64.(initial)
     else
         result=_require_converged(operating_point(cc;temperature,workspace,solver),"transient operating point")
         z=copy(result.values[:,1])
@@ -148,8 +150,10 @@ function _transient_adaptive(cc,t0,t1;saveat,max_step,method,reltol,abstol,maxit
         if use_bdf2
             previous_h=times[end]-times[end-1]; ratio=h/previous_h; α=(1+2ratio)/((1+ratio)*h)
             history=((1+ratio) .* previous ./ h .- ratio^2 .* states[end-1] ./ ((1+ratio)*h)) ./ α
-            high,iterations,good=_newton(cc,z,history,next_time,α;reltol,abstol,maxiters,temperature,workspace,line_search_minimum,voltage_abstol,state_abstol,linear_solver)
+            qhistory=_bdf_storage_history(cc,previous,states[end-1],ratio,h,α;temperature,workspace)
+            high,iterations,good=_newton(cc,z,history,next_time,α;storage_history=qhistory,reltol,abstol,maxiters,temperature,workspace,line_search_minimum,voltage_abstol,state_abstol,linear_solver)
             low,low_iterations,low_good=_newton(cc,z,event_history,next_time,inv(h);reltol,abstol,maxiters,temperature,workspace,line_search_minimum,voltage_abstol,state_abstol,linear_solver)
+            candidate_alpha=α; candidate_qhistory=qhistory
             iterations+=low_iterations; good&=low_good; error=_error_norm(high,low,previous,cc,reltol,abstol); candidate=high
         else
             full,iterations,good=_newton(cc,z,event_history,next_time,inv(h);reltol,abstol,maxiters,temperature,workspace,line_search_minimum,voltage_abstol,state_abstol,linear_solver)
@@ -157,6 +161,7 @@ function _transient_adaptive(cc,t0,t1;saveat,max_step,method,reltol,abstol,maxit
             half,half_iterations,half_good=_newton(cc,z,previous,midpoint,2/h;reltol,abstol,maxiters,temperature,workspace,line_search_minimum,voltage_abstol,state_abstol,linear_solver)
             second_history=copy(half); event_mode===:exact&&_apply_switch_events!(second_history,cc,midpoint,next_time)
             refined,second_iterations,second_good=_newton(cc,half,second_history,next_time,2/h;reltol,abstol,maxiters,temperature,workspace,line_search_minimum,voltage_abstol,state_abstol,linear_solver)
+            candidate_alpha=2/h; candidate_qhistory=_storage(cc,second_history;temperature,workspace)
             iterations+=half_iterations+second_iterations; good&=half_good&second_good
             error=_error_norm(refined,full,previous,cc,reltol,abstol); candidate=refined
         end
@@ -169,13 +174,7 @@ function _transient_adaptive(cc,t0,t1;saveat,max_step,method,reltol,abstol,maxit
             rejected+=1; dt=max(minimum_step,h*max(.1,min(.5,.9*max(error,1e-12)^(-1/2))))
             if h<=minimum_step
                 z=candidate; push!(times,next_time); push!(states,copy(z)); push!(failed_steps,length(times))
-                derivative=workspace === nothing ? inv(h).*(z.-event_history) : workspace.derivative
-                if workspace !== nothing
-                    @inbounds @simd for index in eachindex(derivative)
-                        derivative[index]=inv(h)*(z[index]-event_history[index])
-                    end
-                end
-                final_residual=_solver_residual(cc,workspace,z,derivative,next_time;temperature)
+                final_residual,_=_step_residual_jacobian!(workspace,cc,z,candidate_qhistory,next_time,candidate_alpha;temperature)
                 push!(failed_residuals,(row=argmax(abs.(final_residual)),norm=norm(final_residual,Inf)))
                 error>1&&push!(tolerance_failed_steps,length(times))
             end
@@ -212,7 +211,7 @@ function _transient(c,p::Pair;saveat=nothing,max_step=nothing,method=:bdf2,adapt
     dt=something(saveat,max_step,(t1-t0)/1000); max_step!==nothing&&(dt=min(dt,max_step))
     ts=_merge_time_grid(vcat(t0,collect((t0+dt):dt:t1),t1),dt)
     event_mode===:exact&&(ts=_merge_time_grid(vcat(ts,_waveform_events(cc,t0,t1)),dt))
-    nt=length(ts); vals=zeros(cc.n,nt)
+    nt=length(ts); vals=zeros(cc.n,nt); bdf_orders=zeros(Int,nt)
     z=_initial_transient_state(cc,initial;temperature,workspace,solver)
     vals[:,1]=z; total=0; ok=true; failed_steps=Int[]; failed_residuals=Any[]
     for j in 2:nt
@@ -222,27 +221,24 @@ function _transient(c,p::Pair;saveat=nothing,max_step=nothing,method=:bdf2,adapt
             previous_h=ts[j-1]-ts[j-2]; ratio=h/previous_h
             α=(1+2ratio)/((1+ratio)*h)
             history=((1+ratio) .* prev ./ h .- ratio^2 .* vals[:,j-2] ./ ((1+ratio)*h)) ./ α
+            qhistory=_bdf_storage_history(cc,prev,vals[:,j-2],ratio,h,α;temperature,workspace)
         else
             α=inv(h); history=event_history
+            qhistory=_storage(cc,event_history;temperature,workspace)
         end
-        z,it,good=_newton(cc,z,history,ts[j],α;reltol,abstol,maxiters,temperature,workspace,
+        z,it,good=_newton(cc,z,history,ts[j],α;storage_history=qhistory,reltol,abstol,maxiters,temperature,workspace,
             line_search_minimum=solver.line_search_minimum,voltage_abstol,state_abstol,
             linear_solver=solver.linear_solver)
+        bdf_orders[j]=method===:bdf2&&j>2&&!event_applied ? 2 : 1
         vals[:,j]=z; total+=it; ok&=good
         if !good
             push!(failed_steps,j)
-            derivative=workspace === nothing ? α.*(z.-history) : workspace.derivative
-            if workspace !== nothing
-                @inbounds @simd for index in eachindex(derivative)
-                    derivative[index]=α*(z[index]-history[index])
-                end
-            end
-            final_residual=_solver_residual(cc,workspace,z,derivative,ts[j];temperature)
+            final_residual,_=_step_residual_jacobian!(workspace,cc,z,qhistory,ts[j],α;temperature)
             push!(failed_residuals,(row=argmax(abs.(final_residual)),norm=norm(final_residual,Inf)))
         end
     end
     analysis=Transient(Float64(t0)=>Float64(t1);saveat,max_step,method,adaptive=false,temperature,solver)
-    stats=Dict{Symbol,Any}(:converged=>ok,:iterations=>total,:failed_steps=>failed_steps,:failed_residuals=>failed_residuals,:temperature=>Float64(temperature),
+    stats=Dict{Symbol,Any}(:converged=>ok,:iterations=>total,:bdf_orders=>bdf_orders,:failed_steps=>failed_steps,:failed_residuals=>failed_residuals,:temperature=>Float64(temperature),
         :warnings=>isempty(failed_steps) ? String[] : ["one or more fixed-grid steps did not converge"])
     _finalize_stats!(stats;partial=true)
     SimulationResult(cc,analysis,ts,vals,stats)

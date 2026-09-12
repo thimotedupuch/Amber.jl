@@ -9,9 +9,11 @@ using Amber, AmberMakie, CairoMakie
 handle = bodeplot(Figure()[1, 1], result; input=voltage(:input), output=voltage(:output))
 ```
 
-The initial implementation includes semantic adapters, engineering formatting,
-accessible themes, transient traces, Bode plots, spectra, harmonics, noise-density
-plots, and typed workbench handles.
+Available views cover transient, frequency, spectral, noise, periodic, RF,
+control, statistical, and CMOS analyses. Semantic adapters preserve numerical
+data and units; workbench handles link selections, measurements, warnings, and
+provenance. Use an interactive Makie backend for mouse-driven exploration or
+CairoMakie for headless PNG/SVG/PDF export.
 
 ## Measurements
 
@@ -79,7 +81,8 @@ jitterplot(fig[1, 1], transient_result;
 
 ## Control and RF
 
-M2 adds Bode views for Amber linear responses and loop-gain results, plus
+Control analysis includes Bode views for Amber linear responses and loop-gain
+results, plus
 `nyquistplot`, `nicholsplot`, `polezeroplot`, `rootlocusplot`, `marginplot`, and
 `groupdelayplot`. Periodic and RF workflows use `pssplot`, `orbitplot`,
 `networkplot`, `smithplot`, `stabilitycircleplot`, and `mixedmodeplot`.
@@ -193,20 +196,15 @@ case; current plots show magnitudes. Underlying operating points retain signed
 currents. Zero/nonfinite values are omitted on logarithmic plots without changing
 the stored data. These views inherit the model's documented long-channel limits.
 
-Further CMOS workflows can compose the existing transient, sweep and statistical
-plots: inverter transfer/noise margins, switching delay versus load, switching
-energy, current-mirror error, differential-pair offset, and temperature/geometry
-comparisons. Those are circuit-level studies; the transistor dashboard does not
-infer their performance from a single device.
+The circuit-study helpers below cover inverter transfer/noise margins, switching
+delay and energy versus load/supply, and offset or mismatch across temperature
+and geometry. Other studies, such as current-mirror error, can compose the
+existing transient, sweep, and statistical plots. These measurements require
+circuit-level simulations; the transistor dashboard characterizes one device.
 
-## Reproduce the rendering gallery
+### CMOS circuit studies
 
-`demo/generate.jl` renders the existing analysis gallery and the CMOS examples.
-Run it in an environment containing Amber, AmberMakie and CairoMakie. Set
-`AMBERMAKIE_DEMO_OUTPUT` to choose an output directory. CairoMakie is a test/demo
-backend dependency; the package itself remains backend-neutral.
-
-CMOS circuit studies now include:
+Available helpers include:
 
 - `inverterview` / `inverterplot`: DC transfer, differential gain, switching
   threshold, and unity-gain noise margins; accepts an Amber sweep or raw samples.
@@ -218,3 +216,16 @@ CMOS circuit studies now include:
 
 See [`demo/cmos_studies.jl`](demo/cmos_studies.jl) for runnable inverter and
 seeded transistor-pair examples. Statistical parameters are illustrative.
+
+Switching energy includes leakage over the entire supplied window; choose a
+settled full cycle for energy/cycle. Missing or ambiguous output crossings yield
+`NaN` delays. Inverter views report warnings for unresolved noise-margin
+crossings; retain those warnings and failed study points in exported results.
+
+## Reproduce the rendering gallery
+
+[`demo/generate.jl`](demo/generate.jl) renders the analysis gallery and CMOS bias
+examples; [`demo/cmos_studies.jl`](demo/cmos_studies.jl) renders the circuit studies.
+Run them in an environment containing Amber, AmberMakie, and CairoMakie. Set
+`AMBERMAKIE_DEMO_OUTPUT` to choose an output directory. CairoMakie is a test/demo
+backend dependency; the package itself remains backend-neutral.

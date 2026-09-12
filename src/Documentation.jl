@@ -148,10 +148,10 @@
 @doc """Compute closed-loop generalized poles over a gain vector.""" root_locus
 
 @doc """Abstract zero-DC feedback injection specification.""" AbstractLoopProbe
-@doc """Voltage-source feedback injection and oriented return observable.""" VoltageLoopProbe
-@doc """Current-source feedback injection and oriented return observable.""" CurrentLoopProbe
+@doc """Two-injection loop probe: a zero-volt series wire and endpoint voltage relative to the loop reference.""" VoltageLoopProbe
+@doc """Two-injection loop probe: a zero-DC shunt current source and current through a zero-volt series sensing source.""" CurrentLoopProbe
 @doc """Loop-gain samples, margins, probe, and bias-preservation metadata.""" LoopGainResult
-@doc """Compute loop gain through an explicit zero-DC injection source.""" loop_gain
+@doc """Compute the Tian two-injection return ratio with return difference 1 + L; the probed wire must intersect all return paths under study.""" loop_gain
 @doc """Return sensitivity from a loop-gain result.""" loop_sensitivity
 @doc """Return complementary sensitivity from a loop-gain result.""" closed_loop_response
 

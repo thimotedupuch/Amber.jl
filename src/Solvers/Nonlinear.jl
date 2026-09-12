@@ -81,16 +81,16 @@ _new_factorization(system, solver::AbstractLinearSolver) =
 function _newton(cc,z0,previous,t,α;reltol=1e-7,abstol=1e-10,maxiters=60,
         mode=:time,source_scale=1.,gmin=0.,temperature=300.,forcing=nothing,workspace=nothing,
         line_search_minimum=1/256,voltage_abstol=max(abstol,1e-9),state_abstol=abstol,
-        linear_solver=SuiteSparseLU(),history=nothing)
-    workspace === nothing && cc.parameters !== nothing && (workspace = SimulationWorkspace(cc))
+        linear_solver=SuiteSparseLU(),history=nothing,storage_history=nothing)
+    workspace === nothing && (workspace=SimulationWorkspace(cc))
+    qhistory=iszero(α) ? nothing : storage_history === nothing ?
+        _storage(cc,previous;temperature,workspace) : storage_history
     z=copy(z0); factorization=workspace === nothing ? nothing : workspace.factorization
     linear_hierarchy=workspace !== nothing && _all_linear(cc.parameters.batches)
     factorization_key=linear_hierarchy ? (cc.parameters.fingerprint,Float64(α),mode,Float64(gmin),
         linear_solver) : nothing
     for it in 1:maxiters
-        r,J = workspace === nothing ?
-            residual_jacobian(cc,z,previous,t,α;mode,source_scale,gmin,temperature) :
-            residual_jacobian!(workspace,cc,z,previous,t,α;mode,source_scale,gmin,temperature)
+        r,J=_step_residual_jacobian!(workspace,cc,z,qhistory,t,α;mode,source_scale,gmin,temperature)
         forcing===nothing||(r.-=forcing)
         variable_scales=workspace === nothing ? _unknown_scales(cc) : workspace.variable_scales
         scaled_matrix=workspace === nothing ? copy(J) : workspace.scaled_jacobian
@@ -164,13 +164,8 @@ function _newton(cc,z0,previous,t,α;reltol=1e-7,abstol=1e-10,maxiters=60,
             candidate=workspace === nothing ? z+damping*Δ : workspace.candidate
             if workspace !== nothing
                 @inbounds @simd for index in eachindex(candidate); candidate[index]=z[index]+damping*Δ[index] end
-                @inbounds @simd for index in eachindex(workspace.derivative)
-                    workspace.derivative[index]=α==0 ? 0. : α*(candidate[index]-previous[index])
-                end
             end
-            candidate_residual=workspace === nothing ?
-                residual(cc,candidate,α==0 ? zero(candidate) : α.*(candidate.-previous),t;mode,source_scale,gmin,temperature) :
-                residual!(workspace,cc,candidate,workspace.derivative,t;mode,source_scale,gmin,temperature)
+            candidate_residual,_=_step_residual_jacobian!(workspace,cc,candidate,qhistory,t,α;mode,source_scale,gmin,temperature)
             forcing===nothing||(candidate_residual.-=forcing)
             norm(candidate_residual)<=nr&&break
             damping/=2

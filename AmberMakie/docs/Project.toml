@@ -1,5 +1,0 @@
-[deps]
-Amber = "2c7a1e4c-6de2-4e12-9714-7d38608cb52a"
-AmberMakie = "fd161fee-29dc-4075-a8b2-01cef381d9be"
-CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
-Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"

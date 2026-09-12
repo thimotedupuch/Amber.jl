@@ -25,7 +25,8 @@ end
 floquet_multipliers(result::PSSResult)=result.floquet_multipliers
 
 function _pss_cycle(cc,start,period,state;saveat,max_step,method,event_mode,temperature,reltol,abstol,maxiters)
-    transient(cc,start=>(start+period);initial=state,saveat,max_step,method,event_mode,temperature,reltol,abstol,maxiters,adaptive=false)
+    result=transient(cc,start=>(start+period);initial=state,saveat,max_step,method,event_mode,temperature,reltol,abstol,maxiters,adaptive=false)
+    _require_converged(result,"PSS shooting trajectory")
 end
 
 function _period_map_jacobian(cc,start,period,state,endpoint;saveat,max_step,method,event_mode,temperature,reltol,abstol,maxiters,fd_step)
@@ -42,6 +43,8 @@ function _variational_monodromy(cc,cycle;method,temperature)
     count=cc.n
     tangent_previous=Matrix{Float64}(I,count,count)
     tangent_older=copy(tangent_previous)
+    _,cprevious=_static_dynamic_jacobians(cc,cycle.values[:,1],cycle.axis[1];temperature)
+    colder=cprevious
     for step in 2:length(cycle.axis)
         h=cycle.axis[step]-cycle.axis[step-1]
         use_bdf2=method===:bdf2&&step>2
@@ -49,20 +52,18 @@ function _variational_monodromy(cc,cycle;method,temperature)
             previous_h=cycle.axis[step-1]-cycle.axis[step-2]
             ratio=h/previous_h
             α=(1+2ratio)/((1+ratio)*h)
-            history_tangent=(((1+ratio)/h).*tangent_previous.-
-                (ratio^2/((1+ratio)*h)).*tangent_older)./α
+            history_tangent=(((1+ratio)/h).*(cprevious*tangent_previous).-
+                (ratio^2/((1+ratio)*h)).*(colder*tangent_older))./α
         else
             α=inv(h)
-            history_tangent=tangent_previous
+            history_tangent=cprevious*tangent_previous
         end
         point=cycle.values[:,step]
-        _,g=residual_jacobian(cc,point,point,cycle.axis[step],0.;
-            mode=:time,temperature)
-        _,combined=residual_jacobian(cc,point,point,cycle.axis[step],α;
-            mode=:time,temperature)
-        dynamic=(combined-g)/α
-        tangent=_solve_linear(combined,α.*dynamic*history_tangent,
+        g,dynamic=_static_dynamic_jacobians(cc,point,cycle.axis[step];temperature)
+        combined=g+α*dynamic
+        tangent=_solve_linear(combined,α.*history_tangent,
             "PSS variational system is singular at time $(cycle.axis[step])")
+        colder=cprevious; cprevious=dynamic
         tangent_older=tangent_previous
         tangent_previous=Matrix(tangent)
     end
@@ -148,6 +149,8 @@ function periodic_steady_state(c;period,saveat=Float64(period)/200,max_step=noth
     if !converged
         cycle=_pss_cycle(cc,0.,period,state;saveat,max_step,method,event_mode,temperature,reltol,abstol,maxiters=120)
         residual_norm=norm(cycle.values[:,end]-state,Inf)
+        monodromy=_pss_monodromy(cc,cycle,state;method=effective_monodromy_method,
+            transient_method=method,period,saveat,max_step,event_mode,temperature,reltol,abstol,fd_step)
     end
     multipliers=ComplexF64.(eigvals(monodromy)); warnings=converged ? String[] : ["PSS shooting did not converge"]
     effective_monodromy_method!==monodromy_method&&push!(warnings,

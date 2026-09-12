@@ -28,13 +28,14 @@ function noise_contributions(result::PeriodicNoiseResult;component=nothing,mecha
 end
 
 function _periodic_orbit_samples(pss)
+    _require_converged(pss.orbit,"periodic noise orbit")
     times=pss.orbit.axis
     values=pss.orbit.values
     if length(times)>1&&isapprox(last(times)-first(times),pss.period;
             rtol=1e-8,atol=eps(Float64)*max(pss.period,1.))
         sample_times=times[1:end-1]
         sample_values=values[:,1:end-1]
-        steps=diff(sample_times)
+        steps=diff(times)
         isempty(steps)||maximum(abs.(steps.-first(steps)))<=
             1e-8*max(abs(first(steps)),eps(Float64))||
             throw(AnalysisValidationError(
@@ -57,10 +58,9 @@ function _periodic_jacobians(pss,temperature)
     inventories=Tuple{Vector{NoiseSource},Vector{NoiseCorrelationGroup}}[]
     for index in eachindex(times)
         point=values[:,index]
-        _,g=residual_jacobian(cc,point,point,times[index],0.;mode=:time,temperature)
-        _,combined=residual_jacobian(cc,point,point,times[index],1.;mode=:time,temperature)
+        g,c=_static_dynamic_jacobians(cc,point,times[index];temperature)
         push!(conductance,Matrix(g))
-        push!(dynamics,Matrix(combined-g))
+        push!(dynamics,Matrix(c))
         push!(inventories,noise_sources(cc,point;temperature))
     end
     times,values,conductance,dynamics,inventories
@@ -83,8 +83,10 @@ function _lifted_periodic_system(conductance,dynamics,sidebands,offset,period)
             q=row_harmonic-column_harmonic
             gq=_fourier_coefficient(conductance,q)
             cq=_fourier_coefficient(dynamics,q)
+            # Linearize d(q(x))/dt: the derivative acts on C(t)*δx(t),
+            # so its Fourier multiplier belongs to the output (row) harmonic.
             lifted[rows,columns].=gq+
-                im*2π*(offset+column_harmonic*fundamental)*cq
+                im*2π*(offset+row_harmonic*fundamental)*cq
         end
     end
     lifted

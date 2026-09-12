@@ -21,6 +21,7 @@ export KCLCurrentEquation, VoltageConstraintEquation, DynamicStateEquation, Devi
 export PrimitiveBatch, ResistorBatch, with_parameters, TopologyParameterError
 export ParameterUpdateError, model_parameters, with_model_parameter
 export SimulationWorkspace, residual!, jacobian!, residual_jacobian!
+export storage_jacobian!
 export AbstractLinearSolver, SuiteSparseLU, SolverOptions
 export ConvergenceError
 export CircuitValidationError, AnalysisValidationError, CircuitLookupError, LinearSolveError
@@ -106,6 +107,7 @@ include("Core/EquationGraph.jl")
 include("Core/CompilerIR.jl")
 include("Core/Compilation.jl")
 include("Core/Workspace.jl")
+include("Core/Storage.jl")
 include("Analysis/Analyses.jl")
 include("Results/Results.jl")
 include("Results/Tabular.jl")

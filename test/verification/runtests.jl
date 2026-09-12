@@ -9,4 +9,5 @@
     include("conservation.jl")
     include("convergence_order.jl")
     include("metamorphic.jl")
+    include("storage_and_periodic.jl")
 end

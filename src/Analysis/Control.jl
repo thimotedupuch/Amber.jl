@@ -82,8 +82,7 @@ function linearize(c;inputs,outputs,bias=nothing,temperature=300.,kw...)
     cc=compile(c)
     point=bias===nothing ? _require_converged(operating_point(cc;temperature,kw...),"linearization operating point").values[:,1] : bias isa SimulationResult ? bias.values[:,1] : Float64.(bias)
     length(point)==cc.n||throw(DimensionMismatch("bias point does not match the compiled circuit"))
-    _,G=residual_jacobian(cc,point,point,0.,0.;mode=:dc,temperature)
-    _,combined=residual_jacobian(cc,point,point,0.,1.;mode=:dc,temperature); E=combined-G
+    G,E=_static_dynamic_jacobians(cc,point;mode=:dc,temperature)
     input_names=inputs isa Union{Symbol,String} ? String[String(inputs)] : String.(inputs)
     output_observables=outputs isa Union{Observable,Symbol,String} ? Observable[_as_observable(outputs)] : Observable[_as_observable(output) for output in outputs]
     B=hcat((_unit_source_excitation(cc,name) for name in input_names)...)
