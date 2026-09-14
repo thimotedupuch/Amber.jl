@@ -471,6 +471,140 @@ println((nominal_gain_at_1kHz=abs(gain[at_1kHz]),
 
 Increase the sample count for a final yield claim and report a confidence interval. Verify that each distribution represents the intended absolute, relative, process, or mismatch variation.
 
+## Electrical engineering recipes
+
+Use these standalone blocks for bridge sensitivity, rectifier ripple, and CMOS
+inverter transfer tasks.
+Run them through the selected launcher; adapt component values and models to
+the requested circuit. Each includes numerical checks and explicit units.
+
+### Strain-gauge bridge: DC sensitivity
+
+A quarter-bridge uses one active 350 Ω strain gauge and three fixed resistors.
+With gauge factor 2 and 500 microstrain, its fractional resistance change is
+0.001. The differential output is negative for the terminal order below:
+about −1.25 mV with 5 V excitation. This ideal example omits lead resistance,
+resistor mismatch, self-heating, and amplifier loading.
+
+```julia
+using Amber
+
+@circuit StrainBridge(; strain=500e-6, gauge_factor=2.0, R=350Ω) begin
+    gnd = ground(); excitation = node(); sense = node(); reference = node()
+    Supply = voltage_source(excitation, gnd; dc=5V)
+    Gauge = resistor(excitation, sense; value=R * (1 + gauge_factor * strain))
+    R2 = resistor(sense, gnd; value=R)
+    R3 = resistor(excitation, reference; value=R)
+    R4 = resistor(reference, gnd; value=R)
+end
+
+bridge = StrainBridge()
+@assert isempty(check(bridge))
+bias = operating_point(bridge)
+@assert bias.stats[:converged]
+vbridge = only(voltage(bias, :sense, :reference))
+expected = 5V * (1 / (2 + 2.0 * 500e-6) - 1 / 2)
+@assert isapprox(vbridge, expected; atol=1e-9)
+
+# Change only the gauge resistance; retain the compiled topology.
+strains = range(-1000e-6, 1000e-6; length=21)
+study = sweep(compile(bridge), "Gauge.value" => 350Ω .* (1 .+ 2.0 .* strains);
+    analysis=OperatingPoint(),
+    metric=r -> only(voltage(r, :sense, :reference)))
+@assert failure_rate(study) == 0
+println((bridge_output_V=vbridge, strains=strains,
+    bridge_outputs_V=study.metrics, failures=failure_rate(study)))
+```
+
+### Rectifier: startup and smoothing-capacitor ripple
+
+This half-wave rectifier converts a 10 V peak, 50 Hz sine into a DC output.
+Measure the last two cycles after startup, then compare the ripple with the
+small-ripple estimate ΔV ≈ Iload / (f C). Half-wave rectification recharges
+once per input cycle; a full-wave bridge would use twice the input frequency.
+
+```julia
+using Amber, Statistics
+
+@circuit SmoothingRectifier(; C=470μF, R=1kΩ) begin
+    gnd = ground(); input = node(); output = node()
+    Source = voltage_source(input, gnd;
+        waveform=Sine(amplitude=10V, frequency=50Hz))
+    D1 = diode(input, output;
+        model=JunctionDiode(saturation_current=2nA, ideality=1.7,
+            series_resistance=120mΩ))
+    C1 = capacitor(output, gnd; value=C, esr=180mΩ)
+    Load = resistor(output, gnd; value=R)
+end
+
+rectifier = SmoothingRectifier()
+@assert isempty(check(rectifier))
+tr = transient(rectifier, 0s => 300ms; initial=:discharged,
+    max_step=50μs, saveat=50μs, reltol=1e-6)
+@assert tr.stats[:converged]
+settled = (tr.axis .>= 260ms) .& (tr.axis .< 300ms)
+vdc = mean(voltage(tr, :output)[settled])
+ripple = peak_to_peak(voltage(:output); window=260ms => 300ms)(tr)
+ripple_estimate = (vdc / 1kΩ) / (50Hz * 470μF)
+@assert 0V < vdc < 10V
+println((dc_output_V=vdc, ripple_Vpp=ripple,
+    estimated_ripple_Vpp=ripple_estimate))
+```
+
+The estimate ignores diode conduction time and ESR, so it is a sanity check,
+not an exact equality. Reduce `max_step` and compare successive late cycles
+before relying on a ripple measurement. Increase `C` to explore the tradeoff
+between ripple and charging-current peaks, using `current(tr, :D1)`.
+
+### CMOS inverter: DC transfer characteristic
+
+Sweep the input of a complementary MOS inverter from ground to its 5 V supply.
+The NMOS bulk connects to ground and the PMOS bulk to the supply; transistor
+terminals are ordered drain, gate, source, bulk. These illustrative Level-1
+parameters describe an educational model, not a specific fabrication process.
+
+```julia
+using Amber
+
+@circuit LogicInverter begin
+    gnd = ground(); supply = node(); input = node(); output = node()
+    VDD = voltage_source(supply, gnd; dc=5V)
+    Input = voltage_source(input, gnd; dc=0V)
+    PullDown = nmos(output, input, gnd, gnd;
+        model=Level1MOSFET(threshold_voltage=0.7V,
+            transconductance=2mA/V^2, channel_length_modulation=0.03/V))
+    PullUp = pmos(output, input, supply, supply;
+        model=Level1MOSFET(threshold_voltage=0.7V,
+            transconductance=1mA/V^2, channel_length_modulation=0.03/V))
+    Load = capacitor(output, gnd; value=20pF)
+end
+
+inverter = LogicInverter()
+@assert isempty(check(inverter))
+inputs = range(0V, 5V; length=101)
+vtc = sweep(compile(inverter), "Input.dc" => inputs;
+    analysis=OperatingPoint(), metric=r -> only(voltage(r, :output)))
+@assert failure_rate(vtc) == 0
+outputs = Float64.(vtc.metrics)
+@assert outputs[1] > 4.9V       # low input gives high output
+@assert outputs[end] < 0.1V     # high input gives low output
+# Approximate switching point: the sampled point nearest Vout = Vin.
+k = argmin(abs.(outputs .- inputs))
+println((input_V=collect(inputs), output_V=outputs,
+    switching_input_V=inputs[k], failures=failure_rate(vtc)))
+```
+
+Refine the input grid near the transition for a more precise switching point.
+The capacitor is open at DC; switching delay requires a transient analysis
+with a pulse input and resolved rise/fall times. Use `ChargeBasedMOSFET` when
+continuous weak-inversion behavior and conserving terminal charges matter.
+
+For bridge offset and tolerance studies, use
+`examples/11_precision_bridge/monte_carlo.jl`; for a rectifier with diode charge,
+leakage, and dielectric absorption, use `examples/02_diode_rectifier/circuit.jl`
+in an Amber checkout. See `examples/12_cmos_inverter/analyses.jl` for
+pulse-driven CMOS switching and propagation-delay measurements.
+
 ## Write arbitrary Julia around Amber
 
 Amber circuit files are Julia programs, not a restricted netlist language. Define helper functions and structs; generate component arrays with loops; read user-supplied data; perform linear algebra and statistics; optimize parameters; calculate custom metrics; and write CSV/TOML summaries. Add Julia packages with `Pkg.add` only when they are genuinely needed and preserve the environment files.
