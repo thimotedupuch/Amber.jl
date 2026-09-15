@@ -23,7 +23,7 @@ boundaries](#scope-and-model-boundaries) before using it for sign-off work.
 | Circuit construction | `@circuit`, reusable `@subcircuit` templates, programmatic `CircuitBuilder`, arrays, loops, conditionals, retained instance paths, named observations |
 | Devices | R, G, C, L, independent and controlled sources, diodes, NPN BJTs, NMOS/PMOS, switches, behavioral op-amps, nonlinear behavioral sources |
 | Extended devices | Zener, Schottky, LED, photodiode, solar cell, N/P JFET, thermistor, varistor, controlled resistor, potentiometer, multiplier, limiter, comparator, ideal transformer, diode bridge, crystal, lumped RLGC line |
-| Physical details | resistor temperature/voltage coefficients and excess noise, package parasitics, capacitor loss and dielectric absorption, diode depletion/diffusion charge, BJT charge, MOS gate capacitances, matched devices |
+| Physical details | resistor excess noise and material families, passive package parasitics, calibrated capacitor loss and dielectric absorption, diode depletion/diffusion charge, BJT charge, MOS gate capacitances, matched devices |
 | Core analyses | operating point, BDF1/BDF2 transient, small-signal AC, parameter sweeps, periodic steady state |
 | Noise | stationary frequency-domain noise, input-referred noise, contribution budgets, integrated noise, stochastic transient noise, cyclostationary periodic noise, oscillator phase noise |
 | RF and control | multiport Z/Y/S/ABCD/H parameters, descriptor-system linearization, poles, zeros, stability, root locus, step/impulse response, bias-preserving loop gain and margins |
@@ -855,20 +855,97 @@ line is a lumped pi-section RLGC approximation whose R/L/G/C parameters are tota
 line values. See the [catalog example](examples/18_device_catalog/circuit.jl)
 and [constructor docstrings](src/Devices/Catalog.jl) for terminal order and limits.
 
+### Resistor materials, passive packages, and capacitor dielectrics
+
+Use `material=`, `package=`, and `dielectric=` to attach reusable physical models
+to ordinary `resistor` and `capacitor` constructors. The catalog now includes
+24 additional types alongside `ThinFilm`, `SMD0603`, `C0G`, and `DebyeBranches`:
+
+| Family | Available models | Supported behavior |
+| --- | --- | --- |
+| Resistor materials | `ThinFilm`, `ThickFilm`, `MetalFilm`, `CarbonFilm`, `CarbonComposition`, `MetalFoil`, `Wirewound` | Configurable power-law excess current noise, added to resistor thermal noise |
+| Surface-mount packages | `SMD0201`, `SMD0402`, `SMD0603`, `SMD0805`, `SMD1206`, `SMD1210`, `SMD2010`, `SMD2512` | Explicit resistor or capacitor parasitics; names use imperial size codes |
+| Leaded and generic packages | `Axial`, `Radial`, `PassivePackage` | The same lumped parasitic parameters, for leaded parts or custom configurations |
+| Ceramic dielectrics | `C0G`, `X7R`, `X5R` | Loss calibrated at an explicit reference frequency |
+| Film and mica dielectrics | `Polypropylene`, `Polyester`, `PPS`, `Mica` | The same calibrated loss model |
+| Bulk capacitor technologies | `AluminumElectrolytic`, `Tantalum` | The same calibrated loss model; specify leakage and absorption separately |
+| Dielectric absorption | `DebyeBranches` | Additional series RC relaxation branches in parallel with the main capacitor |
+
+The additions were prioritized as packages first, resistor materials second, and
+capacitor dielectrics third, so they reuse the existing simulation kernels.
+The [complete inventory and roadmap](design_specs/passive_model_catalog.md)
+includes other device models and the next priorities: resistor temperature and
+voltage dependence, capacitor bias/temperature/aging curves, magnetic cores,
+electrothermal packages, and broadband loss models.
+
+Technology names identify families, not manufacturer parts. Noise coefficients,
+loss tangent, and package parasitics default to zero; supply measured or
+datasheet values for the intended part. Equal parameters produce equal electrical
+behavior across family names. The following values are illustrative.
+
+#### Package parasitics and resistor noise
+
+Every package accepts four finite, nonnegative parameters:
+
+- Resistors use `series_inductance` in series with the resistance and
+  `parallel_capacitance` across the external terminals.
+- Capacitors use `esr` and `esl` in series. Component-level `esr` and `esl`
+  override their package values, including an explicit zero.
+
+Fields for the other component kind are unused. A package name does not infer
+mounting geometry or thermal properties. Model wirewound inductance explicitly
+through the package; `Wirewound()` alone adds no inductance.
+
+All resistor materials accept `excess_noise_coefficient` (default zero),
+`excess_current_exponent` (2), `excess_frequency_exponent` (1), and
+`excess_reference_frequency` (1 Hz). Their excess current-noise PSD is
+`coefficient * abs(I)^current_exponent * (reference_frequency/f)^frequency_exponent`.
+The coefficient's units depend on the current exponent. Resistor `tc1`,
+`temperature_coefficient`, and `voltage_coefficient` still reject nonzero values.
+
+```julia
+R2 = resistor(a, b; value=4.7kΩ,
+    material=ThickFilm(excess_noise_coefficient=1e-12),
+    package=SMD0402(series_inductance=0.4nH, parallel_capacitance=20fF),
+)
+
+C2 = capacitor(a, b; value=1μF,
+    dielectric=Polypropylene(loss_tangent=0.001, reference_frequency=1kHz),
+    package=Radial(esr=0.2Ω, esl=5nH),
+    leakage_resistance=1GΩ,
+)
+```
+
+#### Capacitor loss and dielectric absorption
+
+A nonzero `loss_tangent` requires an explicit positive `reference_frequency` in
+Hz. Amber adds a constant series resistance
+`Rloss = loss_tangent / (2π * reference_frequency * nominal_capacitance)` to the
+component/package ESR. This supports AC, transient, and thermal-noise analyses
+with the same RC model. The calibration describes the nominal capacitor alone;
+other parasitics change the terminal loss. If a supplied ESR already includes
+dielectric loss, use that ESR alone to avoid counting the loss twice.
+
+Dielectric names do not model DC-bias derating, temperature curves, aging,
+polarization, or voltage limits. Leakage and dielectric absorption are separate
+supported effects, configured with `leakage_resistance` and
+`dielectric_absorption=DebyeBranches(...)`.
+Debye branches add `Ci = C * fraction[i]` and `Ri = time_constant[i] / Ci`;
+fractions must be finite and nonnegative, and time constants finite and positive.
+Zero fractions add no branch. The main capacitance remains the nominal value.
+
 Example physical models include:
 
 ```julia
 R1 = resistor(a, b; value=10kΩ,
     material=ThinFilm(
-        temperature_coefficient=15e-6/K,
-        voltage_coefficient=0.05e-6/V,
         excess_noise_coefficient=1e-18,
     ),
     package=SMD0603(series_inductance=0.6nH, parallel_capacitance=40fF),
 )
 
 C1 = capacitor(a, b; value=10nF,
-    dielectric=C0G(loss_tangent=1e-4),
+    dielectric=C0G(loss_tangent=1e-4, reference_frequency=1kHz),
     dielectric_absorption=DebyeBranches(
         time_constants=[1μs, 1ms],
         fractions=[0.002, 0.001],
@@ -879,7 +956,26 @@ C1 = capacitor(a, b; value=10nF,
 
 These options elaborate into explicit internal primitives before sparse
 compilation, so parasitic current and stored state participate in the same
-equations as the ideal element.
+equations as the ideal element. Capacitor loss tangent produces a constant series
+resistance calibrated at the explicit reference frequency; it does not imply
+constant loss tangent across frequency.
+
+#### Reuse, persistence, and parameter changes
+
+All named material, package, and dielectric models support `model_parameters`,
+`with_model_parameter`, circuit serialization, and result provenance:
+
+```julia
+base_package = SMD0805(esr=30mΩ, esl=500pH)
+custom_package = with_model_parameter(base_package, :esr, 50mΩ)
+model_parameters(custom_package)  # base_package is unchanged
+```
+
+Rebuild a circuit after changing its package, dielectric, or absorption model;
+`with_parameters` rejects replacement of these structural options. Updating a
+compiled capacitor's `value` changes only its main capacitance: the expanded
+loss resistor and absorption branches stay fixed. Rebuild to preserve the loss
+tangent calibration or absorption fractions when changing nominal capacitance.
 
 ## Technical architecture
 

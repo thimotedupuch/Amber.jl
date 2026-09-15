@@ -437,7 +437,7 @@ end
 
 const _STRUCTURAL_PARAMETER_NAMES = Set((
     :series_resistance, :winding_resistance, :parallel_capacitance,
-    :leakage_resistance, :esr, :esl, :package, :dielectric_absorption,
+    :leakage_resistance, :esr, :esl, :package, :dielectric, :dielectric_absorption,
 ))
 
 function _locator_device_name(design::CircuitDesign, locator::DeviceLocator)

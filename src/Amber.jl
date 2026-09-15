@@ -72,6 +72,9 @@ export provenance, report, validity_report, available_observables
 export result_table
 export compare, peak_to_peak, sampling_metrics, propagation_delay, overshoot
 export Step, Sine, Pulse, ThinFilm, SMD0603, C0G, DebyeBranches
+export ThickFilm, MetalFilm, CarbonFilm, CarbonComposition, MetalFoil, Wirewound
+export SMD0201, SMD0402, SMD0805, SMD1206, SMD1210, SMD2010, SMD2512, Axial, Radial, PassivePackage
+export X7R, X5R, Polypropylene, Polyester, PPS, Mica, AluminumElectrolytic, Tantalum
 export ChargeBasedMOSFET, mosfet_operating_point, terminal_charges
 export JunctionDiode, GummelPoonBJT, Level1MOSFET, BehavioralOpAmp, VoltageControlledSwitch
 export SmoothSwitch, EventSwitch, IdealResistor, IdealCapacitor

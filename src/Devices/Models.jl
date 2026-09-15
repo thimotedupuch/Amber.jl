@@ -49,11 +49,31 @@ function _validate_waveform(w::Sine)
     isfinite(w.frequency)&&w.frequency>=0||throw(AnalysisValidationError("sine frequency must be finite and non-negative")); w
 end
 
-for (T,defaults) in ((:ThinFilm,:(;tc1=0.,temperature_coefficient=0.,voltage_coefficient=0.,
+"""Base type for Amber's parameterized built-in device models."""
+abstract type AbstractDeviceModel end
+"""Resistor technology with explicit power-law excess-noise parameters."""
+abstract type AbstractResistorMaterial <: AbstractDeviceModel end
+"""Lumped passive-package parasitics; values must be supplied for the actual part."""
+abstract type AbstractPassivePackage <: AbstractDeviceModel end
+"""Capacitor dielectric represented by loss at a specified reference frequency."""
+abstract type AbstractCapacitorDielectric <: AbstractDeviceModel end
+
+const _RESISTOR_MATERIAL_NAMES = (:ThinFilm, :ThickFilm, :MetalFilm, :CarbonFilm,
+    :CarbonComposition, :MetalFoil, :Wirewound)
+const _PASSIVE_PACKAGE_NAMES = (:SMD0201, :SMD0402, :SMD0603, :SMD0805, :SMD1206,
+    :SMD1210, :SMD2010, :SMD2512, :Axial, :Radial, :PassivePackage)
+const _CAPACITOR_DIELECTRIC_NAMES = (:C0G, :X7R, :X5R, :Polypropylene, :Polyester,
+    :PPS, :Mica, :AluminumElectrolytic, :Tantalum)
+
+for (T,defaults) in (
+    ((name, :(;tc1=0.,temperature_coefficient=0.,voltage_coefficient=0.,
         excess_noise_coefficient=0.,excess_current_exponent=2.,
-        excess_frequency_exponent=1.,excess_reference_frequency=1.)),
-    (:SMD0603,:(;series_inductance=0.,parallel_capacitance=0.,esr=0.,esl=0.)),
-    (:C0G,:(;loss_tangent=0.)),
+        excess_frequency_exponent=1.,excess_reference_frequency=1.))
+        for name in _RESISTOR_MATERIAL_NAMES)...,
+    ((name, :(;series_inductance=0.,parallel_capacitance=0.,esr=0.,esl=0.))
+        for name in _PASSIVE_PACKAGE_NAMES)...,
+    ((name, :(;loss_tangent=0.,reference_frequency=0.))
+        for name in _CAPACITOR_DIELECTRIC_NAMES)...,
     (:DebyeBranches,:(;time_constants=Float64[],fractions=Float64[])),
     (:JunctionDiode,:(;saturation_current=1e-12,ideality=1.2,series_resistance=0.,
         junction_capacitance=0.,junction_potential=.7,grading_coefficient=.5,transit_time=0.,
@@ -93,8 +113,11 @@ for (T,defaults) in ((:ThinFilm,:(;tc1=0.,temperature_coefficient=0.,voltage_coe
     (:VoltageControlledSwitch,:(;threshold=.5,ron=1.,roff=1e12,charge_injection=0.,clock_feedthrough=0.)),
     (:EventSwitch,:(;threshold=.5,ron=1.,roff=1e12,charge_injection=0.,clock_feedthrough=0.)),
     (:SmoothSwitch,:(;threshold=.5,transition=.05,ron=1.,roff=1e12,charge_injection=0.,clock_feedthrough=0.)))
+    parent = T in _RESISTOR_MATERIAL_NAMES ? AbstractResistorMaterial :
+        T in _PASSIVE_PACKAGE_NAMES ? AbstractPassivePackage :
+        T in _CAPACITOR_DIELECTRIC_NAMES ? AbstractCapacitorDielectric : AbstractDeviceModel
     @eval begin
-        struct $T{D<:NamedTuple}; data::D; end
+        struct $T{D<:NamedTuple} <: $parent; data::D; end
         function $T(;kw...)
             defaults=(;$defaults...)
             unknown=setdiff(keys(kw),keys(defaults))
@@ -125,9 +148,46 @@ function _unsupported_model_effects(model, neutral)
     end
     model
 end
-_validate_model_parameters(model::ThinFilm)=_unsupported_model_effects(model,
-    (;tc1=0.,temperature_coefficient=0.,voltage_coefficient=0.))
-_validate_model_parameters(model::C0G)=_unsupported_model_effects(model,(;loss_tangent=0.))
+function _finite_nonnegative_parameter(name, value)
+    value isa Real && isfinite(value) && value >= 0 ||
+        throw(ArgumentError("$(name) must be finite and non-negative"))
+    value
+end
+function _validate_model_parameters(model::AbstractResistorMaterial)
+    _unsupported_model_effects(model,(;tc1=0.,temperature_coefficient=0.,voltage_coefficient=0.))
+    for name in (:excess_noise_coefficient,:excess_current_exponent,:excess_frequency_exponent)
+        _finite_nonnegative_parameter(name,getproperty(model,name))
+    end
+    _finite_nonnegative_parameter(:excess_reference_frequency,model.excess_reference_frequency)>0 ||
+        throw(ArgumentError("excess_reference_frequency must be positive"))
+    model
+end
+function _validate_model_parameters(model::AbstractPassivePackage)
+    for (name,value) in pairs(model.data)
+        _finite_nonnegative_parameter(name,value)
+    end
+    model
+end
+function _validate_model_parameters(model::AbstractCapacitorDielectric)
+    _finite_nonnegative_parameter(:loss_tangent,model.loss_tangent)
+    frequency=get(model.data,:reference_frequency,0.) # Legacy lossless C0G snapshots.
+    _finite_nonnegative_parameter(:reference_frequency,frequency)
+    model.loss_tangent>0 && frequency==0 && throw(ArgumentError(
+        "nonzero loss_tangent requires an explicit positive reference_frequency"))
+    model
+end
+function _validate_model_parameters(model::DebyeBranches)
+    length(model.time_constants)==length(model.fractions) ||
+        throw(ArgumentError("Debye time constants and fractions must have equal lengths"))
+    for tau in model.time_constants
+        _finite_nonnegative_parameter(:time_constant,tau)>0 ||
+            throw(ArgumentError("Debye time constants must be positive"))
+    end
+    for fraction in model.fractions
+        _finite_nonnegative_parameter(:fraction,fraction)
+    end
+    model
+end
 _validate_model_parameters(model::GummelPoonBJT)=_unsupported_model_effects(model,(;transit_time=0.))
 _validate_model_parameters(model::BehavioralOpAmp)=_unsupported_model_effects(model,
     (;slew_rate=Inf,output_current_limit=Inf,saturation_recovery=0.))
@@ -152,3 +212,6 @@ function _validate_model_parameters(model::ChargeBasedMOSFET)
     abs(model.gate_channel_correlation)<=1 || throw(ArgumentError("gate_channel_correlation magnitude must not exceed one"))
     model
 end
+
+const _PASSIVE_MODELS = Tuple(getfield(@__MODULE__, name) for name in
+    (_RESISTOR_MATERIAL_NAMES..., _PASSIVE_PACKAGE_NAMES..., _CAPACITOR_DIELECTRIC_NAMES...))

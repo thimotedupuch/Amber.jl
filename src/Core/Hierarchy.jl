@@ -455,6 +455,17 @@ function add!(builder::CircuitBuilder, component::PrimitiveDraft; name=string(_d
         package=get(parameters,:package,nothing)
         esr=Float64(get(parameters,:esr,_model_value(package,:esr)))
         esl=Float64(get(parameters,:esl,_model_value(package,:esl)))
+        dielectric=get(parameters,:dielectric,nothing)
+        if dielectric isa AbstractCapacitorDielectric && dielectric.loss_tangent>0
+            # A constant series resistor calibrated at one frequency, usable in
+            # every analysis (including transient and thermal noise).
+            capacitance=parameters.value
+            isfinite(capacitance)&&capacitance>0 ||
+                throw(ArgumentError("dielectric loss requires finite positive capacitance"))
+            esr += dielectric.loss_tangent/(2π*dielectric.reference_frequency*capacitance)
+        end
+        _finite_nonnegative_parameter(:esr,esr)
+        _finite_nonnegative_parameter(:esl,esl)
         terminal=terminals[1]
         if esr>0
             following=node!(builder,_hidden_name(name,"__esr"))

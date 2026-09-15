@@ -40,8 +40,8 @@
 @doc """A sinusoidal transient waveform with amplitude, frequency, phase, offset, and delay.""" Sine
 @doc """A periodic pulse waveform with explicit rise, fall, frequency, and duty cycle.""" Pulse
 @doc """Thin-film resistor metadata including explicit power-law excess-noise parameters.""" ThinFilm
-@doc """0603 surface-mount resistor technology metadata.""" SMD0603
-@doc """C0G/NP0 capacitor technology metadata.""" C0G
+@doc """0603 (imperial) passive package. Explicit resistor series_inductance/parallel_capacitance or capacitor esr/esl; all default to zero.""" SMD0603
+@doc """C0G/NP0 dielectric. Nonzero loss_tangent requires reference_frequency (Hz); elaborates to constant series R = tan(delta)/(2pi*f*C), added to ESR. No bias or temperature dependence.""" C0G
 @doc """A sum of Debye relaxation branches used to model dielectric absorption.""" DebyeBranches
 @doc """Junction-diode compact-model parameters including carrier, avalanche, and power-law noise.""" JunctionDiode
 @doc """NPN compact-model parameters for transport, charge, resistance, shot noise, and power-law noise.""" GummelPoonBJT
@@ -260,3 +260,16 @@ Use `mosfet_operating_point` for sizing quantities and `terminal_charges` for
 charge data. This is not a full EKV, SPICE Level 2, or foundry model. See the
 manual's Charge-based MOSFET page for equations, parameters and physical limits.
 """ ChargeBasedMOSFET
+
+for name in _RESISTOR_MATERIAL_NAMES
+    name===:ThinFilm && continue
+    @eval @doc $("$(name) resistor technology. Explicit excess_noise_coefficient, excess_current_exponent (2), excess_frequency_exponent (1), and excess_reference_frequency (1 Hz). Noise coefficient defaults to zero; temperature/voltage coefficients are unsupported. See design_specs/passive_model_catalog.md.") $(name)
+end
+for name in _PASSIVE_PACKAGE_NAMES
+    name===:SMD0603 && continue
+    @eval @doc $("$(name) passive package. Explicit resistor series_inductance/parallel_capacitance or capacitor esr/esl; all default to zero. SMD names use imperial size codes. No geometry-derived defaults. See design_specs/passive_model_catalog.md.") $(name)
+end
+for name in _CAPACITOR_DIELECTRIC_NAMES
+    name===:C0G && continue
+    @eval @doc $("$(name) capacitor technology. Nonzero loss_tangent requires reference_frequency (Hz); elaborates to constant series R = tan(delta)/(2pi*f*C), added to ESR. Loss defaults to zero. No bias, temperature, aging, or polarity behavior. See design_specs/passive_model_catalog.md.") $(name)
+end

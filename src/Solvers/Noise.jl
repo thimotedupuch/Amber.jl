@@ -120,7 +120,7 @@ function _device_noise_sources(cc,batch,device,op;temperature=300.)
         _push_source!(sources,:thermal,owner,:thermal,injection,
             (_frequency,_bias,_time)->4*_BOLTZMANN*temperature*conductance)
         material=get(parameters,:material,nothing)
-        if material isa ThinFilm&&material.excess_noise_coefficient>0
+        if material isa AbstractResistorMaterial&&material.excess_noise_coefficient>0
             current=conductance*(_v(op,terminals[1])-_v(op,terminals[2]))
             _push_source!(sources,:excess,owner,:flicker,injection,
                 (frequency,_bias,_time)->_power_law(material.excess_noise_coefficient,

@@ -126,7 +126,7 @@ Amber provides:
 - independent voltage/current sources with DC, AC, `Step`, `Sine`, or `Pulse` excitation;
 - voltage- and current-controlled sources;
 - junction diode, Gummel-Poon BJT, Level-1 and charge-based MOSFET, behavioral op-amp, and analog switch models;
-- physical resistor/capacitor models such as thin film, SMD 0603, C0G, and Debye branches;
+- reusable resistor materials, passive packages, calibrated capacitor dielectrics, and Debye absorption branches (see below);
 - analytic behavioral current and voltage sources;
 - hierarchy, arrays, retained instance paths, named observations, fast parameter updates, tolerance metadata, deterministic persistence, and diagnostics;
 - operating point, implicit BDF transient, small-signal, noise and transient-noise, periodic steady state/noise, phase noise, ports and network parameters, control/loop gain, sweeps, Monte Carlo, spectra, harmonics, timing, and frequency-domain metrics.
@@ -182,6 +182,62 @@ junction shot noise. Read `src/Devices/ChargeBasedMOSFET.jl` and
 `test/Devices/charge_based_mosfet.jl` for equations, temperature laws, and
 conservation checks. Refine the timestep when measuring nonlinear charge transfer;
 BDF integrates terminal voltages rather than finite differences of charge.
+
+## Choose passive materials and packages
+
+Attach these models with `resistor(...; material=..., package=...)` or
+`capacitor(...; dielectric=..., package=..., dielectric_absorption=...)`:
+
+| Option | Available models |
+| --- | --- |
+| Resistor `material` | `ThinFilm`, `ThickFilm`, `MetalFilm`, `CarbonFilm`, `CarbonComposition`, `MetalFoil`, `Wirewound` |
+| Passive `package` | `SMD0201`, `SMD0402`, `SMD0603`, `SMD0805`, `SMD1206`, `SMD1210`, `SMD2010`, `SMD2512`, `Axial`, `Radial`, `PassivePackage` |
+| Capacitor `dielectric` | `C0G`, `X7R`, `X5R`, `Polypropylene`, `Polyester`, `PPS`, `Mica`, `AluminumElectrolytic`, `Tantalum` |
+| Capacitor `dielectric_absorption` | `DebyeBranches` |
+
+Choose explicit coefficients from the user's part data or state illustrative
+assumptions. These names do not supply manufacturer-specific defaults; noise
+coefficients, loss tangent, and package parasitics default to zero. SMD names
+use imperial size codes. Equal parameter values give equal electrical behavior
+across family names.
+
+- Resistor packages use `series_inductance` and terminal
+  `parallel_capacitance`; capacitor packages use series `esr` and `esl`.
+  Fields for the other component kind are unused. Component-level capacitor
+  `esr`/`esl` override package values, including explicit zero. `Wirewound`
+  needs an explicit package inductance when that effect matters.
+- Resistor materials provide excess current-noise PSD
+  `coefficient * abs(I)^current_exponent * (reference_frequency/f)^frequency_exponent`
+  in addition to thermal noise. Keywords are `excess_noise_coefficient`,
+  `excess_current_exponent` (default 2), `excess_frequency_exponent` (1), and
+  `excess_reference_frequency` (1 Hz). Nonzero `tc1`,
+  `temperature_coefficient`, and `voltage_coefficient` are rejected.
+- Nonzero dielectric `loss_tangent` requires a positive `reference_frequency`
+  in Hz. It adds constant series `Rloss = loss_tangent/(2π*fref*Cnominal)` to
+  ESR. Report this as a single-frequency calibration; it does not preserve
+  loss tangent over a frequency sweep. If datasheet ESR already includes
+  dielectric loss, use ESR alone to avoid double counting. The loss resistor
+  participates in transient and thermal-noise analyses.
+- Dielectric labels do not implement capacitor bias derating, temperature
+  curves, aging, polarization, or voltage limits. Specify leakage through
+  `leakage_resistance`. For absorption, `DebyeBranches(time_constants=[...],
+  fractions=[...])` adds series RC branches with `Ci=Cnominal*fraction[i]`
+  and `Ri=time_constant[i]/Ci`. Fractions are finite and nonnegative; time
+  constants are finite and positive. Zero fractions add no branch.
+
+All these model types support `model_parameters`, `with_model_parameter`,
+serialization, and result provenance. Use `with_model_parameter` to create a
+standalone model copy, then rebuild the circuit. `with_parameters` rejects
+package/dielectric/absorption replacement. Changing only a compiled capacitor's
+`value` leaves expanded loss and absorption elements fixed; rebuild to retain
+the specified loss calibration or absorption fractions.
+
+For examples and the full inventory, read the checkout's
+[README passive-model reference](../../README.md#resistor-materials-passive-packages-and-capacitor-dielectrics).
+For model-extension priorities and physical limits, read
+[the material and package catalog](../../design_specs/passive_model_catalog.md).
+When using an installed Amber package, find these files relative to its root
+with `dirname(dirname(pathof(Amber)))`.
 
 ## Construct circuits correctly
 

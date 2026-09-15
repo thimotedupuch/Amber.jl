@@ -331,7 +331,7 @@ end
 _snapshot_value(value)=value
 _snapshot_value(value::AbstractWaveform)=string(typeof(value),NamedTuple{fieldnames(typeof(value))}(Tuple(getfield(value,key) for key in fieldnames(typeof(value)))))
 _snapshot_value(value::NamedTuple)=Dict(key=>_snapshot_value(item) for (key,item) in pairs(value))
-function _snapshot_value(value::Union{ThinFilm,SMD0603,C0G,DebyeBranches,JunctionDiode,GummelPoonBJT,Level1MOSFET,ChargeBasedMOSFET,BehavioralOpAmp,VoltageControlledSwitch,SmoothSwitch,EventSwitch})
+function _snapshot_value(value::AbstractDeviceModel)
     Dict(:model=>string(typeof(value)),:parameters=>_snapshot_value(getfield(value,:data)))
 end
 function provenance(r)
