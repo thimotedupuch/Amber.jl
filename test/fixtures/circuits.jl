@@ -15,8 +15,8 @@ end
 @circuit RealisticRC() begin
     gnd=ground(); a=node(); b=node()
     Vin=voltage_source(a,gnd;waveform=Sine(amplitude=1V,frequency=1kHz))
-    R1=resistor(a,b;value=10kΩ,material=ThinFilm(tc1=15e-6/K),package=SMD0603(series_inductance=.6nH))
-    C1=capacitor(b,gnd;value=10nF,dielectric=C0G(loss_tangent=1e-4),package=SMD0603(esr=30mΩ))
+    R1=resistor(a,b;value=10kΩ,material=ThinFilm(),package=SMD0603(series_inductance=.6nH))
+    C1=capacitor(b,gnd;value=10nF,dielectric=C0G(),package=SMD0603(esr=30mΩ))
 end
 
 @circuit HalfWaveRectifier(;frequency=50Hz,amplitude=10V,load=1kΩ,smoothing=470μF) begin

@@ -32,8 +32,7 @@ function _pseudo_transient_operating_point(cc,temperature;workspace=nothing,kw..
     _,initial_jacobian=workspace === nothing ? residual_jacobian(cc,z,z,0.,0.;mode=:dc,
         source_scale=1.,temperature) : residual_jacobian!(workspace,cc,z,z,0.,0.;mode=:dc,
         source_scale=1.,temperature)
-    node_rows=cc.hierarchical_topology === nothing ? collect(values(cc.node_index)) :
-        collect(1:cc.hierarchical_topology.hierarchy.solver_net_count)
+    node_rows=collect(1:cc.topology.hierarchy.solver_net_count)
     row_norms=zeros(cc.n)
     for column in 1:cc.n, pointer in nzrange(initial_jacobian,column)
         row_norms[initial_jacobian.rowval[pointer]]+=abs(initial_jacobian.nzval[pointer])
@@ -58,12 +57,13 @@ end
 function operating_point(c;temperature=300.,solver=SolverOptions(),continuation_maxdepth=nothing,
         reltol=nothing,abstol=nothing,maxiters=nothing,workspace=nothing,kw...)
     isfinite(temperature)&&temperature>0||throw(AnalysisValidationError("temperature must be finite and positive"))
-    voltage_abstol = something(abstol, solver.voltage_abstol)
+    solver=_effective_solver(solver;reltol,abstol,maxiters,continuation_maxdepth)
+    voltage_abstol = solver.voltage_abstol
     state_abstol = something(abstol, solver.state_abstol)
     reltol,abstol,maxiters,continuation_maxdepth = _solver_values(solver;
         reltol,abstol,maxiters,continuation_maxdepth)
     continuation_maxdepth>=0||throw(AnalysisValidationError("continuation_maxdepth must be non-negative"))
-    cc=compile(c); workspace === nothing && cc.parameters !== nothing && (workspace=SimulationWorkspace(cc))
+    cc=compile(c); workspace === nothing && (workspace=SimulationWorkspace(cc))
     z=zeros(cc.n); total_iterations=0; converged=false
     convergence_history=NamedTuple[]
     failed_continuation_steps=Int[]; rejected_continuation_steps=0

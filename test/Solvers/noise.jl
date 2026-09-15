@@ -117,5 +117,7 @@ end
 
 @testset "noise bias convergence" begin
     circuit=LowPass()
-    @test_throws ConvergenceError noise(circuit,10Hz=>1kHz;output=voltage(:vout),maxiters=0)
+    @test_throws AnalysisValidationError noise(circuit,10Hz=>1kHz;output=voltage(:vout),maxiters=0)
+    biased=with_parameters(compile(circuit),"V1.dc"=>1.)
+    @test_throws ConvergenceError noise(biased,10Hz=>1kHz;output=voltage(:vout),maxiters=1)
 end

@@ -51,6 +51,7 @@ function _solver_values(options::SolverOptions; reltol=nothing, abstol=nothing,
     resolved_reltol = something(reltol, options.reltol)
     resolved_abstol = something(abstol, options.current_abstol)
     resolved_maxiters = something(maxiters, options.max_newton_iterations)
+    resolved_maxiters > 0 || throw(AnalysisValidationError("maxiters must be positive"))
     resolved_depth = something(continuation_maxdepth, options.continuation_maxdepth)
     isfinite(resolved_reltol) && resolved_reltol > 0 ||
         throw(AnalysisValidationError("reltol must be finite and positive"))
@@ -59,6 +60,36 @@ function _solver_values(options::SolverOptions; reltol=nothing, abstol=nothing,
     resolved_depth >= 0 ||
         throw(AnalysisValidationError("continuation_maxdepth must be non-negative"))
     resolved_reltol, resolved_abstol, resolved_maxiters, resolved_depth
+end
+
+function _effective_solver(options::SolverOptions;reltol=nothing,abstol=nothing,
+        maxiters=nothing,continuation_maxdepth=nothing)
+    r,a,m,d=_solver_values(options;reltol,abstol,maxiters,continuation_maxdepth)
+    SolverOptions(reltol=r,current_abstol=a,
+        voltage_abstol=something(abstol,options.voltage_abstol),
+        state_abstol=something(abstol,options.state_abstol),
+        max_newton_iterations=m,continuation_maxdepth=d,
+        line_search_minimum=options.line_search_minimum,linear_solver=options.linear_solver)
+end
+
+"""Local integration error tolerances, independent of Newton convergence."""
+Base.@kwdef struct IntegrationOptions
+    reltol::Float64=1e-4
+    voltage_abstol::Float64=1e-7
+    current_abstol::Float64=1e-10
+    state_abstol::Float64=1e-9
+    max_steps::Int=100_000
+    min_step::Float64=0.
+end
+
+function _validate_integration(options::IntegrationOptions)
+    for field in (:reltol,:voltage_abstol,:current_abstol,:state_abstol)
+        value=getfield(options,field)
+        isfinite(value)&&value>0||throw(AnalysisValidationError("integration $field must be finite and positive"))
+    end
+    options.max_steps>0||throw(AnalysisValidationError("integration max_steps must be positive"))
+    isfinite(options.min_step)&&options.min_step>=0||throw(AnalysisValidationError("integration min_step must be finite and non-negative"))
+    options
 end
 
 Base.@kwdef struct OperatingPoint <: AbstractAnalysis
@@ -74,6 +105,8 @@ Base.@kwdef struct TransientNoise <: AbstractAnalysis
     temperature::Float64=300.
     low_frequency_cutoff::Float64
     event_mode::Union{Nothing,Symbol}=nothing
+    initial::Union{Nothing,Symbol,Vector{Float64}}=nothing
+    solver::SolverOptions=SolverOptions(reltol=1e-6,current_abstol=1e-9,voltage_abstol=1e-9,state_abstol=1e-9,max_newton_iterations=120)
 end
 
 Base.@kwdef struct Transient <: AbstractAnalysis
@@ -85,6 +118,10 @@ Base.@kwdef struct Transient <: AbstractAnalysis
     temperature::Float64=300.
     overrides::Any=nothing
     solver::SolverOptions=SolverOptions()
+    initial::Union{Nothing,Symbol,Vector{Float64}}=nothing
+    event_mode::Union{Nothing,Symbol}=nothing
+    integration::IntegrationOptions=IntegrationOptions()
+    failure_policy::Symbol=:return_partial
 end
 Transient(p::Pair;kw...)=Transient(interval=Float64(first(p))=>Float64(last(p));kw...)
 
@@ -121,6 +158,7 @@ Base.@kwdef struct SmallSignal <: AbstractAnalysis
     frequencies::Vector{Float64}
     source::Union{Nothing,Symbol,String}=nothing
     temperature::Float64=300.
+    solver::SolverOptions=SolverOptions()
 end
 SmallSignal(frequencies::AbstractVector;kw...)=SmallSignal(frequencies=_validate_frequency_grid(frequencies);kw...)
 function SmallSignal(range::Pair;points=100,scale=:log,kw...)
@@ -135,4 +173,8 @@ function _override_pairs(overrides)
     overrides isa AbstractDict&&return [Symbol(key)=>value for (key,value) in pairs(overrides)]
     overrides isa Pair&&return [Symbol(first(overrides))=>last(overrides)]
     [Symbol(first(item))=>last(item) for item in overrides]
+end
+
+for type in (SuiteSparseLU,SolverOptions,IntegrationOptions)
+    _SERIALIZABLE_STRUCTS[String(nameof(type))]=type
 end

@@ -209,7 +209,8 @@ function monte_carlo(circuit;analysis=OperatingPoint(),samples::Integer=1000,see
     explicit_paths=Set(all_paths); metric_function=_monte_carlo_metric(metric,metrics)
     master=Random.Xoshiro(seed); seeds=rand(master,UInt64,samples)
     values=Any[nothing for _ in 1:samples]; parameters=[Dict{Symbol,Float64}() for _ in 1:samples]
-    converged=falses(samples); failures=MonteCarloFailure[]
+    # Threads own distinct bytes; packed BitVector writes share storage words.
+    converged=fill(false,samples); failures=MonteCarloFailure[]
     failure_lock=ReentrantLock()
     function run_sample(sample)
         rng=Random.Xoshiro(seeds[sample]); draws=parameters[sample]
@@ -223,8 +224,9 @@ function monte_carlo(circuit;analysis=OperatingPoint(),samples::Integer=1000,see
             _matched_group_draws!(draws,base,rng,explicit_paths)
             trial=_apply_monte_carlo_draws(base,draws)
             simulation=_require_converged(simulate(trial,analysis),"Monte Carlo sample $(sample)")
-            values[sample]=metric_function(simulation); converged[sample]=true
-            on_sample===nothing||on_sample(sample,values[sample],draws)
+            value=metric_function(simulation)
+            on_sample===nothing||on_sample(sample,value,copy(draws))
+            values[sample]=value; converged[sample]=true
         catch error
             error isa InterruptException&&rethrow()
             lock(failure_lock) do
@@ -240,16 +242,23 @@ function monte_carlo(circuit;analysis=OperatingPoint(),samples::Integer=1000,see
     sort!(failures;by=failure->failure.sample)
     store_parameters||foreach(empty!,parameters)
     metadata=Dict{Symbol,Any}(:seed=>seed,:samples=>samples,:circuit_fingerprint=>base.fingerprint,
-        :successful_samples=>count(converged),:failed_samples=>count(!,converged))
+        :successful_samples=>count(converged),:failed_samples=>count(!,converged),
+        :parameters_stored=>store_parameters)
     successful_values=Any[values[index] for index in eachindex(values) if converged[index]]
     value_type=isempty(successful_values) ? Any : all(value->typeof(value)===typeof(first(successful_values)),successful_values) ? typeof(first(successful_values)) : Any
     typed_values=Vector{Union{Nothing,value_type}}(values)
-    MonteCarloResult(analysis,typed_values,parameters,seeds,converged,failures,metadata)
+    MonteCarloResult(analysis,typed_values,parameters,seeds,BitVector(converged),failures,metadata)
 end
 
 function replay_sample(result::MonteCarloResult,circuit,index::Integer;metric=identity)
     checkbounds(result.values,index)
-    trial=_apply_monte_carlo_draws(compile(circuit),result.parameters[index])
+    get(result.metadata,:parameters_stored,false)||throw(ArgumentError(
+        "sample replay requires verified parameter draws; run monte_carlo with store_parameters=true"))
+    base=compile(circuit)
+    base.fingerprint==result.metadata[:circuit_fingerprint]||throw(ArgumentError(
+        "sample replay requires the original base circuit"))
+    result.converged[index]||throw(ArgumentError("cannot replay an unsuccessful sample"))
+    trial=_apply_monte_carlo_draws(base,result.parameters[index])
     simulation=_require_converged(simulate(trial,result.analysis),"Monte Carlo replay $(index)")
     metric(simulation)
 end
@@ -266,13 +275,16 @@ function report(result::MonteCarloResult)
 end
 
 function _encode_analysis(analysis::OperatingPoint)
-    Dict("kind"=>"operating_point")
+    Dict("kind"=>"operating_point","temperature"=>analysis.temperature,"solver"=>_encode_value(analysis.solver))
 end
 function _encode_analysis(analysis::Transient)
     Dict("kind"=>"transient","interval"=>[first(analysis.interval),last(analysis.interval)],
         "saveat"=>_encode_value(analysis.saveat),"max_step"=>_encode_value(analysis.max_step),
         "method"=>String(analysis.method),"adaptive"=>_encode_value(analysis.adaptive),
-        "temperature"=>analysis.temperature,"overrides"=>_encode_value(analysis.overrides))
+        "temperature"=>analysis.temperature,"overrides"=>_encode_value(analysis.overrides),
+        "solver"=>_encode_value(analysis.solver),"initial"=>_encode_value(analysis.initial),
+        "event_mode"=>_encode_value(analysis.event_mode),"integration"=>_encode_value(analysis.integration),
+        "failure_policy"=>String(analysis.failure_policy))
 end
 function _encode_analysis(analysis::TransientNoise)
     Dict("kind"=>"transient_noise",
@@ -280,31 +292,46 @@ function _encode_analysis(analysis::TransientNoise)
         "timestep"=>analysis.timestep,"saveat"=>analysis.saveat,
         "seed"=>string(analysis.seed),"temperature"=>analysis.temperature,
         "low_frequency_cutoff"=>analysis.low_frequency_cutoff,
-        "event_mode"=>_encode_value(analysis.event_mode))
+        "event_mode"=>_encode_value(analysis.event_mode),"initial"=>_encode_value(analysis.initial),
+        "solver"=>_encode_value(analysis.solver))
 end
 function _encode_analysis(analysis::SmallSignal)
     Dict("kind"=>"small_signal","frequency_grid"=>_encode_value(analysis.frequencies),
-        "source"=>_encode_value(analysis.source),"temperature"=>analysis.temperature)
+        "source"=>_encode_value(analysis.source),"temperature"=>analysis.temperature,"solver"=>_encode_value(analysis.solver))
 end
+
+function _encode_analysis(analysis::PeriodicSteadyState)
+    fields=fieldnames(typeof(analysis))
+    Dict("kind"=>"periodic_steady_state","options"=>_encode_value(
+        NamedTuple{fields}(Tuple(getfield(analysis,name) for name in fields))))
+end
+
+_decode_setting(encoded,key,default)=haskey(encoded,key) ? _decode_value(encoded[key],Dict(),Dict()) : default
 
 function _decode_analysis(encoded)
     kind=encoded["kind"]
-    kind=="operating_point"&&return OperatingPoint()
+    kind=="periodic_steady_state"&&return PeriodicSteadyState(;_decode_value(encoded["options"],Dict(),Dict())...)
+    kind=="operating_point"&&return OperatingPoint(temperature=get(encoded,"temperature",300.),solver=_decode_setting(encoded,"solver",SolverOptions()))
     if kind=="transient"
         interval=Float64(encoded["interval"][1])=>Float64(encoded["interval"][2])
         return Transient(interval;saveat=_decode_value(encoded["saveat"],Dict(),Dict()),max_step=_decode_value(encoded["max_step"],Dict(),Dict()),
             method=Symbol(encoded["method"]),adaptive=_decode_value(encoded["adaptive"],Dict(),Dict()),temperature=Float64(encoded["temperature"]),
-            overrides=_decode_value(encoded["overrides"],Dict(),Dict()))
+            overrides=_decode_value(encoded["overrides"],Dict(),Dict()),
+            solver=_decode_setting(encoded,"solver",SolverOptions()),initial=_decode_setting(encoded,"initial",nothing),
+            event_mode=_decode_setting(encoded,"event_mode",nothing),integration=_decode_setting(encoded,"integration",IntegrationOptions()),
+            failure_policy=Symbol(get(encoded,"failure_policy","return_partial")))
     elseif kind=="transient_noise"
         interval=Float64(encoded["interval"][1])=>Float64(encoded["interval"][2])
         return TransientNoise(interval=interval,
             timestep=Float64(encoded["timestep"]),saveat=Float64(encoded["saveat"]),
             seed=parse(UInt64,encoded["seed"]),temperature=Float64(encoded["temperature"]),
             low_frequency_cutoff=Float64(encoded["low_frequency_cutoff"]),
-            event_mode=_decode_value(encoded["event_mode"],Dict(),Dict()))
+            event_mode=_decode_value(encoded["event_mode"],Dict(),Dict()),
+            initial=_decode_setting(encoded,"initial",nothing),
+            solver=_decode_setting(encoded,"solver",SolverOptions(reltol=1e-6,current_abstol=1e-9,voltage_abstol=1e-9,state_abstol=1e-9,max_newton_iterations=120)))
     elseif kind=="small_signal"
         frequencies=Float64.(_decode_value(encoded["frequency_grid"],Dict(),Dict()))
-        return SmallSignal(frequencies;source=_decode_value(encoded["source"],Dict(),Dict()),temperature=Float64(encoded["temperature"]))
+        return SmallSignal(frequencies;source=_decode_value(encoded["source"],Dict(),Dict()),temperature=Float64(encoded["temperature"]),solver=_decode_setting(encoded,"solver",SolverOptions()))
     end
     throw(CircuitSerializationError("unsupported serialized Monte Carlo analysis $(kind)"))
 end

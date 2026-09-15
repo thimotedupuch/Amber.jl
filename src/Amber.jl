@@ -22,7 +22,7 @@ export PrimitiveBatch, ResistorBatch, with_parameters, TopologyParameterError
 export ParameterUpdateError, model_parameters, with_model_parameter
 export SimulationWorkspace, residual!, jacobian!, residual_jacobian!
 export storage_jacobian!
-export AbstractLinearSolver, SuiteSparseLU, SolverOptions
+export AbstractLinearSolver, SuiteSparseLU, SolverOptions, IntegrationOptions
 export ConvergenceError
 export CircuitValidationError, AnalysisValidationError, CircuitLookupError, LinearSolveError
 export CircuitSerializationError

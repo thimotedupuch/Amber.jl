@@ -83,7 +83,7 @@ for (T,defaults) in ((:ThinFilm,:(;tc1=0.,temperature_coefficient=0.,voltage_coe
         flicker_current_exponent=2., flicker_frequency_exponent=1.,
         flicker_reference_frequency=1., induced_gate_noise_coefficient=0.,
         gate_channel_correlation=0.0+0.0im)),
-    (:BehavioralOpAmp,:(;dc_gain=1e5,gain_bandwidth=1e6,slew_rate=1e6,
+    (:BehavioralOpAmp,:(;dc_gain=1e5,gain_bandwidth=1e6,slew_rate=Inf,
         output_resistance=10.,output_current_limit=Inf,input_offset=0.,
         input_voltage_noise_density=0.,input_voltage_flicker_corner=0.,
         input_voltage_flicker_exponent=1.,positive_input_current_noise_density=0.,
@@ -115,6 +115,22 @@ end
 
 struct IdealResistor; value::Float64; end
 struct IdealCapacitor; value::Float64; end
+
+# Keep neutral values readable in existing snapshots, but never accept a
+# requested physical effect that the assembly kernels do not implement.
+function _unsupported_model_effects(model, neutral)
+    for (name,value) in pairs(neutral)
+        getproperty(model,name)==value||throw(ArgumentError(
+            "$(nameof(typeof(model))).$(name) is not implemented; only $(value) is supported"))
+    end
+    model
+end
+_validate_model_parameters(model::ThinFilm)=_unsupported_model_effects(model,
+    (;tc1=0.,temperature_coefficient=0.,voltage_coefficient=0.))
+_validate_model_parameters(model::C0G)=_unsupported_model_effects(model,(;loss_tangent=0.))
+_validate_model_parameters(model::GummelPoonBJT)=_unsupported_model_effects(model,(;transit_time=0.))
+_validate_model_parameters(model::BehavioralOpAmp)=_unsupported_model_effects(model,
+    (;slew_rate=Inf,output_current_limit=Inf,saturation_recovery=0.))
 
 function _validate_model_parameters(model::ChargeBasedMOSFET)
     for (name,value) in pairs(model.data)

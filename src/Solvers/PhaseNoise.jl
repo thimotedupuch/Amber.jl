@@ -62,15 +62,16 @@ function _phase_sensitivity(pss,times,values,temperature)
     # J_n δx_n = C_(n-1) δx_(n-1)/h + B_n δnoise_n.
     # A state covector p_n must be mapped to residual space by J_n'^(-1)/h
     # before projection onto B_n. This also works for singular MNA C.
-    systems=Matrix{Float64}[]
-    previous_dynamics=Matrix{Float64}[]
+    systems=SparseMatrixCSC{Float64,Int}[]
+    previous_dynamics=SparseMatrixCSC{Float64,Int}[]
+    workspace=SimulationWorkspace(cc)
     for step in 2:length(extended_times)
         h=extended_times[step]-extended_times[step-1]
         point=extended_values[:,step]
-        g,c=_static_dynamic_jacobians(cc,point,extended_times[step];temperature)
-        _,cprevious=_static_dynamic_jacobians(cc,extended_values[:,step-1],extended_times[step-1];temperature)
-        push!(systems,Matrix(g+c/h))
-        push!(previous_dynamics,Matrix(cprevious))
+        g,c=_static_dynamic_jacobians!(workspace,cc,point,extended_times[step];temperature)
+        push!(systems,g+c/h)
+        _,cprevious=_static_dynamic_jacobians!(workspace,cc,extended_values[:,step-1],extended_times[step-1];temperature)
+        push!(previous_dynamics,copy(cprevious))
     end
     adjoint_at_next=sensitivity
     for step in length(times):-1:1

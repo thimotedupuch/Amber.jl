@@ -39,24 +39,9 @@ function _finalize_stats!(stats;partial=false)
     get!(stats,:warnings,String[]); stats
 end
 
-function _unknown_scales(cc)
-    scales=ones(Float64,cc.n)
-    if cc.hierarchical_topology === nothing
-        for index in values(cc.branches); scales[index]=1e-3 end
-    else
-        for (index, kind) in enumerate(cc.hierarchical_topology.layout.kinds)
-            kind === BranchCurrentUnknown && (scales[index]=1e-3)
-        end
-    end
-    scales
-end
-
 function _update_converged(cc,z,delta,reltol,current_abstol,voltage_abstol,state_abstol)
     for index in eachindex(z)
-        kind = cc.hierarchical_topology === nothing ?
-            (index in values(cc.branches) ? BranchCurrentUnknown :
-                index in values(cc.states) ? DeviceStateUnknown : NodeVoltageUnknown) :
-            cc.hierarchical_topology.layout.kinds[index]
+        kind = cc.topology.layout.kinds[index]
         absolute = kind === BranchCurrentUnknown ? current_abstol :
             kind === DeviceStateUnknown ? state_abstol : voltage_abstol
         abs(delta[index])<=absolute+reltol*max(abs(z[index]),abs(z[index]+delta[index]),1.)||return false
@@ -85,54 +70,48 @@ function _newton(cc,z0,previous,t,α;reltol=1e-7,abstol=1e-10,maxiters=60,
     workspace === nothing && (workspace=SimulationWorkspace(cc))
     qhistory=iszero(α) ? nothing : storage_history === nothing ?
         _storage(cc,previous;temperature,workspace) : storage_history
-    z=copy(z0); factorization=workspace === nothing ? nothing : workspace.factorization
-    linear_hierarchy=workspace !== nothing && _all_linear(cc.parameters.batches)
+    z=copy(z0); factorization=workspace.factorization
+    linear_hierarchy=_all_linear(cc.parameters.batches)
     factorization_key=linear_hierarchy ? (cc.parameters.fingerprint,Float64(α),mode,Float64(gmin),
         linear_solver) : nothing
     for it in 1:maxiters
         r,J=_step_residual_jacobian!(workspace,cc,z,qhistory,t,α;mode,source_scale,gmin,temperature)
         forcing===nothing||(r.-=forcing)
-        variable_scales=workspace === nothing ? _unknown_scales(cc) : workspace.variable_scales
-        scaled_matrix=workspace === nothing ? copy(J) : workspace.scaled_jacobian
-        workspace === nothing || copyto!(scaled_matrix.nzval,J.nzval)
+        variable_scales=workspace.variable_scales
+        scaled_matrix=workspace.scaled_jacobian
+        copyto!(scaled_matrix.nzval,J.nzval)
         for column in 1:cc.n, pointer in nzrange(scaled_matrix,column); scaled_matrix.nzval[pointer]*=variable_scales[column] end
-        row_norms=workspace === nothing ? zeros(Float64,cc.n) : workspace.row_norms
-        workspace === nothing || fill!(row_norms,0.)
+        row_norms=workspace.row_norms
+        fill!(row_norms,0.)
         for column in 1:cc.n, pointer in nzrange(scaled_matrix,column)
             row=scaled_matrix.rowval[pointer]; row_norms[row]=max(row_norms[row],abs(scaled_matrix.nzval[pointer]))
         end
-        inverse_row_norms=workspace === nothing ? 1 ./ max.(row_norms,eps(Float64)) : workspace.inverse_row_norms
-        if workspace !== nothing
-            @inbounds for index in eachindex(row_norms); inverse_row_norms[index]=inv(max(row_norms[index],eps(Float64))) end
+        inverse_row_norms=workspace.inverse_row_norms
+        @inbounds for index in eachindex(row_norms)
+            inverse_row_norms[index]=inv(max(row_norms[index],eps(Float64)))
         end
-        system=workspace === nothing ? copy(scaled_matrix) : workspace.system
-        workspace === nothing || copyto!(system.nzval,scaled_matrix.nzval)
+        system=workspace.system
+        copyto!(system.nzval,scaled_matrix.nzval)
         for value_index in eachindex(system.nzval); system.nzval[value_index]*=inverse_row_norms[system.rowval[value_index]] end
         Δ=try
-            rhs=workspace === nothing ? inverse_row_norms.*r : workspace.rhs
-            if workspace !== nothing
-                @inbounds @simd for index in eachindex(rhs); rhs[index]=inverse_row_norms[index]*r[index] end
+            rhs=workspace.rhs
+            @inbounds @simd for index in eachindex(rhs)
+                rhs[index]=inverse_row_norms[index]*r[index]
             end
             reuse_numeric=linear_hierarchy && factorization !== nothing &&
                 workspace.factorization_key == factorization_key
             if !reuse_numeric
                 factorization=factorization===nothing ? _new_factorization(system,linear_solver) :
                     lu!(factorization,system;reuse_symbolic=true)
-                if workspace !== nothing
-                    workspace.factorization=factorization
-                    workspace.factorization_key=factorization_key
-                    workspace.numeric_factorizations+=1
-                end
+                workspace.factorization=factorization
+                workspace.factorization_key=factorization_key
+                workspace.numeric_factorizations+=1
             end
-            if workspace === nothing
-                variable_scales.*(-(factorization\rhs))
-            else
-                ldiv!(workspace.update,factorization,rhs)
-                @inbounds @simd for index in eachindex(workspace.update)
-                    workspace.update[index]=-variable_scales[index]*workspace.update[index]
-                end
-                workspace.update
+            ldiv!(workspace.update,factorization,rhs)
+            @inbounds @simd for index in eachindex(workspace.update)
+                workspace.update[index]=-variable_scales[index]*workspace.update[index]
             end
+            workspace.update
         catch error
             error isa LinearAlgebra.SingularException||rethrow()
             throw(LinearSolveError("Newton matrix is singular at iteration $(it)"))
@@ -161,9 +140,9 @@ function _newton(cc,z0,previous,t,α;reltol=1e-7,abstol=1e-10,maxiters=60,
         end
         damping=1.; nr=norm(r)
         while damping>=line_search_minimum
-            candidate=workspace === nothing ? z+damping*Δ : workspace.candidate
-            if workspace !== nothing
-                @inbounds @simd for index in eachindex(candidate); candidate[index]=z[index]+damping*Δ[index] end
+            candidate=workspace.candidate
+            @inbounds @simd for index in eachindex(candidate)
+                candidate[index]=z[index]+damping*Δ[index]
             end
             candidate_residual,_=_step_residual_jacobian!(workspace,cc,candidate,qhistory,t,α;mode,source_scale,gmin,temperature)
             forcing===nothing||(candidate_residual.-=forcing)

@@ -7,9 +7,9 @@ function _small_signal_frequencies(specification;points,scale)
     _validate_frequency_grid(specification)
 end
 
-function small_signal(c,p::Union{Pair,AbstractVector};points=p isa AbstractVector ? length(p) : 100,scale=:log,source=nothing,temperature=300.,kw...)
+function small_signal(c,p::Union{Pair,AbstractVector};points=p isa AbstractVector ? length(p) : 100,scale=:log,source=nothing,temperature=300.,solver=SolverOptions(),kw...)
     isfinite(temperature)&&temperature>0||throw(AnalysisValidationError("temperature must be finite and positive"))
-    cc=compile(c); operating_point_result=_require_converged(operating_point(cc;temperature,kw...),"small-signal operating point"); op=operating_point_result.values[:,1]
+    cc=compile(c); operating_point_result=_require_converged(operating_point(cc;temperature,solver,kw...),"small-signal operating point"); op=operating_point_result.values[:,1]
     fs=_small_signal_frequencies(p;points,scale)
     warnings=String[]
     active=String[]
@@ -35,10 +35,10 @@ function small_signal(c,p::Union{Pair,AbstractVector};points=p isa AbstractVecto
     end
     vals=zeros(ComplexF64,cc.n,length(fs)); Jz,Jd=_static_dynamic_jacobians(cc,op;mode=:dc,temperature); b=ac_excitation(cc;source)
     for (j,f) in enumerate(fs); vals[:,j]=_solve_linear(Jz+im*2π*f*Jd,b,"small-signal matrix is singular at $(f) Hz") end
-    analysis=SmallSignal(fs;source,temperature=Float64(temperature))
+    analysis=SmallSignal(fs;source,temperature=Float64(temperature),solver=operating_point_result.analysis.solver)
     stats=_finalize_stats!(Dict{Symbol,Any}(:converged=>true,:temperature=>Float64(temperature),:warnings=>warnings,:source=>source,:active_sources=>active,:operating_point=>copy(op)))
     SimulationResult(cc,analysis,Float64.(fs),vals,stats)
 end
 
-simulate(c,a::SmallSignal)=small_signal(c,a.frequencies;source=a.source,temperature=a.temperature)
+simulate(c,a::SmallSignal)=small_signal(c,a.frequencies;source=a.source,temperature=a.temperature,solver=a.solver)
 run(c,analyses::AbstractVector{<:AbstractAnalysis})=map(a->simulate(c,a),analyses)

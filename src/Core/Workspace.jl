@@ -23,20 +23,12 @@ end
 
 function SimulationWorkspace(compiled::AbstractCompiledCircuit; scalar_type::Type{T}=Float64) where {T}
     n = compiled.n
-    pattern = if compiled.hierarchical_topology === nothing
-        compiled.jacobian_pattern
-    else
-        SparseMatrixCSC{Float64,Int}(compiled.hierarchical_topology.pattern)
-    end
+    pattern = SparseMatrixCSC{Float64,Int}(compiled.topology.pattern)
     jacobian = SparseMatrixCSC{T,Int}(pattern.m, pattern.n, copy(pattern.colptr), copy(pattern.rowval), zeros(T, length(pattern.nzval)))
     scaled_jacobian = copy(jacobian); system = copy(jacobian)
     variable_scales = ones(T, n)
-    if compiled.hierarchical_topology === nothing
-        for index in values(compiled.branches); variable_scales[index] = convert(T, 1e-3) end
-    else
-        for (index, kind) in enumerate(compiled.hierarchical_topology.layout.kinds)
-            kind === BranchCurrentUnknown && (variable_scales[index] = convert(T, 1e-3))
-        end
+    for (index, kind) in enumerate(compiled.topology.layout.kinds)
+        kind === BranchCurrentUnknown && (variable_scales[index] = convert(T, 1e-3))
     end
     SimulationWorkspace(zeros(T, n), zeros(T, n), zeros(T, n), zeros(T, n), zeros(T, n), jacobian,
         scaled_jacobian, system, zeros(T, n), zeros(T, n), zeros(T, n), variable_scales,
@@ -445,7 +437,6 @@ end
 """Assemble residual and Jacobian in reusable storage for a compiled hierarchy."""
 function residual_jacobian!(workspace::SimulationWorkspace, compiled::CompiledCircuit, state, previous, t, α;
         mode=:time, source_scale=1.0, gmin=0.0, temperature=300.0)
-    compiled.parameters === nothing && throw(ArgumentError("in-place batch assembly requires a compiled CircuitDesign"))
     _all_inplace_supported(compiled.parameters.batches) ||
         throw(ArgumentError("one or more compiled batches do not support in-place assembly"))
     length(state) == compiled.n == length(previous) || throw(DimensionMismatch("state vectors must match the compiled unknown count"))
@@ -467,7 +458,6 @@ end
 
 function residual!(workspace::SimulationWorkspace, compiled::CompiledCircuit, state, derivative, t;
         mode=:time, source_scale=1.0, gmin=0.0, temperature=300.0)
-    compiled.parameters === nothing && throw(ArgumentError("in-place batch assembly requires a compiled CircuitDesign"))
     _all_inplace_supported(compiled.parameters.batches) ||
         throw(ArgumentError("one or more compiled batches do not support in-place assembly"))
     fill!(workspace.residual, zero(eltype(workspace.residual)))

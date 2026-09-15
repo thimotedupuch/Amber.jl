@@ -49,5 +49,7 @@ end
 
 
 @testset "small-signal bias convergence" begin
-    @test_throws ConvergenceError small_signal(LowPass(),10Hz=>1kHz;maxiters=0)
+    @test_throws AnalysisValidationError small_signal(LowPass(),10Hz=>1kHz;maxiters=0)
+    biased=with_parameters(compile(LowPass()),"V1.dc"=>1.)
+    @test_throws ConvergenceError small_signal(biased,10Hz=>1kHz;maxiters=1)
 end

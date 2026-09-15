@@ -11,3 +11,5 @@
     include("metamorphic.jl")
     include("storage_and_periodic.jl")
 end
+
+include("hardening.jl")

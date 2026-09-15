@@ -101,6 +101,10 @@ end
 
 function _static_dynamic_jacobians(cc,state,t=0.;temperature=300.,mode=:time)
     workspace=SimulationWorkspace(cc;scalar_type=eltype(state))
+    _static_dynamic_jacobians!(workspace,cc,state,t;temperature,mode)
+end
+
+function _static_dynamic_jacobians!(workspace,cc,state,t=0.;temperature=300.,mode=:time)
     _,g=residual_jacobian!(workspace,cc,state,state,t,0.;temperature,mode)
     _,c=storage_jacobian!(workspace,cc,state;temperature)
     g,c

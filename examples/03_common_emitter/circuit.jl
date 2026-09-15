@@ -10,7 +10,7 @@ using Amber
     Cemit=capacitor(emit,gnd;value=100μF)
     Q1=npn(coll,base,emit;model=GummelPoonBJT(saturation_current=8fA,
         forward_beta=180.,early_voltage=80V,base_resistance=25Ω,
-        cbe_zero_bias=20pF,cbc_zero_bias=4pF,transit_time=300ps,
+        cbe_zero_bias=20pF,cbc_zero_bias=4pF,
         flicker_coefficient=1e-12))
     Cout=capacitor(coll,out;value=10μF); Rload=resistor(out,gnd;value=10kΩ)
     observe(voltage(base),voltage(emit),voltage(coll),voltage(out),current(Q1,:collector),current(Q1,:base),power(Q1))

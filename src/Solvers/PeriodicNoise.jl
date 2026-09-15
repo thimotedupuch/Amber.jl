@@ -53,14 +53,15 @@ end
 function _periodic_jacobians(pss,temperature)
     times,values=_periodic_orbit_samples(pss)
     cc=pss.orbit.compiled
-    conductance=Matrix{Float64}[]
-    dynamics=Matrix{Float64}[]
+    conductance=SparseMatrixCSC{Float64,Int}[]
+    dynamics=SparseMatrixCSC{Float64,Int}[]
     inventories=Tuple{Vector{NoiseSource},Vector{NoiseCorrelationGroup}}[]
+    workspace=SimulationWorkspace(cc)
     for index in eachindex(times)
         point=values[:,index]
-        g,c=_static_dynamic_jacobians(cc,point,times[index];temperature)
-        push!(conductance,Matrix(g))
-        push!(dynamics,Matrix(c))
+        g,c=_static_dynamic_jacobians!(workspace,cc,point,times[index];temperature)
+        push!(conductance,copy(g))
+        push!(dynamics,copy(c))
         push!(inventories,noise_sources(cc,point;temperature))
     end
     times,values,conductance,dynamics,inventories
@@ -71,25 +72,35 @@ function _fourier_coefficient(samples,q)
     sum(samples[index]*cis(-2π*q*(index-1)/count) for index in 1:count)/count
 end
 
+function _periodic_coefficients(conductance,dynamics,sidebands)
+    differences=sort!(unique([row-column for row in sidebands for column in sidebands]))
+    Dict(q=>(sparse(_fourier_coefficient(conductance,q)),
+        sparse(_fourier_coefficient(dynamics,q))) for q in differences)
+end
+
 function _lifted_periodic_system(conductance,dynamics,sidebands,offset,period)
-    state_count=size(first(conductance),1)
-    block_count=length(sidebands)
-    lifted=zeros(ComplexF64,state_count*block_count,state_count*block_count)
-    fundamental=inv(period)
+    coefficients=_periodic_coefficients(conductance,dynamics,sidebands)
+    _lifted_periodic_system(coefficients,sidebands,offset,period)
+end
+
+function _lifted_periodic_system(coefficients,sidebands,offset,period)
+    state_count=size(first(values(coefficients))[1],1)
+    dimension=state_count*length(sidebands)
+    rows=Int[]; columns=Int[]; entries=ComplexF64[]
     for (row_block,row_harmonic) in enumerate(sidebands)
-        rows=(row_block-1)*state_count+1:row_block*state_count
         for (column_block,column_harmonic) in enumerate(sidebands)
-            columns=(column_block-1)*state_count+1:column_block*state_count
-            q=row_harmonic-column_harmonic
-            gq=_fourier_coefficient(conductance,q)
-            cq=_fourier_coefficient(dynamics,q)
-            # Linearize d(q(x))/dt: the derivative acts on C(t)*δx(t),
-            # so its Fourier multiplier belongs to the output (row) harmonic.
-            lifted[rows,columns].=gq+
-                im*2π*(offset+row_harmonic*fundamental)*cq
+            gq,cq=coefficients[row_harmonic-column_harmonic]
+            # d(C(t)*x(t))/dt uses the output (row) harmonic.
+            block=gq+im*2π*(offset+row_harmonic/period)*cq
+            for column in axes(block,2), pointer in nzrange(block,column)
+                value=block.nzval[pointer]; iszero(value)&&continue
+                push!(rows,(row_block-1)*state_count+block.rowval[pointer])
+                push!(columns,(column_block-1)*state_count+column)
+                push!(entries,value)
+            end
         end
     end
-    lifted
+    sparse(rows,columns,entries,dimension,dimension)
 end
 
 function _instantaneous_source_covariance(sources,groups,frequency,bias,time)
@@ -232,8 +243,9 @@ function periodic_noise(pss::PSSResult,offset_specification;output,input=nothing
     gains=input===nothing ? nothing : zeros(Float64,length(offsets))
     input_excitation=input===nothing ? nothing :
         ComplexF64.(_unit_source_excitation(pss.orbit.compiled,Symbol(input)))
+    coefficients=_periodic_coefficients(conductance,dynamics,harmonics)
     for (offset_index,offset) in enumerate(offsets)
-        system=_lifted_periodic_system(conductance,dynamics,harmonics,offset,pss.period)
+        system=_lifted_periodic_system(coefficients,harmonics,offset,pss.period)
         adjoints=_periodic_adjoint_matrix(system,selector,length(harmonics),offset)
         covariance_by_pair=Dict{Tuple{Int,Int},Vector{Matrix{ComplexF64}}}()
         sources=reference_sources
@@ -271,7 +283,7 @@ function periodic_noise(pss::PSSResult,offset_specification;output,input=nothing
         end
         if length(harmonics)>=3&&output_harmonic in harmonics[2:end-1]
             nested_harmonics=harmonics[2:end-1]
-            nested_system=_lifted_periodic_system(conductance,dynamics,
+            nested_system=_lifted_periodic_system(coefficients,
                 nested_harmonics,offset,pss.period)
             nested_adjoints=_periodic_adjoint_matrix(nested_system,selector,
                 length(nested_harmonics),offset)

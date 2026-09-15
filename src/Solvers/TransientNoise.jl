@@ -97,9 +97,12 @@ function _complex_correlated_white_sequences(rng,sources,groups,count,timestep,b
 end
 
 function transient_noise(c,interval::Pair;timestep,saveat=timestep,seed,
-        temperature=300.,initial=nothing,event_mode=nothing,reltol=1e-6,
-        abstol=1e-9,maxiters=120,
+        temperature=300.,initial=nothing,event_mode=nothing,reltol=nothing,
+        abstol=nothing,maxiters=nothing,
+        solver=SolverOptions(reltol=1e-6,current_abstol=1e-9,voltage_abstol=1e-9,state_abstol=1e-9,max_newton_iterations=120),
         low_frequency_cutoff=inv(Float64(last(interval))-Float64(first(interval))))
+    solver=_effective_solver(solver;reltol,abstol,maxiters)
+    reltol,abstol,maxiters,_=_solver_values(solver)
     t0,t1=Float64(first(interval)),Float64(last(interval))
     isfinite(t0)&&isfinite(t1)&&t1>t0||throw(AnalysisValidationError(
         "transient-noise interval must be finite and increasing"))
@@ -127,7 +130,8 @@ function transient_noise(c,interval::Pair;timestep,saveat=timestep,seed,
     isapprox(t0+step_count*timestep,t1;rtol=64eps(Float64),atol=64eps(Float64)*max(abs(t1),1.))||
         throw(AnalysisValidationError("the transient-noise interval must contain an integer number of timesteps"))
     times=collect(range(t0,t1;length=step_count+1))
-    state=_initial_transient_state(cc,initial;temperature)
+    workspace=SimulationWorkspace(cc)
+    state=_initial_transient_state(cc,initial;temperature,workspace,solver)
     values=zeros(Float64,cc.n,step_count+1)
     values[:,1]=state
     rng=Random.Xoshiro(resolved_seed)
@@ -168,10 +172,21 @@ function transient_noise(c,interval::Pair;timestep,saveat=timestep,seed,
             modulation=initial_psd>0 ? sqrt(current_psd/initial_psd) : 0.
             forcing .+=real.(source.injection).*colored[source.id][step]*modulation
         end
-        event_history=copy(previous)
-        event_mode===:exact&&_apply_switch_events!(event_history,cc,times[step],times[step+1])
-        state,iterations,converged=_newton(cc,state,event_history,times[step+1],
-            inv(timestep);reltol,abstol,maxiters,temperature,forcing)
+        state,iterations,converged=_newton(cc,state,previous,times[step+1],
+            inv(timestep);reltol,abstol,maxiters,temperature,forcing,workspace,
+            voltage_abstol=solver.voltage_abstol,state_abstol=solver.state_abstol,
+            line_search_minimum=solver.line_search_minimum,linear_solver=solver.linear_solver)
+        if event_mode===:exact&&converged
+            injected=_event_charge(cc,_switch_crossings(cc,previous,state))
+            if any(!iszero,injected)
+                qhistory=_storage(cc,previous;temperature,workspace)+injected
+                state,event_iterations,converged=_newton(cc,state,previous,times[step+1],
+                    inv(timestep);reltol,abstol,maxiters,temperature,forcing,workspace,
+                    storage_history=qhistory,voltage_abstol=solver.voltage_abstol,state_abstol=solver.state_abstol,
+                    line_search_minimum=solver.line_search_minimum,linear_solver=solver.linear_solver)
+                iterations+=event_iterations
+            end
+        end
         total_iterations+=iterations
         converged||push!(failed_steps,step+1)
         values[:,step+1]=state
@@ -183,9 +198,10 @@ function transient_noise(c,interval::Pair;timestep,saveat=timestep,seed,
         "power-law noise below $(low_frequency_cutoff) Hz was excluded")
     !isempty(failed_steps)&&push!(warnings,
         "one or more stochastic backward-Euler steps did not converge")
-    analysis=TransientNoise(interval=t0=>t1,timestep=timestep,saveat=saveat,
+    analysis=TransientNoise(;interval=t0=>t1,timestep=timestep,saveat=saveat,
         seed=resolved_seed,temperature=Float64(temperature),
-        low_frequency_cutoff=low_frequency_cutoff,event_mode=event_mode)
+        low_frequency_cutoff=low_frequency_cutoff,event_mode=event_mode,solver,
+        initial=initial isa AbstractVector ? Float64.(initial) : initial)
     stats=_finalize_stats!(Dict{Symbol,Any}(
         :converged=>isempty(failed_steps),:iterations=>total_iterations,
         :failed_steps=>failed_steps,:rejected_steps=>Int[],
@@ -207,4 +223,4 @@ simulate(c,analysis::TransientNoise)=transient_noise(c,analysis.interval;
     timestep=analysis.timestep,saveat=analysis.saveat,seed=analysis.seed,
     temperature=analysis.temperature,
     low_frequency_cutoff=analysis.low_frequency_cutoff,
-    event_mode=analysis.event_mode)
+    event_mode=analysis.event_mode,initial=analysis.initial,solver=analysis.solver)
