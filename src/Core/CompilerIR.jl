@@ -501,6 +501,29 @@ function _updated_batch(batch::ResistorBatch, design, selector, value)
 end
 
 
+# These effects are expanded into separate primitives by add!, so changing
+# their stored model values cannot update the already compiled circuit.
+_elaborated_model_parameters(::Type{Val{:diode}})=(:series_resistance,)
+_elaborated_model_parameters(::Type{Val{:npn}})=(:base_resistance,)
+_elaborated_model_parameters(::Type{Val{:switch}})=(:clock_feedthrough,)
+_elaborated_model_parameters(::Type{Val{:opamp}})=(:input_capacitance,:input_bias_current)
+_elaborated_model_parameters(::Type)=()
+
+function _capacitance_has_derived_elements(parameters)
+    dielectric=get(parameters,:dielectric,nothing)
+    absorption=get(parameters,:dielectric_absorption,nothing)
+    (dielectric isa AbstractCapacitorDielectric && dielectric.loss_tangent>0) ||
+        (absorption isa DebyeBranches && any(>(0),absorption.fractions))
+end
+
+function _check_model_update(kind,old,new,path)
+    _validate_model_parameters(new)
+    for parameter in _elaborated_model_parameters(kind)
+        getproperty(old,parameter)==getproperty(new,parameter)||
+            throw(TopologyParameterError(path,parameter))
+    end
+end
+
 function _updated_batch(batch::PrimitiveBatch{K,N,P}, design, selector, value) where {K,N,P}
     selector_instance, selector_range, selector_device, parameter = selector
     parameter in _STRUCTURAL_PARAMETER_NAMES && throw(TopologyParameterError(join(filter(!isempty, (selector_instance, selector_device)), '.'), parameter))
@@ -513,9 +536,15 @@ function _updated_batch(batch::PrimitiveBatch{K,N,P}, design, selector, value) w
         model_values=model===nothing ? nothing : model_parameters(model)
         modeled=model_values!==nothing&&hasproperty(model_values,parameter)
         (direct||modeled)||throw(ArgumentError("device $(device_name) has no numerical parameter $(parameter)"))
+        path=isempty(instance_path) ? device_name : string(instance_path,'.',device_name)
+        K===Val{:capacitor} && parameter===:value && _capacitance_has_derived_elements(values[index]) &&
+            throw(TopologyParameterError(path,parameter))
+        parameter in _elaborated_model_parameters(K)&&throw(TopologyParameterError(path,parameter))
+        parameter in (:control,:control_count)&&throw(TopologyParameterError(path,parameter))
         copied || (values = copy(values); copied = true)
         updated=direct ? merge(values[index],NamedTuple{(parameter,)}((value,))) :
             merge(values[index],(model=with_model_parameter(model,parameter,value),))
+        model===nothing||_check_model_update(K,model,updated.model,path)
         try
             values[index]=convert(P,updated)
         catch error

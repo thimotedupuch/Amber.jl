@@ -74,7 +74,7 @@ These are illustrative values. Every package accepts the same four fields:
 - Capacitors use `esr` and `esl` in series. Component-level `esr` and `esl`
   override the corresponding package values, including when explicitly zero.
 
-Fields belonging to the other component kind are unused. Package names do not
+Nonzero fields belonging to the other component kind are rejected when adding a component. Package names do not
 infer layout, mounting, geometry, voltage rating, thermal resistance, or inductor
 core behavior. An empty package leaves the ideal component unchanged.
 

@@ -188,9 +188,24 @@ function _validate_model_parameters(model::DebyeBranches)
     end
     model
 end
-_validate_model_parameters(model::GummelPoonBJT)=_unsupported_model_effects(model,(;transit_time=0.))
-_validate_model_parameters(model::BehavioralOpAmp)=_unsupported_model_effects(model,
-    (;slew_rate=Inf,output_current_limit=Inf,saturation_recovery=0.))
+function _validate_model_parameters(model::JunctionDiode)
+    _finite_nonnegative_parameter(:series_resistance,model.series_resistance)
+    model
+end
+function _validate_model_parameters(model::GummelPoonBJT)
+    _finite_nonnegative_parameter(:base_resistance,model.base_resistance)
+    _unsupported_model_effects(model,(;transit_time=0.))
+end
+function _validate_model_parameters(model::BehavioralOpAmp)
+    _finite_nonnegative_parameter(:input_capacitance,model.input_capacitance)
+    isfinite(model.input_bias_current)||throw(ArgumentError("input_bias_current must be finite"))
+    _unsupported_model_effects(model,(;slew_rate=Inf,output_current_limit=Inf,saturation_recovery=0.))
+end
+function _validate_model_parameters(model::Union{VoltageControlledSwitch,EventSwitch,SmoothSwitch})
+    _finite_nonnegative_parameter(:clock_feedthrough,model.clock_feedthrough)
+    isfinite(model.charge_injection)||throw(ArgumentError("charge_injection must be finite"))
+    model
+end
 
 function _validate_model_parameters(model::ChargeBasedMOSFET)
     for (name,value) in pairs(model.data)

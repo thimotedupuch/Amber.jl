@@ -728,7 +728,11 @@ tuned = with_parameters(
 Numerical overrides copy only affected parameter batches. The elaboration
 index, sparse pattern, stamp locations, and unaffected batches are shared.
 Parameters that change circuit structure—such as a package parasitic that adds
-an internal element—are rejected and require rebuilding the design.
+an internal element—are rejected and require rebuilding the design. This includes
+BJT base resistance, switch clock feedthrough, and op-amp input capacitance and
+bias current, even when changed by replacing the entire model. Capacitor value
+changes also require rebuilding when dielectric loss or absorption derives
+additional elements from that value.
 
 Use this mechanism directly, or through a failure-aware sweep:
 
@@ -885,6 +889,12 @@ behavior across family names. The following values are illustrative.
 
 #### Package parasitics and resistor noise
 
+Component constructors reject unsupported keywords, including misplaced model
+parameters: use `diode(a, b; model=JunctionDiode(ideality=2.))`, for example.
+Inductor `winding_resistance` and `series_resistance` are aliases; specify only one.
+See [the component keyword audit](design_specs/component_keyword_audit.md) for
+where parameters enter each analysis and which effects require rebuilding.
+
 Every package accepts four finite, nonnegative parameters:
 
 - Resistors use `series_inductance` in series with the resistance and
@@ -892,7 +902,7 @@ Every package accepts four finite, nonnegative parameters:
 - Capacitors use `esr` and `esl` in series. Component-level `esr` and `esl`
   override their package values, including an explicit zero.
 
-Fields for the other component kind are unused. A package name does not infer
+Nonzero fields for the other component kind are rejected when adding the component. A package name does not infer
 mounting geometry or thermal properties. Model wirewound inductance explicitly
 through the package; `Wirewound()` alone adds no inductance.
 

@@ -435,11 +435,37 @@ _without(parameters::NamedTuple,removed::Tuple)=begin
 end
 _hidden_name(name,suffix)=string(name,'.',suffix)
 
+function _check_package_fields(kind,package,unused)
+    package===nothing&&return
+    for parameter in unused
+        iszero(getproperty(package,parameter))||throw(ArgumentError(
+            "$(kind) does not use package.$(parameter); omit it or set it to zero"))
+    end
+end
+
 function add!(builder::CircuitBuilder, component::PrimitiveDraft; name=string(_draft_kind(component),length(builder.primitives) + 1))
     kind=_draft_kind(component); parameters=component.parameters; terminals=component.terminals
     kind in _CATALOG_COMPOSITES && return _add_catalog!(builder,component,name)
+    hasproperty(parameters,:tolerance)&&_finite_nonnegative_parameter(:tolerance,parameters.tolerance)
+    if hasproperty(parameters,:match)
+        match=parameters.match
+        match===nothing || match isa MatchedGroup || throw(ArgumentError("npn.match requires a MatchedGroup"))
+    end
+    for key in (:model,:material,:package,:dielectric,:dielectric_absorption)
+        hasproperty(parameters,key)||continue
+        value=getproperty(parameters,key)
+        value===nothing&&continue
+        expected=key===:material ? AbstractResistorMaterial :
+            key===:package ? AbstractPassivePackage :
+            key===:dielectric ? AbstractCapacitorDielectric :
+            key===:dielectric_absorption ? DebyeBranches : nothing
+        expected===nothing || value isa expected ||
+            throw(ArgumentError("$(kind).$(key) requires a $(expected)"))
+        _validate_model_parameters(value)
+    end
     if kind===:resistor
         package=get(parameters,:package,nothing)
+        _check_package_fields(kind,package,(:esr,:esl))
         series_inductance=_model_value(package,:series_inductance)
         parallel_capacitance=_model_value(package,:parallel_capacitance)
         main=if series_inductance>0
@@ -453,6 +479,7 @@ function add!(builder::CircuitBuilder, component::PrimitiveDraft; name=string(_d
         return main
     elseif kind===:capacitor
         package=get(parameters,:package,nothing)
+        _check_package_fields(kind,package,(:series_inductance,:parallel_capacitance))
         esr=Float64(get(parameters,:esr,_model_value(package,:esr)))
         esl=Float64(get(parameters,:esl,_model_value(package,:esl)))
         dielectric=get(parameters,:dielectric,nothing)
@@ -466,6 +493,8 @@ function add!(builder::CircuitBuilder, component::PrimitiveDraft; name=string(_d
         end
         _finite_nonnegative_parameter(:esr,esr)
         _finite_nonnegative_parameter(:esl,esl)
+        leakage=Float64(get(parameters,:leakage_resistance,Inf))
+        leakage>0||throw(ArgumentError("leakage_resistance must be positive or Inf"))
         terminal=terminals[1]
         if esr>0
             following=node!(builder,_hidden_name(name,"__esr"))
@@ -475,8 +504,7 @@ function add!(builder::CircuitBuilder, component::PrimitiveDraft; name=string(_d
             following=node!(builder,_hidden_name(name,"__esl"))
             _add_raw!(builder,inductor(terminal,following;value=esl),_hidden_name(name,"esl")); terminal=following
         end
-        leakage=Float64(get(parameters,:leakage_resistance,Inf))
-        main_parameters=_without(parameters,(:esr,:esl,:leakage_resistance,:dielectric_absorption))
+        main_parameters=_without(parameters,(:esr,:esl,:leakage_resistance))
         main=_add_raw!(builder,_component(:capacitor,terminal,terminals[2];main_parameters...),name)
         isfinite(leakage)&&leakage>0&&_add_raw!(builder,resistor(terminal,terminals[2];value=leakage),_hidden_name(name,"leakage_resistance"))
         absorption=get(parameters,:dielectric_absorption,nothing)
@@ -492,8 +520,12 @@ function add!(builder::CircuitBuilder, component::PrimitiveDraft; name=string(_d
         end
         return main
     elseif kind===:inductor
+        hasproperty(parameters,:winding_resistance)&&hasproperty(parameters,:series_resistance)&&
+            throw(ArgumentError("specify only one of winding_resistance and series_resistance"))
         resistance=Float64(get(parameters,:winding_resistance,get(parameters,:series_resistance,0.)))
         parallel_capacitance=Float64(get(parameters,:parallel_capacitance,0.))
+        _finite_nonnegative_parameter(:winding_resistance,resistance)
+        _finite_nonnegative_parameter(:parallel_capacitance,parallel_capacitance)
         main=if resistance>0
             internal=node!(builder,_hidden_name(name,"__winding"))
             handle=_add_raw!(builder,_component(:inductor,terminals[1],internal;parameters...),name)

@@ -13,6 +13,7 @@ experiments. Supplying the analytic gradient keeps Amber's Newton matrix
 consistent with the residual.
 """
 function behavioral_current_source(controls::Tuple, output_p, output_n; current, gradient, kw...)
+    isempty(kw)||throw(ArgumentError("behavioral sources received unsupported keyword(s): "*join(string.(keys(kw)),", ")))
     length(controls) <= 4 || throw(ArgumentError("behavioral_current_source supports at most four differential controls"))
     all(control -> control isa Tuple && length(control) == 2, controls) ||
         throw(ArgumentError("controls must be `(positive, negative)` node pairs"))
@@ -33,6 +34,7 @@ voltage constraint. Use a series resistor externally when finite output
 impedance is required.
 """
 function behavioral_voltage_source(controls::Tuple, output_p, output_n; voltage, gradient, kw...)
+    isempty(kw)||throw(ArgumentError("behavioral sources received unsupported keyword(s): "*join(string.(keys(kw)),", ")))
     length(controls) <= 4 || throw(ArgumentError("behavioral_voltage_source supports at most four differential controls"))
     all(control -> control isa Tuple && length(control) == 2, controls) ||
         throw(ArgumentError("controls must be `(positive, negative)` node pairs"))

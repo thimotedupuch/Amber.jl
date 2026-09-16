@@ -28,7 +28,7 @@
     end
 
     for T in packages, kind in (:resistor,:capacitor)
-        package=T(series_inductance=2e-6,parallel_capacitance=3e-9,esr=2.,esl=2e-6)
+        package=kind===:resistor ? T(series_inductance=2e-6,parallel_capacitance=3e-9) : T(esr=2.,esl=2e-6)
         b=CircuitBuilder(:Package); g=ground!(b,:g); x=node!(b,:x)
         add!(b,voltage_source(x,g;ac=1.);name=:supply)
         add!(b,kind===:resistor ? resistor(x,g;value=100.,package) : capacitor(x,g;value=1e-6,package);name=:dut)
