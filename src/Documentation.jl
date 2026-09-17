@@ -29,14 +29,32 @@
 @doc """Construct an NPN bipolar transistor with collector, base, and emitter terminals.""" npn
 @doc """Construct a four-terminal NMOS transistor with drain, gate, source, and bulk terminals.""" nmos
 @doc """Construct a four-terminal PMOS transistor with drain, gate, source, and bulk terminals.""" pmos
-@doc """Construct a five-terminal behavioral op amp.""" opamp
+@doc """    opamp(positive_input, negative_input, output, positive_supply, negative_supply;
+          model=BehavioralOpAmp())
+
+Construct an op amp with explicit supply terminals. A positive differential
+input drives the output positive. Connect negative feedback to `negative_input`;
+for a voltage follower, connect both `negative_input` and `output` to the output
+net. Model parameters use SI values, with `dc_gain` as a linear voltage ratio.
+
+```julia
+Buffer = opamp(input, output, output, vdd, vss;
+    model=BehavioralOpAmp(dc_gain=100dB, gain_bandwidth=1MHz))
+```
+
+This is a behavioral approximation, not a manufacturer-specific device model.""" opamp
 @doc """Construct a voltage-controlled analog switch.""" analog_switch
 @doc """Construct a voltage-controlled current source with gain in siemens.""" transconductance
 @doc """Construct a voltage-controlled voltage source.""" voltage_controlled_voltage_source
 @doc """Construct a current-controlled current source.""" current_controlled_current_source
 @doc """Construct a current-controlled voltage source with gain in ohms.""" current_controlled_voltage_source
 
-@doc """A transient waveform that changes from `initial` to `final` at a specified time.""" Step
+@doc """    Step(; low=0.0, high=1.0, at=0.0, rise=0.0)
+
+Transition from `low` to `high` starting at time `at` (seconds), linearly over
+`rise` seconds. A zero rise is instantaneous. Amplitudes use the source's units
+(V for voltage sources, A for current sources). Use `event_mode=:exact` in
+`transient` and a `max_step` smaller than a finite rise time to resolve the edge.""" Step
 @doc """A sinusoidal transient waveform with amplitude, frequency, phase, offset, and delay.""" Sine
 @doc """A periodic pulse waveform with explicit rise, fall, frequency, and duty cycle.""" Pulse
 @doc """Thin-film resistor metadata including explicit power-law excess-noise parameters.""" ThinFilm
@@ -46,7 +64,20 @@
 @doc """Junction-diode compact-model parameters including carrier, avalanche, and power-law noise.""" JunctionDiode
 @doc """NPN compact-model parameters for transport, charge, resistance, shot noise, and power-law noise.""" GummelPoonBJT
 @doc """Level-1 MOSFET parameters for channel equations and correlated channel/gate/power-law noise.""" Level1MOSFET
-@doc """Behavioral op-amp parameters for gain, impedances, and voltage/current noise spectra.""" BehavioralOpAmp
+@doc """    BehavioralOpAmp(; dc_gain=1e5, gain_bandwidth=1e6, slew_rate=Inf,
+        output_resistance=10.0, output_current_limit=Inf, input_offset=0.0, ...)
+
+Behavioral op-amp model. Gain is a linear V/V ratio, bandwidth is in Hz,
+slew rate in V/s, output resistance in ohms, current limit in A, and offset in V.
+Defaults include zero input bias current, input capacitance, saturation recovery,
+and noise densities; they do not describe a particular real part.
+
+Noise keywords include `input_voltage_noise_density` (V/sqrt(Hz)),
+`positive_input_current_noise_density` and `negative_input_current_noise_density`
+(A/sqrt(Hz)), plus `input_voltage_flicker_corner` and
+`input_current_flicker_corner` (Hz). Noise densities and flicker corners default
+to zero. Use `model_parameters(model)` to inspect all parameters.
+See also [`opamp`](@ref).""" BehavioralOpAmp
 @doc """Voltage-controlled switch parameters including resistance, threshold, and parasitics.""" VoltageControlledSwitch
 @doc """Smooth continuously differentiable switch transition mode.""" SmoothSwitch
 @doc """Event-oriented switch transition mode.""" EventSwitch
@@ -65,12 +96,45 @@
 @doc """Transient-analysis descriptor.""" Transient
 @doc """Small-signal frequency-analysis descriptor.""" SmallSignal
 @doc """Solve the nonlinear DC operating point of a circuit.""" operating_point
-@doc """Integrate a circuit over a time span using implicit BDF methods.""" transient
+@doc """    transient(circuit, start => stop; saveat=nothing, max_step=nothing,
+        method=:bdf2, adaptive=nothing, initial=nothing, event_mode=nothing, ...)
+
+Integrate a circuit in seconds using implicit `:bdf1` or `:bdf2` methods.
+`saveat` specifies output spacing independently of internal integration steps;
+the start and stop are always included. If the span is not divisible by `saveat`,
+the last output interval is shorter. Without `saveat`, retain internal steps.
+`max_step` bounds integration steps; resolve finite source edges with several
+steps even when using `event_mode=:exact` to land on corners and switch events.
+
+By default, supplying `saveat` or `max_step` selects fixed stepping. Set
+`adaptive=true` explicitly to use error-controlled stepping with a saved grid.
+`initial=nothing` starts from a converged operating point; `:discharged` starts
+from zero before applying capacitor initial voltages. A state vector is also
+accepted. `reltol`/`abstol` control the nonlinear solver; `integration` controls
+adaptive integration error. Inspect `result.stats[:converged]` and
+`validity_report(result)` before trusting the result. Partial runs may end early;
+use `failure_policy=:throw` to throw instead of returning a partial result.""" transient
 @doc """Linearize at the operating point and solve at the requested frequencies.""" small_signal
 @doc """Execute an Amber analysis descriptor on a circuit.""" simulate
 @doc """Run a sequence of analysis descriptors and return their results in order.""" run
 @doc """Evaluate an analysis across a deterministic parameter grid.""" sweep
-@doc """Compute small-signal output and optionally input-referred noise spectral density.""" noise
+@doc """    noise(circuit, frequencies; output, input=nothing, points=100, scale=:log,
+          temperature=300.0, contributions=true, bias=nothing, ...)
+
+Compute stationary small-signal noise about a converged operating point.
+`frequencies` is a positive Hz vector or a `low => high` range. `output` is an
+observable such as `voltage(:out)`; `input` is an independent-source name such
+as `:Source`, enabling input referral. Temperature is in kelvin.
+
+```julia
+n = noise(circuit, 10Hz => 1MHz; output=voltage(:out), input=:Source)
+density = noise_density(n)                  # V/sqrt(Hz) for voltage output
+rms = integrated_noise(n, 20Hz => 20kHz)     # V RMS
+```
+
+`noise_psd` returns squared output units per Hz. The default `contributions=true`
+retains individual source budgets. Inspect `report(n)` and `validity_report(n)`;
+zero noise may mean the selected device models have no configured noise.""" noise
 @doc """Frequency-indexed stationary noise result containing PSDs and physical-source contributions.""" NoiseResult
 @doc """Run seeded fixed-grid stochastic backward-Euler noise simulation.""" transient_noise
 @doc """Descriptor retained by a fixed-grid stochastic transient result.""" TransientNoise
@@ -96,7 +160,21 @@
 @doc """Estimate resonance Q from interpolated half-power crossings.""" quality_factor
 @doc """Return maximum response gain above a reference, in decibels.""" peaking
 @doc """Return the deepest response attenuation below a reference, in decibels.""" notch_depth
-@doc """Integrate noise PSD over an exact sampled band and return RMS noise or variance.""" integrated_noise
+@doc """    integrated_noise(result::NoiseResult, low => high; referred=:output,
+        interpolate_edges=true, quantity=:rms, contributions=false)
+
+Integrate PSD over a band in Hz within the simulated frequency range. The default
+returns RMS noise (V for a voltage output); `quantity=:variance` returns squared
+units. `referred=:input` requires a noise analysis with an input source.
+Band edges are interpolated by default; set `interpolate_edges=false` to require
+sampled edges. With `contributions=true`, return a named tuple containing `total`
+and a `contributions` dictionary keyed by source. For uncorrelated sources, individual RMS contributions
+combine in quadrature, not by direct addition.
+
+```julia
+rms_V = integrated_noise(n, 20Hz => 20kHz)
+budget = integrated_noise(n, 20Hz => 20kHz; contributions=true)
+```""" integrated_noise
 
 @doc """An oriented small-signal port with current positive into its positive terminal.""" Port
 @doc """Frequency-indexed multiport impedance data and port metadata.""" NetworkResult
@@ -167,7 +245,13 @@
 @doc """BJT cutoff operating-region marker.""" Cutoff
 @doc """MOSFET linear/triode operating-region marker.""" Triode
 @doc """Return result-generation metadata and solver settings.""" provenance
-@doc """Create a readable summary of a circuit or result.""" report
+@doc """    report(result::SimulationResult; detailed=false)
+
+Return a structured summary with analysis type, sampled interval, sample count,
+solver statistics, device findings, and combined solver/model-validity warnings.
+By default, omit per-iteration and per-step histories from the statistics. Use
+`detailed=true` for all statistics, or inspect `result.stats` directly.
+Other result types provide analysis-specific report dictionaries.""" report
 @doc """Return physical-validity findings recorded for a result.""" validity_report
 @doc """List observable names available in a result.""" available_observables
 @doc """Convert a result to a Tables.jl-compatible table.""" result_table

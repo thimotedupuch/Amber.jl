@@ -347,7 +347,7 @@ function provenance(r)
         :statistics=>copy(r.stats),:warnings=>copy(get(r.stats,:warnings,String[])))
 end
 
-function report(r::SimulationResult)
+function report(r::SimulationResult;detailed=false)
     devices=Dict{String,Any}()
     if r.analysis isa OperatingPoint
         for batch in r.compiled.parameters.batches
@@ -361,7 +361,17 @@ function report(r::SimulationResult)
             end
         end
     end
-    Dict(:analysis=>string(typeof(r.analysis)),:statistics=>copy(r.stats),:devices=>devices)
+    validity=validity_report(r)
+    merge!(devices,validity[:devices])
+    statistics=copy(r.stats)
+    if !detailed
+        for key in (:residual_history,:bdf_orders,:integration_orders)
+            pop!(statistics,key,nothing)
+        end
+    end
+    Dict(:analysis=>string(typeof(r.analysis)),:statistics=>statistics,:devices=>devices,
+        :samples=>length(r.axis),:interval=>(first(r.axis)=>last(r.axis)),
+        :warnings=>validity[:warnings])
 end
 
 function validity_report(r::SimulationResult)

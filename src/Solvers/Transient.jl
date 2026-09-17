@@ -75,11 +75,15 @@ function _waveform_events(cc,t0,t1)
     filter!(time->t0<time<t1,events); events
 end
 
-function _merge_time_grid(times,nominal_step)
+function _merge_time_grid(times,nominal_step;preferred=Set{Float64}())
     sorted=sort!(Float64.(times)); merged=Float64[]; tolerance=max(eps(maximum(abs,sorted))*16,nominal_step*1e-10)
     for time in sorted
         if isempty(merged)||time-last(merged)>tolerance
             push!(merged,time)
+        elseif time in preferred
+            # Preserve requested output timestamps when a waveform corner or
+            # integration boundary differs from them by only roundoff.
+            merged[end]=time
         end
     end
     merged
@@ -168,15 +172,15 @@ function _transient(c,p::Pair;saveat=nothing,max_step=nothing,method=:bdf2,adapt
     dt=use_adaptive ? min(maximum_step,span/100) : maximum_step
     minimum_step=max(integration.min_step,eps(max(abs(t0),abs(t1)))*32)
     waveform_events=event_mode===:exact ? _waveform_events(cc,t0,t1) : Float64[]
+    output_targets=saveat===nothing ? Set{Float64}() : Set(vcat(t0,collect((t0+saveat):saveat:t1),t1))
     grid=use_adaptive ? Float64[t1] : vcat(collect((t0+dt):dt:t1),t1)
-    saveat===nothing||append!(grid,collect((t0+saveat):saveat:t1))
-    append!(grid,waveform_events); grid=_merge_time_grid(grid,dt)
+    saveat===nothing||append!(grid,filter(>(t0),collect(output_targets)))
+    append!(grid,waveform_events); grid=_merge_time_grid(grid,dt;preferred=output_targets)
     boundary_index=1
     z=_initial_transient_state(cc,initial;temperature,workspace,solver)
     times=Float64[t0]; states=[copy(z)]; orders=Int[0]
-    save_sparse=use_adaptive&&saveat!==nothing
+    save_sparse=saveat!==nothing
     saved_states=[copy(z)]; saved_indices=Int[1]
-    output_targets=save_sparse ? Set(vcat(t0,collect((t0+saveat):saveat:t1),t1)) : Set{Float64}()
     total_iterations=0; rejected=0; attempts=0; restart=true
     failed_steps=Int[]; failed_residuals=Any[]; event_times=Float64[]
     failure_reason=nothing
@@ -229,7 +233,7 @@ function _transient(c,p::Pair;saveat=nothing,max_step=nothing,method=:bdf2,adapt
                 crossings=_switch_crossings(cc,previous,full)
             end
         end
-        at_corner=endpoint in waveform_events
+        at_corner=any(t->abs(endpoint-t)<=max(32eps(max(abs(endpoint),abs(t))),dt*1e-10),waveform_events)
         event=!isempty(crossings)||at_corner
         use_bdf2=method===:bdf2&&length(states)>=2&&!restart&&!event
         alpha=inv(h); qhistory=qprevious; order=1
@@ -285,15 +289,15 @@ function _transient(c,p::Pair;saveat=nothing,max_step=nothing,method=:bdf2,adapt
                     failure_reason="switch charge injection did not converge"; push!(failed_steps,length(times)+1); break
                 end
             end
-            push!(event_times,endpoint)
         end
+        event&&push!(event_times,endpoint)
         z=candidate; push!(times,endpoint); push!(states,copy(z)); push!(orders,order)
         if save_sparse
             if endpoint in output_targets
                 push!(saved_states,copy(z)); push!(saved_indices,length(times))
             end
             # BDF only needs two accepted states; unsaved internal steps must
-            # not accumulate full circuit vectors over a long adaptive run.
+            # not accumulate full circuit vectors over a long run with sparse output.
             length(states)>2&&popfirst!(states)
         end
         restart=event
@@ -308,7 +312,7 @@ function _transient(c,p::Pair;saveat=nothing,max_step=nothing,method=:bdf2,adapt
         :failed_steps=>failed_steps,:failed_residuals=>failed_residuals,:bdf_orders=>orders,
         :event_times=>event_times,:rejected_steps=>rejected,:temperature=>Float64(temperature),
         :warnings=>failure_reason===nothing ? String[] : [failure_reason])
-    if use_adaptive
+    if use_adaptive || (save_sparse && length(saved_indices)!=length(times))
         # Saved samples need not share the integration stencil, and BE step
         # doubling also contains an unsaved midpoint. Trace derivatives must
         # therefore use the saved time axis rather than a fictitious BDF grid.

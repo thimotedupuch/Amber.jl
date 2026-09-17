@@ -119,7 +119,12 @@ plotting package is required.
 rows = result_table(tran)           # dependency-free Vector{NamedTuple}
 meta = provenance(tran)             # circuit, parameters, analysis, warnings
 summary = report(tran)               # concise analysis report
+selected = result_table(tran; signals=(output_V=:output, supply_A=current(:Source)))
 ```
+
+`report` includes solver and model-validity warnings. For operating-point,
+transient, and small-signal results, use `report(result; detailed=true)` to
+include the full iteration and integration histories.
 
 Use [AmberMakie](AmberMakie/) when interactive Makie workbenches, Bode plots,
 Smith charts, spectra, noise budgets, or publication figures are wanted. It is
@@ -391,6 +396,15 @@ in the discrete equations, preserving the BDF charge balance.
 It supports fixed or adaptive stepping, operating-point or discharged initial
 states, capacitor initial voltage, and exact insertion of `Step`/`Pulse`
 waveform boundaries.
+
+Set `saveat` to choose output spacing independently of internal steps. Both
+endpoints are retained; the last interval is shorter when the duration is not
+divisible by `saveat`. Without `saveat`, all accepted steps are returned.
+Supplying `saveat` or `max_step` selects fixed stepping unless `adaptive=true`
+is explicit. Resolve finite source edges with several internal steps even in
+exact-event mode. When output omits internal steps, dynamic currents are
+reconstructed from the saved charge traces; use sufficiently fine `saveat`
+when measuring current peaks.
 
 ```julia
 result = transient(

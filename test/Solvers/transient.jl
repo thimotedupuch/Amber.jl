@@ -51,4 +51,32 @@ end
     @test_throws AnalysisValidationError transient(LowPass(),1s=>0s)
     result=transient(LowPass(),0s=>95μs;saveat=10μs)
     @test result.axis==vcat(0.,collect(10μs:10μs:90μs),95μs)
+
+    @circuit SaveGridRC() begin
+        gnd=ground(); input=node(); output=node()
+        Source=voltage_source(input,gnd;waveform=Step(low=0V,high=1V,at=100μs,rise=1μs))
+        R1=resistor(input,output;value=10kΩ)
+        C1=capacitor(output,gnd;value=10nF)
+    end
+    # 100μs and the corresponding save-grid timestamp differ by roundoff.
+    # Corners must remain integration boundaries without adding or losing
+    # output samples, even when the internal step is smaller than saveat.
+    expected=vcat(0.,collect(2μs:2μs:140μs),141μs)
+    saved_axes=Vector{Float64}[]
+    for adaptive in (false,true), max_step in (2μs,1μs)
+        sampled=transient(SaveGridRC(),0s=>141μs;saveat=2μs,max_step,adaptive,event_mode=:exact)
+        @test sampled.stats[:converged]
+        @test sampled.axis≈expected
+        push!(saved_axes,sampled.axis)
+        @test size(sampled.values,2)==length(expected)
+        @test any(t->isapprox(t,100μs),sampled.stats[:event_times])
+        @test any(t->isapprox(t,101μs),sampled.stats[:event_times])
+        @test !haskey(sampled.stats,:bdf_orders)
+        @test all(isfinite,current(sampled,:C1))
+    end
+    @test all(==(first(saved_axes)),saved_axes)
+    resolved=transient(SaveGridRC(),0s=>140μs;saveat=2μs,max_step=0.1μs,event_mode=:exact)
+    # Exact response after the one-microsecond linear ramp.
+    expected_output=1-100*(1-exp(-0.01))*exp(-(140μs-101μs)/100μs)
+    @test voltage(resolved,:output)[end]≈expected_output atol=2e-4
 end

@@ -293,6 +293,12 @@ An operating-point call can return a result carrying nonconvergence information.
 
 Use implicit `:bdf1` or `:bdf2` integration. Resolve the fastest edge, pole, or switching interval with `max_step`; use `event_mode=:exact` for `Step`, `Pulse`, and switch discontinuities. Specify `saveat` when a uniform output grid is needed for spectra or comparison.
 
+`saveat` controls output spacing independently of internal steps. The final
+time is always included, so choose an interval divisible by `saveat` for a
+uniform grid. Supplying `saveat` or `max_step` selects fixed stepping by default;
+set `adaptive=true` explicitly for adaptive integration. Solver `reltol`/`abstol`
+control Newton convergence; `IntegrationOptions` controls adaptive time error.
+
 ```julia
 tr = transient(circuit, 0s => 5ms;
     initial=:discharged,
@@ -363,6 +369,23 @@ Use `replay_sample` to reproduce an outlier and `save_monte_carlo` for a version
 Use `voltage`, `current`, `power`, `charge`, `state`, and `observation`. `result.axis` is the primary time/frequency axis; `frequencies(result)` is explicit for frequency results. The accessors return vectors, including one-element vectors for operating points.
 
 Use `result_table(result)` for dependency-free rows, `provenance(result)` for inputs and solver metadata, `report(result)` for a concise summary, and `validity_report(result)` for model-domain warnings. Store important raw numbers in CSV/TOML or a Julia data artifact; a screenshot is not a result.
+
+For operating-point, transient, and small-signal results, `report(result)` includes
+solver and model-validity warnings; `report(result; detailed=true)` also includes
+iteration/step histories. Select and label table columns with a named tuple:
+
+```julia
+rows = result_table(tr; signals=(output_V=voltage(:out), source_A=current(:Source)))
+open("transient.csv", "w") do io
+    println(io, join(string.(keys(first(rows))), ','))
+    for row in rows
+        println(io, join(values(row), ','))
+    end
+end
+```
+
+This simple numeric CSV recipe uses caller-chosen column labels without commas.
+Named observations can also be selected, e.g. `signals=(output_V=:output,)`.
 
 Validate every important answer with at least one of:
 
@@ -473,7 +496,8 @@ circuit = RCLowPass(; R, C)
 isempty(check(circuit)) || error(explain(circuit))
 
 ac = small_signal(circuit, 10Hz => 1MHz; source=:Source, points=301)
-tr = transient(circuit, 0s => 700μs; max_step=2μs, saveat=2μs,
+# Resolve the 1 us source rise with ten internal steps; save every 2 us.
+tr = transient(circuit, 0s => 700μs; max_step=0.1μs, saveat=2μs,
     event_mode=:exact)
 @assert ac.stats[:converged] && tr.stats[:converged]
 
@@ -481,6 +505,13 @@ expected_fc = 1 / (2π * R * C)
 measured_fc = only(cutoff_frequencies(ac;
     input=voltage(:vin), output=voltage(:out)))
 @assert isapprox(measured_fc, expected_fc; rtol=0.03)
+
+# Exact response after a linear ramp, including its finite rise time.
+τ, rise, start = R * C, 1μs, 100μs
+after_rise = tr.axis .>= start + rise
+expected = 1 .- (τ / rise) * (-expm1(-rise / τ)) .*
+    exp.(-(tr.axis[after_rise] .- start .- rise) ./ τ)
+@assert maximum(abs.(voltage(tr, :out)[after_rise] .- expected)) < 0.2mV
 
 println((expected_corner_Hz=expected_fc,
     simulated_corner_Hz=measured_fc,
