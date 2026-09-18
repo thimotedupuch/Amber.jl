@@ -126,6 +126,15 @@ selected = result_table(tran; signals=(output_V=:output, supply_A=current(:Sourc
 transient, and small-signal results, use `report(result; detailed=true)` to
 include the full iteration and integration histories.
 
+In a REPL or notebook, displaying a circuit or an operating-point, transient,
+AC, noise, sweep, or Monte Carlo result gives a compact text summary instead
+of internal solver arrays. Result summaries distinguish solver convergence
+from physical validity, show units and saved ranges, and highlight partial runs
+and failed study points. Use `explain_failure(result)` for an incomplete
+simulation's recorded reason and next steps, or `result.failures` for study
+failures. Use `report(result)` or `validity_report(result)` for simulation model checks.
+Display does not run a simulation or compute model-validity metrics.
+
 Use [AmberMakie](AmberMakie/) when interactive Makie workbenches, Bode plots,
 Smith charts, spectra, noise budgets, or publication figures are wanted. It is
 a separate package so the simulation core does not depend on a graphics stack.

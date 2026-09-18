@@ -2,10 +2,43 @@ abstract type AbstractWaveform end
 
 _validate_model_parameters(model)=model
 
-"""Return the named numerical parameters exposed by a device model."""
+"""
+    model_parameters(model)
+
+Return the parameters exposed by a supported device model, as a named tuple for
+built-in models. This reveals default values as well as explicit overrides.
+Values use the model's documented SI units; they are not a measured operating
+point. Unsupported model types throw `ArgumentError`.
+
+```julia
+model = JunctionDiode(ideality=1.7)
+parameters = model_parameters(model)
+@assert parameters.ideality == 1.7
+```
+
+Use [`with_model_parameter`](@ref) to make a modified model rather than mutating
+these parameters. Custom models can implement this interface to participate in
+compiled parameter updates.
+"""
 model_parameters(model)=throw(ArgumentError("model $(typeof(model)) does not implement model_parameters"))
 
-"""Return a model copy with one numerical parameter replaced.
+"""
+    with_model_parameter(model, name::Symbol, value)
+
+Return a validated model copy with one parameter replaced. The input model is
+unchanged. `name` must identify a parameter exposed by `model_parameters(model)`;
+unknown names or invalid values are rejected. Values use the selected
+parameter's units. Updating a standalone model does not modify a circuit that
+already uses the original model.
+
+```julia
+original = JunctionDiode(ideality=1.2)
+updated = with_model_parameter(original, :ideality, 1.7)
+@assert original.ideality == 1.2 && updated.ideality == 1.7
+```
+
+Rebuild a circuit with the new model, or use [`with_parameters`](@ref) for a
+supported numerical update on a compiled circuit.
 
 User-defined model types can participate in compiled parameter updates by
 implementing `model_parameters(model)` and `with_model_parameter(model, name, value)`.

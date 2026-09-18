@@ -290,7 +290,26 @@ struct CircuitDesign <: AbstractCircuitDefinition
 end
 
 const _BUILDER_OWNER = Threads.Atomic{UInt64}(0)
-"""Mutable construction context; call `finish` to produce a `CircuitDesign`."""
+"""
+    CircuitBuilder(name=:anonymous)
+
+Create a mutable builder for programmatic circuit construction. Add nodes with
+`node!`/`ground!`, attach primitive drafts using `add!`, and call `finish` once
+to obtain an immutable `CircuitDesign`. Nodes/devices belong to their builder;
+handles cannot be mixed across builders or reused after finishing.
+
+```julia
+builder = CircuitBuilder(:Load)
+gnd = ground!(builder)
+input = node!(builder, :input)
+add!(builder, voltage_source(input, gnd; dc=5V); name=:Supply)
+add!(builder, resistor(input, gnd; value=1kΩ); name=:Load)
+circuit = finish(builder)
+@assert isempty(check(circuit))
+```
+
+Use `@circuit` when named DSL construction is more convenient.
+"""
 mutable struct CircuitBuilder
     owner::UInt64
     generation::UInt32
@@ -577,6 +596,11 @@ end
 
 function observe!(builder::CircuitBuilder, values...; name=nothing)
     _assert_open(builder)
+    if name!==nothing
+        length(values)==1||throw(ArgumentError("a named observation requires exactly one value; use separate observe calls with distinct names"))
+        any(entry->entry.name==String(name),builder.observations)&&throw(ArgumentError(
+            "observation name $(repr(name)) is already registered in this scope; choose a distinct name"))
+    end
     for value in values
         value isa BuilderNet && _assert_owned(builder, value)
         push!(builder.observations, (name=name === nothing ? nothing : String(name), value=value))

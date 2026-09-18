@@ -22,7 +22,15 @@ function _solve_linear(system,rhs,context)
         throw(LinearSolveError(String(context)))
     end
 end
-Base.showerror(io::IO,error::ConvergenceError)=print(io,error.context," did not converge", haskey(error.stats,:dominant_residual) ? "; dominant residual: $(error.stats[:dominant_residual])" : "")
+function Base.showerror(io::IO,error::ConvergenceError)
+    print(io,error.context)
+    occursin("converge",error.context)||print(io," did not converge")
+    haskey(error.stats,:dominant_residual)&&print(io,"; dominant residual: ",error.stats[:dominant_residual])
+    for warning in unique(get(error.stats,:warnings,String[]))
+        warning==error.context||print(io,"\n- ",warning)
+    end
+    print(io,"\nInspect error.stats for solver diagnostics; check(circuit) can identify structural issues.")
+end
 
 function _require_converged(result,context)
     get(result.stats,:converged,false)||throw(ConvergenceError(String(context),copy(result.stats)))

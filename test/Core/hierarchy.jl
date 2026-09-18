@@ -61,3 +61,19 @@ end
     @test !isdefined(Amber, :Ground)
     @test !isdefined(Amber, :migrate_design)
 end
+
+@testset "named observation registration" begin
+    builder=CircuitBuilder(:NamedMeasurements)
+    gnd=ground!(builder); out=node!(builder,:out)
+    add!(builder,resistor(out,gnd;value=1kΩ);name=:R1)
+    observe!(builder,voltage(out);name=:output)
+    @test_throws ArgumentError observe!(builder,voltage(out);name="output")
+    @test_throws ArgumentError observe!(builder,voltage(out),current(:R1);name=:both)
+    @test_throws ArgumentError observe!(builder;name=:empty)
+    # Rejected calls must not register anything; unnamed multi-value calls remain valid.
+    observe!(builder,voltage(out),current(:R1))
+    design=finish(builder)
+    @test length(observations(design))==3
+    @test only(filter(o->o.name!==nothing,observations(design))).name===:output
+    @test only(observation(operating_point(design),:output))==0V
+end

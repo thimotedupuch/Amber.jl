@@ -9,7 +9,29 @@ Base.@kwdef struct SuiteSparseLU <: AbstractLinearSolver
     pivot_tolerance::Float64 = 0.1
 end
 
-"""Typed nonlinear-solver tolerances, iteration limits, and linear-solver policy."""
+"""
+    SolverOptions(; reltol=1e-7, voltage_abstol=1e-9, current_abstol=1e-12,
+        state_abstol=1e-10, max_newton_iterations=60,
+        line_search_minimum=1/256, continuation_maxdepth=10,
+        linear_solver=SuiteSparseLU())
+
+Configure nonlinear convergence, damping, and DC continuation. Absolute voltage
+and current tolerances are in V and A; internal-state tolerances use each state's
+units. Relative tolerance is dimensionless. These settings govern Newton solves,
+not adaptive transient truncation error; use [`IntegrationOptions`](@ref) for
+that. Increasing iteration limits does not repair invalid circuit topology.
+
+```julia
+solver = SolverOptions(reltol=1e-8, voltage_abstol=1nV)
+op = operating_point(circuit; solver)
+```
+
+Pass options directly to an analysis function or store them in an analysis
+descriptor, e.g. `OperatingPoint(; solver)`. Direct `reltol`, `abstol`, and
+`maxiters` keywords override corresponding fields where supported. A scalar
+`abstol` overrides voltage/current/state absolute tolerances together; use this
+type when you need different absolute scales.
+"""
 Base.@kwdef struct SolverOptions
     reltol::Float64 = 1e-7
     voltage_abstol::Float64 = 1e-9
@@ -72,7 +94,26 @@ function _effective_solver(options::SolverOptions;reltol=nothing,abstol=nothing,
         line_search_minimum=options.line_search_minimum,linear_solver=options.linear_solver)
 end
 
-"""Local integration error tolerances, independent of Newton convergence."""
+"""
+    IntegrationOptions(; reltol=1e-4, voltage_abstol=1e-7,
+        current_abstol=1e-10, state_abstol=1e-9, max_steps=100_000, min_step=0.0)
+
+Control local error in adaptive transient integration, independently of nonlinear
+[`SolverOptions`](@ref). Absolute tolerances use V, A, or internal-state units;
+relative tolerance is dimensionless. These tolerances do not make fixed stepping
+adaptive: request `adaptive=true` when also specifying `max_step` or `saveat`.
+
+```julia
+integration = IntegrationOptions(reltol=1e-5, voltage_abstol=10nV)
+tr = transient(circuit, 0s => 1ms; adaptive=true, saveat=10μs, integration)
+```
+
+`max_steps` limits attempted steps, including rejected attempts, in either
+stepping mode. `min_step` is in seconds; zero allows the numerical minimum.
+Exhausting a limit may return a partial result; inspect `tr.stats[:converged]`
+or use `failure_policy=:throw`. Refine steps/tolerances against an independent
+estimate rather than treating Newton convergence as an accuracy guarantee.
+"""
 Base.@kwdef struct IntegrationOptions
     reltol::Float64=1e-4
     voltage_abstol::Float64=1e-7

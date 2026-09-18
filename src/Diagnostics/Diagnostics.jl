@@ -236,10 +236,17 @@ function explain_failure(result)
         return String(take!(io))
     end
     failed = get(stats, :failed_steps, Int[])
-    if result.analysis isa Transient
-        println(io, "The simulation did not converge; $(length(failed)) accepted step(s) contain unresolved nonlinear residuals.")
+    if result isa SimulationResult && result.analysis isa Transient
+        println(io, "The simulation did not converge. Returned values contain only accepted steps.")
+        isempty(result.axis)||println(io,"Saved data ends at $(last(result.axis)) s; requested stop was $(last(result.analysis.interval)) s.")
     else
         println(io, "The simulation did not converge after $(get(stats, :iterations, "an unknown number of")) nonlinear iteration(s).")
+    end
+    for warning in get(stats,:warnings,String[])
+        println(io,"- ",warning)
+    end
+    if any(w->occursin("max_steps",w),get(stats,:warnings,String[]))
+        println(io,"The integration step budget was exhausted. Shorten the interval or increase IntegrationOptions(max_steps=...) after checking timestep and error settings.")
     end
     residuals = get(stats, :failed_residuals, Any[])
     isempty(residuals) && haskey(stats, :dominant_residual) && (residuals = [stats[:dominant_residual]])

@@ -131,6 +131,7 @@ include("Analysis/MonteCarlo.jl")
 include("Analysis/Metrics.jl")
 include("Analysis/FrequencyMetrics.jl")
 include("Analysis/Spectrum.jl")
+include("Results/Display.jl")
 include("Documentation.jl")
 
 end

@@ -87,7 +87,16 @@ function _resolved_observation(value,body,names,prefix)
     Observable(value.kind,target===nothing ? nothing : Symbol(target),extra===nothing ? nothing : Symbol(extra))
 end
 
-"""Return the design's resolved observations with hierarchy-qualified targets."""
+"""
+    observations(design::CircuitDesign)
+    observations(result::SimulationResult)
+
+Return a vector of `(name, observable)` records for registered measurements.
+Names and observable targets inside subcircuits are hierarchy-qualified;
+unnamed measurements have `name=nothing`. This enumerates definitions, not
+measured values. Use `observation(result, name)` or `trace(result, observable)`
+to evaluate them.
+"""
 function observations(design::CircuitDesign)
     output=NamedTuple[]
     function append_body!(body,names,prefix)
@@ -114,7 +123,21 @@ function _named_observable(result,name)
     observations(result)[only(found)].observable
 end
 
-"""Evaluate a named design observation from a simulation result."""
+"""
+    observation(result::SimulationResult, name::Union{Symbol,String})
+
+Evaluate a measurement registered by `observe(...; name=...)` and return its
+vector. Units depend on the observable; DC results still have one element.
+Use a hierarchy-qualified name such as `"First.output"` for nested measurements.
+
+```julia
+y = observation(tr, :output)
+```
+
+Unlike `trace(result, name)`, this requires a registered observation and does not
+fall back to node lookup. Unknown names raise `CircuitLookupError` with available
+names. Use [`observations`](@ref) to discover definitions.
+"""
 function observation(result::SimulationResult,name::Union{Symbol,String})
     observable=_named_observable(result,name)
     observable===nothing&&throw(_lookup_error(:observation,name,String[string(entry.name) for entry in observations(result) if entry.name!==nothing]))
@@ -278,6 +301,7 @@ function trace(result,x)
     named===nothing ? voltage(result,x) : _observable(result,named)
 end
 _observable_name(value)=value isa AbstractNode ? value.name : value
+_observable(r,o)=throw(ArgumentError("Expected an observable such as voltage(:out) or current(:R1), received $(repr(o)). Use trace(result, :name) to read a named observation."))
 _observable(r,o::Observable)=o.kind===:voltage ?
     (o.extra===nothing ? voltage(r,_observable_name(o.target)) :
         voltage(r,_observable_name(o.target),_observable_name(o.extra))) :

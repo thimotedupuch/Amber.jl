@@ -572,10 +572,32 @@ function _parameter_store_fingerprint(batches)
     value
 end
 
-"""Return a compiled circuit with copy-on-write numerical batch updates.
+"""
+    with_parameters(compiled::CompiledCircuit, updates::Pair...) -> CompiledCircuit
+    with_parameters(compiled::CompiledCircuit, updates::AbstractVector{<:Pair})
+
+Return a new compiled circuit with numerical parameter updates, leaving the
+original unchanged. Paths are strings or symbols such as `"R1.value"`,
+`"Source.dc"`, or `"First.M1.width"`. Array selectors such as
+`"stage[1:3].R1.value"` update several matching devices at once. Values use the
+selected parameter's SI units.
+
+```julia
+compiled = compile(circuit)
+tuned = with_parameters(compiled, "R1.value" => 2kΩ, "Source.dc" => 3.3V)
+op = operating_point(tuned)
+```
 
 Untouched batches and all topology arrays are shared. Structural parameters are
-rejected because changing them requires hierarchy elaboration and a new pattern.
+rejected with `TopologyParameterError`: adding/changing package parasitics,
+connections, or component counts requires rebuilding the design. Unknown paths
+raise `KeyError`; incompatible numerical storage types raise
+`ParameterUpdateError`. Model parameters such as MOS geometry are supported
+where the model exposes them.
+
+Updating a capacitor's `value` does not rescale expanded loss/absorption elements.
+Rebuild if those should track the new capacitance. For a standalone model copy,
+see [`with_model_parameter`](@ref); for repeated analyses see [`sweep`](@ref).
 """
 function with_parameters(compiled, updates::Pair...)
     batches = collect(compiled.parameters.batches)
