@@ -371,7 +371,51 @@ function provenance(r)
         :statistics=>copy(r.stats),:warnings=>copy(get(r.stats,:warnings,String[])))
 end
 
-function report(r::SimulationResult;detailed=false)
+# Preserve dictionary access while giving explicit reports an engineering display.
+struct EngineeringReport <: AbstractDict{Symbol,Any}
+    data::Dict{Symbol,Any}
+end
+Base.length(r::EngineeringReport)=length(r.data)
+Base.iterate(r::EngineeringReport,args...)=iterate(r.data,args...)
+Base.getindex(r::EngineeringReport,key)=r.data[key]
+Base.get(r::EngineeringReport,key,default)=get(r.data,key,default)
+Base.get(f::Union{Function,Type},r::EngineeringReport,key)=get(f,r.data,key)
+Base.get!(r::EngineeringReport,key,default)=get!(r.data,key,default)
+Base.get!(f::Union{Function,Type},r::EngineeringReport,key)=get!(f,r.data,key)
+Base.haskey(r::EngineeringReport,key)=haskey(r.data,key)
+Base.keys(r::EngineeringReport)=keys(r.data)
+Base.setindex!(r::EngineeringReport,value,key)=setindex!(r.data,value,key)
+Base.delete!(r::EngineeringReport,key)=(delete!(r.data,key);r)
+Base.empty!(r::EngineeringReport)=(empty!(r.data);r)
+Base.copy(r::EngineeringReport)=EngineeringReport(copy(r.data))
+
+function _device_report_window(r,window)
+    temporal=r.analysis isa Union{Transient,TransientNoise}
+    window!==nothing&&!temporal&&throw(ArgumentError("device metric windows require a transient result"))
+    indices=eachindex(r.axis)
+    if window!==nothing
+        window isa Pair||throw(ArgumentError("window must be start => stop in seconds"))
+        lo,hi=Float64(first(window)),Float64(last(window))
+        isfinite(lo)&&isfinite(hi)&&lo<=hi||throw(ArgumentError("window bounds must be finite and ordered"))
+        first(r.axis)<=lo<=hi<=last(r.axis)||throw(ArgumentError("window must lie within the saved result interval"))
+        indices=searchsortedfirst(r.axis,lo):searchsortedlast(r.axis,hi)
+        isempty(indices)&&throw(ArgumentError("window contains no saved samples"))
+    end
+    interval=r.axis[first(indices)]=>r.axis[last(indices)]
+    indices,(scope=window===nothing ? :full_record : :selected_window,
+        requested=window,interval=interval,samples=length(indices),
+        axis_unit=temporal ? "s" : r.analysis isa SmallSignal ? "Hz" : "",
+        rms_method=temporal&&length(indices)>1 ? :time_weighted_trapezoidal : :sample_rms)
+end
+
+function _device_current_rms(r,values,indices,window)
+    window.rms_method===:sample_rms&&return sqrt(sum(abs2,values[indices])/length(indices))
+    energy=sum((abs2(values[i])+abs2(values[i+1]))/2*(r.axis[i+1]-r.axis[i])
+        for i in first(indices):last(indices)-1)
+    sqrt(energy/(last(window.interval)-first(window.interval)))
+end
+
+function report(r::SimulationResult;detailed=false,window=nothing)
     devices=Dict{String,Any}()
     if r.analysis isa OperatingPoint
         for batch in r.compiled.parameters.batches
@@ -385,7 +429,7 @@ function report(r::SimulationResult;detailed=false)
             end
         end
     end
-    validity=validity_report(r)
+    validity=validity_report(r;window)
     merge!(devices,validity[:devices])
     statistics=copy(r.stats)
     if !detailed
@@ -393,12 +437,14 @@ function report(r::SimulationResult;detailed=false)
             pop!(statistics,key,nothing)
         end
     end
-    Dict(:analysis=>string(typeof(r.analysis)),:statistics=>statistics,:devices=>devices,
+    EngineeringReport(Dict(:analysis=>string(typeof(r.analysis)),:statistics=>statistics,:devices=>devices,
         :samples=>length(r.axis),:interval=>(first(r.axis)=>last(r.axis)),
-        :warnings=>validity[:warnings])
+        :axis_unit=>validity[:device_window].axis_unit,:device_window=>validity[:device_window],
+        :warnings=>validity[:warnings],:detailed=>detailed))
 end
 
-function validity_report(r::SimulationResult)
+function validity_report(r::SimulationResult;window=nothing)
+    indices,device_window=_device_report_window(r,window)
     devices=Dict{String,Any}(); warnings=copy(get(r.stats,:warnings,String[]))
     for batch in r.compiled.parameters.batches, device in eachindex(batch.locators)
         kind=_batch_kind(batch)
@@ -407,16 +453,16 @@ function validity_report(r::SimulationResult)
         if kind===:diode
             terminal_voltage=real.(_unknown_trace(r,_batch_terminal(batch,1,device))-_unknown_trace(r,_batch_terminal(batch,2,device)))
             device_current=real.(current(r,path))
-            devices[path]=(maximum_forward_current=maximum(device_current),maximum_reverse_voltage=max(0.,-minimum(terminal_voltage)),model_validity=:satisfied)
+            devices[path]=(maximum_forward_current=maximum(device_current[indices]),maximum_reverse_voltage=max(0.,-minimum(terminal_voltage[indices])),model_validity=:satisfied)
         elseif kind===:capacitor
-            ripple=current(r,path); rms=sqrt(sum(abs2,ripple)/length(ripple))
+            ripple=current(r,path); rms=_device_current_rms(r,ripple,indices,device_window)
             devices[path]=(ripple_current_rms=rms,rated_ripple_current=:unspecified)
             push!(warnings,"$(path): rated ripple current is unspecified; thermal validity cannot be evaluated")
         elseif r.analysis isa TransientNoise&&kind in (:nmos,:pmos)
             push!(warnings,"$(path): "*_mos_noise_warning(batch.parameters[device].model))
         end
     end
-    Dict(:devices=>devices,:warnings=>warnings)
+    Dict(:devices=>devices,:warnings=>warnings,:device_window=>device_window)
 end
 function available_observables(x)
     contract=device_contract(x.kind); contract===nothing&&throw(ArgumentError("unsupported device kind $(x.kind)"))

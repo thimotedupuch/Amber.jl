@@ -54,6 +54,6 @@ end
 
 provenance(result::SweepResult)=Dict(:amber_version=>v"0.1.0",:analysis=>string(typeof(result.analysis)),
     :sweep=>copy(result.metadata),:failures=>copy(result.failures),:unit_system=>:SI)
-report(result::SweepResult)=Dict(:analysis=>string(typeof(result.analysis)),:selector=>result.selector,
+report(result::SweepResult)=EngineeringReport(Dict(:analysis=>string(typeof(result.analysis)),:selector=>result.selector,
     :points=>length(result),:successful_points=>count(result.converged),
-    :failed_points=>count(!,result.converged),:failure_rate=>failure_rate(result))
+    :failed_points=>count(!,result.converged),:failure_rate=>failure_rate(result)))

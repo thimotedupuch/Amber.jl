@@ -294,9 +294,9 @@ function provenance(result::MonteCarloResult)
 end
 
 function report(result::MonteCarloResult)
-    Dict(:analysis=>string(typeof(result.analysis)),:samples=>length(result.values),
+    EngineeringReport(Dict(:analysis=>string(typeof(result.analysis)),:samples=>length(result.values),
         :successful_samples=>count(result.converged),:failed_samples=>count(!,result.converged),
-        :failure_rate=>failure_rate(result))
+        :failure_rate=>failure_rate(result)))
 end
 
 function _encode_analysis(analysis::OperatingPoint)

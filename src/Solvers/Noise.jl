@@ -453,11 +453,15 @@ provenance(result::NoiseResult)=Dict(
     :warnings=>copy(result.stats[:warnings]),
 )
 
-report(result::NoiseResult)=Dict(
+report(result::NoiseResult)=EngineeringReport(Dict(
     :analysis=>"Noise",
     :statistics=>copy(result.stats),
     :source_count=>result.stats[:source_count],
-)
+    :samples=>length(result.frequencies),
+    :interval=>(first(result.frequencies)=>last(result.frequencies)),
+    :axis_unit=>"Hz",
+    :warnings=>validity_report(result)[:warnings],
+))
 
 function _noise_validity_warnings(compiled,initial=String[])
     warnings=copy(initial)

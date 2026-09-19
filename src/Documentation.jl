@@ -1038,21 +1038,36 @@ This is metadata, not a complete executable environment or serialized waveform.
 Keep the Julia circuit source and project/manifest files as well. See
 [`report`](@ref), [`save_circuit`](@ref), [`save_monte_carlo`](@ref).
 """ provenance
-@doc """    report(result::SimulationResult; detailed=false)
+@doc """    report(result::SimulationResult; detailed=false, window=nothing)
 
 Return a structured summary with analysis type, sampled interval, sample count,
 solver statistics, device findings, and combined solver/model-validity warnings.
 By default, omit per-iteration and per-step histories from the statistics. Use
 `detailed=true` for all statistics, or inspect `result.stats` directly.
-Other result types provide analysis-specific report dictionaries.""" report
+Reports display as readable engineering summaries, including warnings and units:
+`println(report(result))`. Key-based access remains available, e.g.
+`report(result)[:warnings]`; use `Dict(report(result))` for a plain dictionary.
+
+For transient results, `window=start => stop` selects the saved samples used
+for device metrics (inclusive bounds, in seconds). The default covers the full
+saved record, including startup. Bounds must be finite, ordered, inside the
+saved record, and contain at least one saved sample. No boundary interpolation
+is performed. `:device_window` records requested and actual bounds, sample
+count, scope, units and RMS method; `:interval` and `:samples` still describe
+the whole simulation. RMS current is the square root of a trapezoidal integral
+of squared current divided by elapsed time; a single sample uses its magnitude.
+The caller chooses the window; no settling detection is performed.
+Other result types provide analysis-specific summaries.""" report
 @doc """
-    validity_report(result) -> Dict
+    validity_report(result; window=nothing) -> Dict
 
 Return model-domain findings and warnings, distinct from numerical convergence.
 For simulation results, keys include `:devices` and `:warnings`; other analyses
 provide their own findings. For example, capacitor ripple current can be
 reported while its thermal validity remains unevaluated because no rating was
-supplied. Findings may require reconstructing device traces.
+supplied. Findings may require reconstructing device traces. Simulation results
+also include `:device_window`; transient `window` selection and RMS conventions
+match [`report`](@ref). Solver warnings always describe the whole run.
 
 ```julia
 findings = validity_report(tr)

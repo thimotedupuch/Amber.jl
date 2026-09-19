@@ -7,6 +7,9 @@ description: Model, simulate, analyze, validate, extend, and visualize analog ci
 
 Turn a circuit question into a reproducible Julia program, numerical evidence, and a concise engineering report. Treat simulation as an experiment: state assumptions, validate the topology, inspect convergence, check the answer independently, and preserve enough information to rerun it.
 
+For common tasks, use the recipes for [op-amp wiring and noise measurement](#op-amp-voltage-follower-and-noise-measurement)
+and [rectifier startup, ripple, and device warnings](#rectifier-startup-and-smoothing-capacitor-ripple).
+
 ## Follow this workflow
 
 1. Translate the request into topology, component values and models, sources, initial conditions, requested analyses, measured quantities, ranges, accuracy, and deliverables.
@@ -372,7 +375,14 @@ Use `result_table(result)` for dependency-free rows, `provenance(result)` for in
 
 For operating-point, transient, and small-signal results, `report(result)` includes
 solver and model-validity warnings; `report(result; detailed=true)` also includes
-iteration/step histories. Select and label table columns with a named tuple:
+iteration/step histories. In scripts, use `println(report(result))` so warnings
+are visible. Reports support `report(result)[:warnings]` and conversion with
+`Dict(report(result))`. For transient device metrics, the default is the full
+saved record including startup. Use `report(tr; window=start => stop)` for a
+selected time window; the report labels requested and actual saved bounds.
+Window bounds must lie within the saved record. There is no boundary
+interpolation; current RMS is time weighted over the selected saved samples.
+Select and label table columns with a named tuple:
 
 ```julia
 rows = result_table(tr; signals=(output_V=voltage(:out), source_A=current(:Source)))
@@ -603,6 +613,49 @@ println((bridge_output_V=vbridge, strains=strains,
     bridge_outputs_V=study.metrics, failures=failure_rate(study)))
 ```
 
+### Op-amp voltage follower and noise measurement
+
+The five `opamp` terminals are **positive input, negative input, output,
+positive supply, negative supply**. A follower connects its negative input to
+its output. Supply pins are nodes driven by voltage sources; model parameters
+belong inside `BehavioralOpAmp`.
+
+```julia
+using Amber
+
+@circuit NoisyFollower() begin
+    gnd = ground(); input = node(); output = node(); vdd = node(); vss = node()
+    VDD = voltage_source(vdd, gnd; dc=5V)
+    VSS = voltage_source(vss, gnd; dc=-5V)
+    Source = voltage_source(input, gnd; dc=1V, ac=1V)
+    Buffer = opamp(input, output, output, vdd, vss;
+        model=BehavioralOpAmp(dc_gain=1e5, gain_bandwidth=1MHz,
+            input_voltage_noise_density=5e-9)) # V/√Hz
+    Load = resistor(output, gnd; value=10kΩ)
+end
+
+follower = NoisyFollower()
+op = operating_point(follower)
+@assert op.stats[:converged]
+println((output_V=only(voltage(op, :output)),))
+println(report(op))
+nr = noise(follower, 10Hz => 100kHz;
+    output=voltage(:output), input=:Source, points=201)
+println(report(nr))
+density = noise_density(nr)                          # output V/√Hz at frequencies(nr)
+input_density = input_referred_noise_density(nr)     # input V/√Hz
+band = 20Hz => 20kHz
+println((band_Hz=band, output_noise_Vrms=integrated_noise(nr, band),
+    input_noise_Vrms=integrated_noise(nr, band; referred=:input)))
+```
+
+`output` takes an observable such as `voltage(:output)`; `input` names the
+independent source used for input referral. `noise_psd(nr)` returns V²/Hz for
+this voltage output; `noise_density(nr)` returns its square root, and
+`integrated_noise` integrates the PSD over the named band before taking the
+square root. The behavioral model is illustrative; choose noise parameters
+appropriate to the device being modeled.
+
 ### Rectifier: startup and smoothing-capacitor ripple
 
 This half-wave rectifier converts a 10 V peak, 50 Hz sine into a DC output.
@@ -629,14 +682,23 @@ rectifier = SmoothingRectifier()
 tr = transient(rectifier, 0s => 300ms; initial=:discharged,
     max_step=50μs, saveat=50μs, reltol=1e-6)
 @assert tr.stats[:converged]
-settled = (tr.axis .>= 260ms) .& (tr.axis .< 300ms)
+settled_window = 260ms => 300ms
+println(report(tr)) # full record, including startup stresses and validity warnings
+println(report(tr; window=settled_window)) # device metrics over the late window
+settled = (tr.axis .>= first(settled_window)) .& (tr.axis .<= last(settled_window))
 vdc = mean(voltage(tr, :output)[settled])
-ripple = peak_to_peak(voltage(:output); window=260ms => 300ms)(tr)
+ripple = peak_to_peak(voltage(:output); window=settled_window)(tr)
 ripple_estimate = (vdc / 1kΩ) / (50Hz * 470μF)
 @assert 0V < vdc < 10V
-println((dc_output_V=vdc, ripple_Vpp=ripple,
+println((window_s=settled_window, dc_output_V=vdc, ripple_Vpp=ripple,
     estimated_ripple_Vpp=ripple_estimate))
 ```
+
+The reports explicitly warn that the capacitor ripple-current rating is
+unspecified: solver convergence does not establish its thermal validity. The
+full-record device metrics include startup; the selected-window report and
+ripple measurement use the same late window. This window is caller-selected,
+not an automatic steady-state detection.
 
 The estimate ignores diode conduction time and ESR, so it is a sanity check,
 not an exact equality. Reduce `max_step` and compare successive late cycles

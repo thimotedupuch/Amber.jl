@@ -1,6 +1,69 @@
 # Text/plain is shared by the Julia REPL and notebook display systems. Keep
 # display bounded and read-only: never solve, reconstruct traces, or compute
 # model-validity metrics just to show a result.
+# Reports have already computed their findings; displaying one only formats data.
+_report_label(key)=uppercasefirst(replace(string(key),'_'=>' '))
+function _show_report_fields(io,fields,indent="  ")
+    for key in sort!(collect(keys(fields));by=string)
+        value=fields[key]
+        print(io,'\n',indent,_report_label(key),": ")
+        if value isa Union{AbstractDict,NamedTuple}
+            _show_report_fields(io,value,indent*"  ")
+        else
+            if value isa Symbol
+                print(io,replace(string(value),'_'=>' '))
+            elseif value isa AbstractFloat
+                print(io,round(value;sigdigits=6))
+            else
+                show(IOContext(io,:limit=>true),value)
+            end
+            unit=key in (:maximum_forward_current,:ripple_current_rms,:collector_current,:base_current) ? " A" :
+                key in (:maximum_reverse_voltage,:vbe,:vce) ? " V" : ""
+            print(io,unit)
+        end
+    end
+end
+
+function Base.show(io::IO,r::EngineeringReport)
+    print(io,r[:analysis]," report")
+    stats=get(r,:statistics,nothing)
+    if stats!==nothing&&haskey(stats,:converged)
+        print(io," — ",get(stats,:partial,false) ? "PARTIAL" : stats[:converged] ? "solver converged" : "solver did not converge")
+    end
+    for warning in get(r,:warnings,String[])
+        print(io,"\n  Warning: ",warning)
+    end
+    if haskey(r,:interval)&&!isempty(get(r,:axis_unit,""))
+        print(io,"\n  Saved range: ",first(r[:interval])," → ",last(r[:interval])," ",get(r,:axis_unit,""),
+            " (",r[:samples]," samples)")
+    end
+    if haskey(r,:device_window)&&!isempty(r[:devices])
+        w=r[:device_window]
+        label=w.scope===:full_record ? "full saved record" : "selected saved samples"
+        print(io,"\n  Device metrics: ",label,"; ",first(w.interval)," → ",last(w.interval)," ",w.axis_unit,
+            " (",w.samples," samples)")
+        w.axis_unit=="s"&&w.scope===:full_record&&print(io,"; includes startup if present")
+        if w.requested!==nothing
+            print(io,"\n  Requested window: ",first(w.requested)," → ",last(w.requested)," ",w.axis_unit)
+        end
+        print(io,"\n  Current RMS: ",w.rms_method===:time_weighted_trapezoidal ? "time weighted (trapezoidal integral of squared current)" : "sample RMS")
+    end
+    for path in sort!(collect(keys(get(r,:devices,Dict()))))
+        print(io,"\n  ",path)
+        _show_report_fields(io,r[:devices][path],"    ")
+    end
+    hidden=(:analysis,:statistics,:devices,:warnings,:interval,:axis_unit,:device_window,:detailed)
+    _show_report_fields(io,Dict(k=>v for (k,v) in r if !(k in hidden)&&!(k===:samples&&haskey(r,:interval))))
+    if get(r,:detailed,false)&&stats!==nothing
+        print(io,"\n  Solver statistics:")
+        _show_report_fields(io,stats,"    ")
+    elseif stats!==nothing
+        summary_keys=(:iterations,:steps,:rejected_steps,:method,:failure_reason)
+        _show_report_fields(io,Dict(k=>stats[k] for k in summary_keys if haskey(stats,k)))
+    end
+end
+Base.show(io::IO,::MIME"text/plain",r::EngineeringReport)=show(io,r)
+
 const _InteractiveResult = Union{SimulationResult,NoiseResult}
 _result_axis(r::SimulationResult)=r.axis
 _result_axis(r::NoiseResult)=r.frequencies

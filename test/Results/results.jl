@@ -62,3 +62,64 @@ end
     @test current(result,:R1)==before
     @test provenance(result)[:parameters]["R1"][:value]!=provenance(operating_point(updated))[:parameters]["R1"][:value]
 end
+
+@testset "engineering reports and device windows" begin
+    # A manufactured trace with a known BDF1 current on an irregular grid.
+    # Full-trace reconstruction is essential: slicing first loses the 1 A
+    # current at the start of the selected window.
+    cc=compile(LowPass(C=1.))
+    values=zeros(size(operating_point(cc).values,1),3)
+    values[Amber._hierarchical_net_index(cc,"vout"),:]=[0.,1.,7.]
+    stats=Dict{Symbol,Any}(:bdf_orders=>[1,1,1],:converged=>true,
+        :warnings=>["whole-run warning"])
+    tr=SimulationResult(cc,Transient(0.0 =>3.),[0.,1.,3.],values,stats)
+    @test current(tr,:C1)≈[1.,1.,3.]
+    full=report(tr)
+    selected=report(tr;window=1.0 =>3.)
+    @test full[:devices]["C1"].ripple_current_rms≈sqrt(11/3)
+    @test selected[:devices]["C1"].ripple_current_rms≈sqrt(5)
+    @test selected[:device_window].interval==(1.0 =>3.)
+    @test selected[:device_window].samples==2
+    @test selected[:device_window].scope===:selected_window
+    @test selected[:warnings]==full[:warnings]
+    @test selected[:samples]==3
+    @test selected[:interval]==(0.0 =>3.)
+    single=report(tr;window=.5=>2.)
+    @test single[:device_window].requested==(.5=>2.)
+    @test single[:device_window].interval==(1.0 =>1.)
+    @test single[:devices]["C1"].ripple_current_rms≈1.
+    @test report(tr;window=1.0 =>1.)[:devices]["C1"].ripple_current_rms≈1.
+    for window in (-1.0 =>2.,0.0 =>4.,2.0 =>1.,NaN=>2.,0.0 =>Inf,.1=>.2)
+        @test_throws ArgumentError report(tr;window)
+    end
+    @test_throws ArgumentError report(tr;window=(0.,1.))
+    @test_throws ArgumentError report(operating_point(LowPass());window=0.0 =>1.)
+    @test Dict(full)[:devices]==full[:devices]
+    @test get(full,:warnings,nothing)==full[:warnings]
+    @test copy(full)==full
+    rendered=sprint(println,full)
+    @test occursin("rated ripple current is unspecified",rendered)
+    @test occursin("whole-run warning",rendered)
+    @test occursin("includes startup",rendered)
+    @test occursin(" A",rendered)
+    @test !occursin("Dict{",rendered)
+    @test occursin("Requested window: 1.0 → 3.0 s",sprint(println,selected))
+    @test sprint(show,MIME"text/plain"(),selected)*"\n"==sprint(println,selected)
+    @test stats==Dict{Symbol,Any}(:bdf_orders=>[1,1,1],:converged=>true,
+        :warnings=>["whole-run warning"])
+
+    rect=transient(HalfWaveRectifier(),0s=>2ms;max_step=100μs,saveat=100μs)
+    bounds=rect.axis[5]=>rect.axis[10]
+    findings=validity_report(rect;window=bounds)
+    @test findings[:devices]["D1"].maximum_forward_current≈maximum(current(rect,:D1)[5:10])
+    @test findings[:devices]["D1"].maximum_reverse_voltage≈
+        max(0.,-minimum((voltage(rect,:vin)-voltage(rect,:vout))[5:10]))
+
+    nr=noise(LowPass(),10Hz=>1kHz;output=voltage(:vout),points=3)
+    nr.stats[:warnings]=["noise warning"]
+    summary=report(nr)
+    @test summary[:warnings]==validity_report(nr)[:warnings]
+    @test summary[:interval]==(10.0 =>1000.)
+    @test occursin("noise warning",sprint(println,summary))
+    @test occursin("Hz",sprint(println,summary))
+end
