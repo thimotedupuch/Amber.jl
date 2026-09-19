@@ -34,9 +34,26 @@ function small_signal(c,p::Union{Pair,AbstractVector};points=p isa AbstractVecto
         push!(warnings,"the circuit has no nonzero AC excitation")
     end
     vals=zeros(ComplexF64,cc.n,length(fs)); Jz,Jd=_static_dynamic_jacobians(cc,op;mode=:dc,temperature); b=ac_excitation(cc;source)
-    for (j,f) in enumerate(fs); vals[:,j]=_solve_linear(Jz+im*2π*f*Jd,b,"small-signal matrix is singular at $(f) Hz") end
+    # Both derivatives use the compiler's union pattern, including stored
+    # zeros. Frequency changes values only, so symbolic analysis is reusable.
+    system=SparseMatrixCSC{ComplexF64,Int}(cc.n,cc.n,copy(Jz.colptr),copy(Jz.rowval),
+        zeros(ComplexF64,length(Jz.nzval)))
+    factorization=nothing
+    for (j,f) in enumerate(fs)
+        @. system.nzval=Jz.nzval+im*2π*f*Jd.nzval
+        try
+            factorization=factorization===nothing ? _new_factorization(system,solver.linear_solver) :
+                lu!(factorization,system;reuse_symbolic=true)
+            ldiv!(view(vals,:,j),factorization,b)
+        catch error
+            error isa LinearAlgebra.SingularException || rethrow()
+            throw(LinearSolveError("small-signal matrix is singular at $(f) Hz"))
+        end
+    end
     analysis=SmallSignal(fs;source,temperature=Float64(temperature),solver=operating_point_result.analysis.solver)
     stats=_finalize_stats!(Dict{Symbol,Any}(:converged=>true,:temperature=>Float64(temperature),:warnings=>warnings,:source=>source,:active_sources=>active,:operating_point=>copy(op)))
+    stats[:symbolic_factorizations]=isempty(fs) ? 0 : 1
+    stats[:numeric_factorizations]=length(fs)
     SimulationResult(cc,analysis,Float64.(fs),vals,stats)
 end
 

@@ -80,7 +80,7 @@ function _newton(cc,z0,previous,t,α;reltol=1e-7,abstol=1e-10,maxiters=60,
         _storage(cc,previous;temperature,workspace) : storage_history
     z=copy(z0); factorization=workspace.factorization
     linear_hierarchy=_all_linear(cc.parameters.batches)
-    factorization_key=linear_hierarchy ? (cc.parameters.fingerprint,Float64(α),mode,Float64(gmin),
+    factorization_key=linear_hierarchy ? (cc.topology,cc.parameters.matrix_fingerprint,Float64(α),mode,Float64(gmin),
         linear_solver) : nothing
     for it in 1:maxiters
         r,J=_step_residual_jacobian!(workspace,cc,z,qhistory,t,α;mode,source_scale,gmin,temperature)
@@ -152,7 +152,7 @@ function _newton(cc,z0,previous,t,α;reltol=1e-7,abstol=1e-10,maxiters=60,
             @inbounds @simd for index in eachindex(candidate)
                 candidate[index]=z[index]+damping*Δ[index]
             end
-            candidate_residual,_=_step_residual_jacobian!(workspace,cc,candidate,qhistory,t,α;mode,source_scale,gmin,temperature)
+            candidate_residual=_step_residual!(workspace,cc,candidate,qhistory,t,α;mode,source_scale,gmin,temperature)
             forcing===nothing||(candidate_residual.-=forcing)
             norm(candidate_residual)<=nr&&break
             damping/=2

@@ -122,8 +122,8 @@ function _compiled_device_records(compiled)
     records
 end
 
-function _automatic_tolerance_draws!(draws,compiled,rng,explicit_paths)
-    for component in _compiled_device_records(compiled)
+function _automatic_tolerance_draws!(draws,compiled,rng,explicit_paths,records=_compiled_device_records(compiled))
+    for component in records
         hasproperty(component.parameters,:tolerance)||continue
         path=Symbol(component.path,".value"); path in explicit_paths&&continue
         nominal=get(component.parameters,:value,nothing); tolerance=component.parameters.tolerance
@@ -133,10 +133,10 @@ function _automatic_tolerance_draws!(draws,compiled,rng,explicit_paths)
     end
 end
 
-function _matched_group_draws!(draws,compiled,rng,explicit_paths)
+function _matched_group_draws!(draws,compiled,rng,explicit_paths,records=_compiled_device_records(compiled))
     groups=Dict{Symbol,Vector{Any}}()
     definitions=Dict{Symbol,MatchedGroup}()
-    for component in _compiled_device_records(compiled)
+    for component in records
         match=get(component.parameters,:match,nothing)
         match isa MatchedGroup||continue
         component.kind===:npn||throw(ArgumentError("matched groups are currently supported only for NPN devices"))
@@ -163,6 +163,29 @@ function _matched_group_draws!(draws,compiled,rng,explicit_paths)
 end
 
 _apply_monte_carlo_draws(compiled,draws)=with_parameters(compiled,collect(pairs(draws))...)
+_apply_monte_carlo_draws(compiled,draws,handles)=
+    with_parameters(compiled,(get(handles,path,path)=>value for (path,value) in draws)...)
+
+function _monte_carlo_handles(compiled,paths,records)
+    selectors=Set(paths)
+    for component in records
+        hasproperty(component.parameters,:tolerance) && push!(selectors,Symbol(component.path,".value"))
+        if get(component.parameters,:match,nothing) isa MatchedGroup && component.kind===:npn
+            push!(selectors,Symbol(component.path,".saturation_current"))
+            push!(selectors,Symbol(component.path,".forward_beta"))
+        end
+    end
+    handles=Dict{Symbol,ParameterHandle}()
+    for path in selectors
+        try
+            handles[path]=parameter_handle(compiled,path)
+        catch error
+            # Preserve the per-sample reporting of invalid structural updates.
+            error isa TopologyParameterError || error isa KeyError || rethrow()
+        end
+    end
+    handles
+end
 
 function _validate_variation_paths(compiled,paths)
     for path in paths
@@ -207,6 +230,8 @@ function monte_carlo(circuit;analysis=OperatingPoint(),samples::Integer=1000,see
     base=compile(circuit); normalized=combined
     _validate_variation_paths(base,all_paths)
     explicit_paths=Set(all_paths); metric_function=_monte_carlo_metric(metric,metrics)
+    records=_compiled_device_records(base)
+    handles=_monte_carlo_handles(base,all_paths,records)
     master=Random.Xoshiro(seed); seeds=rand(master,UInt64,samples)
     values=Any[nothing for _ in 1:samples]; parameters=[Dict{Symbol,Float64}() for _ in 1:samples]
     # Threads own distinct bytes; packed BitVector writes share storage words.
@@ -220,9 +245,9 @@ function monte_carlo(circuit;analysis=OperatingPoint(),samples::Integer=1000,see
                 group_draw=group.means+group.factor*randn(rng,length(group.paths))
                 for (path,value) in zip(group.paths,group_draw); draws[path]=value end
             end
-            _automatic_tolerance_draws!(draws,base,rng,explicit_paths)
-            _matched_group_draws!(draws,base,rng,explicit_paths)
-            trial=_apply_monte_carlo_draws(base,draws)
+            _automatic_tolerance_draws!(draws,base,rng,explicit_paths,records)
+            _matched_group_draws!(draws,base,rng,explicit_paths,records)
+            trial=_apply_monte_carlo_draws(base,draws,handles)
             simulation=_require_converged(simulate(trial,analysis),"Monte Carlo sample $(sample)")
             value=metric_function(simulation)
             on_sample===nothing||on_sample(sample,value,copy(draws))

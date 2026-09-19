@@ -84,6 +84,19 @@ _batch_kind(::PrimitiveBatch{Val{K}}) where {K} = K
 struct ParameterStore{B<:Tuple}
     batches::B
     fingerprint::UInt128
+    matrix_fingerprint::UInt128
+    batch_fingerprints::Vector{UInt128}
+    matrix_batch_fingerprints::Vector{UInt128}
+end
+function ParameterStore(batches::Tuple,fingerprint::UInt128)
+    hashes=UInt128[_parameter_store_fingerprint((batch,)) for batch in batches]
+    matrix_hashes=UInt128[_matrix_parameter_fingerprint((batch,)) for batch in batches]
+    ParameterStore(batches,fingerprint,_combine_parameter_fingerprints(matrix_hashes),hashes,matrix_hashes)
+end
+function _combine_parameter_fingerprints(hashes)
+    digest=sha256(join(string.(hashes),':')); value=zero(UInt128)
+    for byte in digest[1:16]; value=(value<<8)|UInt128(byte) end
+    value
 end
 
 struct HierarchicalCompiledTopology
@@ -200,67 +213,7 @@ function _foreach_hierarchical_primitive(f::F, design::CircuitDesign, root_mappi
     nothing
 end
 
-function _stamp_shape(kind::Symbol, contract::DeviceContract)
-    if kind in (:resistor, :conductance, :capacitor, :diode)
-        return 4
-    elseif kind in (:voltage_source, :inductor)
-        return 5
-    elseif kind === :vccs
-        return 4
-    elseif kind === :current_source
-        return 0
-    elseif kind === :vcvs
-        return 6
-    elseif kind === :cccs
-        return 2
-    elseif kind === :ccvs
-        return 5
-    elseif kind in (:npn, :nmos, :pmos)
-        return contract.terminals^2
-    elseif kind === :switch
-        return 8
-    elseif kind === :opamp
-        return 9
-    elseif kind === :behavioral_current_source
-        return 16
-    elseif kind === :behavioral_voltage_source
-        return 12
-    end
-    throw(ArgumentError("unsupported device kind $(kind)"))
-end
-
-function _emit_stamp_positions!(emit, kind::Symbol, q, branch::Int32, states, control::Int32)
-    if kind in (:resistor, :conductance, :capacitor, :diode)
-        for row in q[1:2], column in q[1:2]; emit(row, column) end
-    elseif kind in (:voltage_source, :inductor)
-        for node in q[1:2]; emit(node, branch); emit(branch, node) end
-        emit(branch, branch)
-    elseif kind === :vccs
-        for row in q[3:4], column in q[1:2]; emit(row, column) end
-    elseif kind === :vcvs
-        for node in q[3:4]; emit(node, branch); emit(branch, node) end
-        for column in q[1:2]; emit(branch, column) end
-    elseif kind === :cccs
-        emit(q[1], control); emit(q[2], control)
-    elseif kind === :ccvs
-        for node in q[1:2]; emit(node, branch); emit(branch, node) end
-        emit(branch, control)
-    elseif kind in (:npn, :nmos, :pmos)
-        for row in q, column in q; emit(row, column) end
-    elseif kind === :switch
-        for row in q[1:2], column in q; emit(row, column) end
-    elseif kind === :opamp
-        state = first(states)
-        emit(q[3], branch); emit(branch, q[3]); emit(branch, branch); emit(branch, state)
-        emit(branch, q[4]); emit(branch, q[5]); emit(state, state); emit(state, q[1]); emit(state, q[2])
-    elseif kind === :behavioral_current_source
-        for row in q[1:2], column in q[3:10]; emit(row, column) end
-    elseif kind === :behavioral_voltage_source
-        emit(q[1], branch); emit(q[2], branch)
-        emit(branch, q[1]); emit(branch, q[2])
-        for column in q[3:10]; emit(branch, column) end
-    end
-end
+_stamp_shape(kind::Symbol,::DeviceContract) = length(_DEVICE_STAMP_PLANS[kind].positions)
 
 function _batch_key(kind::Symbol, parameters)
     (kind, typeof(parameters))
@@ -477,27 +430,27 @@ function _matches_selector(instance_path, device_name, selector_instance, select
     matched.captures[1] == selector_instance && parse(Int, matched.captures[2]) in selector_range
 end
 
-function _updated_batch(batch::ResistorBatch, design, selector, value)
-    selector_instance, selector_range, selector_device, parameter = selector
-    parameter in _STRUCTURAL_PARAMETER_NAMES && throw(TopologyParameterError(join(filter(!isempty, (selector_instance, selector_device)), '.'), parameter))
-    conductance = batch.conductance; parameters = batch.parameters; copied = false; matches = Int[]
-    for (index, locator) in enumerate(batch.locators)
-        instance_path, device_name = _locator_device_name(design, locator)
-        _matches_selector(instance_path, device_name, selector_instance, selector_range, selector_device) || continue
-        parameter === :value || throw(ArgumentError("resistor batches expose the numerical parameter `value`"))
-        P = eltype(parameters)
+function _parameter_device_path(design,locator)
+    instance_path,device_name=_locator_device_name(design,locator)
+    isempty(instance_path) ? device_name : string(instance_path,'.',device_name)
+end
+
+function _updated_batch(batch::ResistorBatch,design,parameter,indices,value;owned=false)
+    parameter === :value || throw(ArgumentError("resistor batches expose the numerical parameter `value`"))
+    conductance=owned ? batch.conductance : copy(batch.conductance)
+    parameters=owned ? batch.parameters : copy(batch.parameters)
+    for index in indices
+        P=eltype(parameters)
         converted_conductance,updated_parameters=try
             inv(convert(eltype(conductance),value)),convert(P,merge(parameters[index],(value=value,)))
         catch error
-            error isa InterruptException&&rethrow()
-            path=isempty(instance_path) ? device_name : string(instance_path,'.',device_name)
-            throw(ParameterUpdateError(path,parameter,eltype(conductance),typeof(value)))
+            error isa InterruptException && rethrow()
+            throw(ParameterUpdateError(_parameter_device_path(design,batch.locators[index]),
+                parameter,eltype(conductance),typeof(value)))
         end
-        copied || (conductance = copy(conductance); parameters = copy(parameters); copied = true)
         conductance[index]=converted_conductance; parameters[index]=updated_parameters
-        push!(matches,index)
     end
-    copied ? ResistorBatch(batch.p, batch.n, conductance, parameters, batch.residual_slots, batch.jacobian_slots, batch.locators) : batch, matches
+    ResistorBatch(batch.p,batch.n,conductance,parameters,batch.residual_slots,batch.jacobian_slots,batch.locators)
 end
 
 
@@ -524,52 +477,136 @@ function _check_model_update(kind,old,new,path)
     end
 end
 
-function _updated_batch(batch::PrimitiveBatch{K,N,P}, design, selector, value) where {K,N,P}
-    selector_instance, selector_range, selector_device, parameter = selector
-    parameter in _STRUCTURAL_PARAMETER_NAMES && throw(TopologyParameterError(join(filter(!isempty, (selector_instance, selector_device)), '.'), parameter))
-    values = batch.parameters; copied = false; matches = Int[]
-    for (index, locator) in enumerate(batch.locators)
-        instance_path, device_name = _locator_device_name(design, locator)
-        _matches_selector(instance_path, device_name, selector_instance, selector_range, selector_device) || continue
+function _updated_batch(batch::PrimitiveBatch{K,N,P},design,parameter,indices,value;owned=false) where {K,N,P}
+    values=owned ? batch.parameters : copy(batch.parameters)
+    for index in indices
         direct=hasproperty(values[index],parameter)
         model=hasproperty(values[index],:model) ? values[index].model : nothing
         model_values=model===nothing ? nothing : model_parameters(model)
-        modeled=model_values!==nothing&&hasproperty(model_values,parameter)
-        (direct||modeled)||throw(ArgumentError("device $(device_name) has no numerical parameter $(parameter)"))
-        path=isempty(instance_path) ? device_name : string(instance_path,'.',device_name)
+        modeled=model_values!==nothing && hasproperty(model_values,parameter)
+        path()=_parameter_device_path(design,batch.locators[index])
+        (direct||modeled) || throw(ArgumentError("device $(path()) has no numerical parameter $(parameter)"))
         K===Val{:capacitor} && parameter===:value && _capacitance_has_derived_elements(values[index]) &&
-            throw(TopologyParameterError(path,parameter))
-        parameter in _elaborated_model_parameters(K)&&throw(TopologyParameterError(path,parameter))
-        parameter in (:control,:control_count)&&throw(TopologyParameterError(path,parameter))
-        copied || (values = copy(values); copied = true)
+            throw(TopologyParameterError(path(),parameter))
+        parameter in _elaborated_model_parameters(K) && throw(TopologyParameterError(path(),parameter))
+        parameter in (:control,:control_count) && throw(TopologyParameterError(path(),parameter))
         updated=direct ? merge(values[index],NamedTuple{(parameter,)}((value,))) :
             merge(values[index],(model=with_model_parameter(model,parameter,value),))
-        model===nothing||_check_model_update(K,model,updated.model,path)
+        model===nothing || _check_model_update(K,model,updated.model,path())
         try
             values[index]=convert(P,updated)
         catch error
-            error isa InterruptException&&rethrow()
-            path=isempty(instance_path) ? device_name : string(instance_path,'.',device_name)
-            throw(ParameterUpdateError(path,parameter,P,typeof(value)))
+            error isa InterruptException && rethrow()
+            throw(ParameterUpdateError(path(),parameter,P,typeof(value)))
         end
-        push!(matches, index)
     end
-    copied ? PrimitiveBatch{K,N,P}(batch.terminals, values, batch.residual_slots, batch.jacobian_slots,
-        batch.branch_unknowns, batch.control_unknowns, batch.state_unknowns, batch.locators) : batch, matches
+    PrimitiveBatch{K,N,P}(batch.terminals,values,batch.residual_slots,batch.jacobian_slots,
+        batch.branch_unknowns,batch.control_unknowns,batch.state_unknowns,batch.locators)
+end
+
+# Tagged, length-delimited parameter data avoids formatting large arrays of
+# model structs. The common numerical cases have a canonical byte order.
+_fingerprint_value!(io,::Nothing)=write(io,UInt8('N'))
+_fingerprint_value!(io,value::Float64)=(write(io,UInt8('D')); write(io,htol(reinterpret(UInt64,value))))
+_fingerprint_value!(io,value::Float32)=(write(io,UInt8('F')); write(io,htol(reinterpret(UInt32,value))))
+function _fingerprint_value!(io,value::Complex)
+    write(io,UInt8('C')); _fingerprint_value!(io,real(value)); _fingerprint_value!(io,imag(value))
+end
+function _fingerprint_value!(io,value::Union{AbstractString,Symbol})
+    text=String(value); write(io,value isa Symbol ? UInt8('S') : UInt8('T'))
+    write(io,htol(UInt64(ncodeunits(text)))); write(io,text)
+end
+function _fingerprint_value!(io,value::NamedTuple)
+    write(io,UInt8('K')); _fingerprint_value!(io,keys(value))
+    for item in values(value); _fingerprint_value!(io,item) end
+end
+function _fingerprint_value!(io,value::Union{Tuple,AbstractArray})
+    write(io,value isa Tuple ? UInt8('U') : UInt8('A'))
+    value isa AbstractArray && _fingerprint_value!(io,size(value))
+    write(io,htol(UInt64(length(value))))
+    for item in value; _fingerprint_value!(io,item) end
+end
+function _fingerprint_value!(io,value::Union{AbstractDeviceModel,AbstractWaveform})
+    write(io,UInt8('M'))
+    # Built-in model type parameters repeat the complete parameter NamedTuple
+    # schema, which is encoded below. Printing that type for every instance is
+    # substantially more expensive than hashing its numerical data.
+    T=typeof(value)
+    _fingerprint_value!(io,parentmodule(T) === (@__MODULE__) ? nameof(T) : string(T))
+    for name in fieldnames(typeof(value)); _fingerprint_value!(io,getfield(value,name)) end
+end
+function _fingerprint_value!(io,value)
+    write(io,UInt8('R')); _fingerprint_value!(io,string(typeof(value)))
+    _fingerprint_value!(io,repr(value))
+end
+function _parameter_digest(io)
+    digest=sha256(take!(io)); value=zero(UInt128)
+    for byte in digest[1:16]; value=(value<<8)|UInt128(byte) end
+    value
 end
 
 function _parameter_store_fingerprint(batches)
-    io = IOBuffer()
+    io=IOBuffer()
     for batch in batches
-        if batch isa ResistorBatch
-            print(io, :resistor, ':', repr(batch.conductance), ';')
-        else
-            print(io, _batch_kind(batch), ':', repr(batch.parameters), ';')
-        end
+        _fingerprint_value!(io,_batch_kind(batch))
+        _fingerprint_value!(io,batch isa ResistorBatch ? batch.conductance : batch.parameters)
     end
-    digest = sha256(take!(io)); value = zero(UInt128)
-    for byte in digest[1:16]; value = (value << 8) | UInt128(byte) end
+    _parameter_digest(io)
+end
+
+# Independent source values affect forcing, not either matrix. Keep their
+# series resistance, which does enter the voltage constraint.
+function _matrix_parameter_fingerprint(batches)
+    io=IOBuffer()
+    for batch in batches
+        kind=_batch_kind(batch)
+        print(io,kind,':')
+        if !device_contract(kind).dependencies.linear
+            # Nonlinear contributions are evaluated from current parameters on
+            # every call and never enter the constant-matrix cache.
+        elseif kind === :voltage_source
+            for parameter in batch.parameters
+                _fingerprint_value!(io,get(parameter,:series_resistance,0.))
+            end
+        elseif kind !== :current_source
+            _fingerprint_value!(io,batch.parameters)
+        end
+        print(io,';')
+    end
+    digest=sha256(take!(io)); value=zero(UInt128)
+    for byte in digest[1:16]; value=(value<<8)|UInt128(byte) end
     value
+end
+
+"""A resolved parameter selector, reusable with circuits sharing its topology."""
+struct ParameterHandle{S}
+    topology::HierarchicalCompiledTopology
+    selector::S
+    locations::Vector{Pair{Int,Vector{Int}}}
+end
+
+"""
+    parameter_handle(compiled, selector) -> ParameterHandle
+
+Resolve a selector such as `"stage[1:3].R1.value"` once for repeated updates.
+Use `with_parameters(compiled, handle => value)`. A handle is bound to this
+compiled topology and also accepts descendants produced by `with_parameters`.
+Parameter values are validated when applied; another compiled topology is rejected.
+"""
+function parameter_handle(compiled,selector_text)
+    selector=_parse_parameter_selector(String(selector_text))
+    selector[4] in _STRUCTURAL_PARAMETER_NAMES && throw(TopologyParameterError(String(selector_text),selector[4]))
+    locations=Pair{Int,Vector{Int}}[]
+    for (index,batch) in enumerate(compiled.parameters.batches)
+        indices=Int[]
+        for (device,locator) in enumerate(batch.locators)
+            instance_path,device_name=_locator_device_name(compiled.design,locator)
+            _matches_selector(instance_path,device_name,selector[1],selector[2],selector[3]) && push!(indices,device)
+        end
+        isempty(indices) || push!(locations,index=>indices)
+    end
+    isempty(locations) && throw(KeyError(selector_text))
+    ParameterHandle(compiled.topology,selector,locations)
 end
 
 """
@@ -600,19 +637,30 @@ Rebuild if those should track the new capacitance. For a standalone model copy,
 see [`with_model_parameter`](@ref); for repeated analyses see [`sweep`](@ref).
 """
 function with_parameters(compiled, updates::Pair...)
+    isempty(updates) && return compiled
     batches = collect(compiled.parameters.batches)
-    for (selector_text, value) in updates
-        selector = _parse_parameter_selector(String(selector_text))
-        selector[4] in _STRUCTURAL_PARAMETER_NAMES && throw(TopologyParameterError(String(selector_text), selector[4]))
-        matched = false
-        for index in eachindex(batches)
-            updated, matches = _updated_batch(batches[index], compiled.design, selector, value)
-            batches[index] = updated; matched |= !isempty(matches)
+    touched=falses(length(batches)); matrix_changed=falses(length(batches))
+    for (selector_text,value) in updates
+        handle=selector_text isa ParameterHandle ? selector_text : parameter_handle(compiled,selector_text)
+        handle.topology === compiled.topology || throw(ArgumentError("parameter handle belongs to a different compiled topology"))
+        for (index,indices) in handle.locations
+            updated=_updated_batch(batches[index],compiled.design,handle.selector[4],indices,value;
+                owned=touched[index])
+            batches[index]=updated; touched[index]=true
+            kind=_batch_kind(updated)
+            matrix_changed[index] |= !(kind in (:voltage_source,:current_source) &&
+                handle.selector[4] in (:dc,:ac,:waveform))
         end
-        matched || throw(KeyError(selector_text))
     end
     new_batches = Tuple(batches)
-    store = ParameterStore(new_batches, _parameter_store_fingerprint(new_batches))
+    hashes=copy(compiled.parameters.batch_fingerprints)
+    matrix_hashes=copy(compiled.parameters.matrix_batch_fingerprints)
+    for index in eachindex(batches)
+        touched[index] && (hashes[index]=_parameter_store_fingerprint((batches[index],)))
+        matrix_changed[index] && (matrix_hashes[index]=_matrix_parameter_fingerprint((batches[index],)))
+    end
+    store = ParameterStore(new_batches,_combine_parameter_fingerprints(hashes),
+        _combine_parameter_fingerprints(matrix_hashes),hashes,matrix_hashes)
     fingerprint = bytes2hex(sha1(string(compiled.design.structural_fingerprint, ':', store.fingerprint)))
     CompiledCircuit(compiled.design, compiled.topology, store, fingerprint)
 end

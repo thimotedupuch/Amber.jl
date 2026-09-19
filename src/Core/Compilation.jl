@@ -55,6 +55,7 @@ function _limited_exponential(argument)
 end
 
 function _source_value(parameters,time,mode)
+    mode===:matrix&&return 0.
     mode===:dc&&return get(parameters,:dc,0.)
     waveform=get(parameters,:waveform,nothing)
     waveform===nothing ? get(parameters,:dc,0.) : waveform(time)

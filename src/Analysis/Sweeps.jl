@@ -31,9 +31,12 @@ function sweep(c,p::Pair;analysis=OperatingPoint(),metric=identity)
     metrics=Any[nothing for _ in parameter_values]
     simulations=Any[nothing for _ in parameter_values]
     converged=falses(length(parameter_values)); failures=SweepFailure[]
+    # Keep selector failures in the per-point failure reporting below.
+    handle=nothing
     for (index,value) in enumerate(parameter_values)
         try
-            simulation=simulate(with_parameters(cc,selector=>value),analysis)
+            handle===nothing && (handle=parameter_handle(cc,selector))
+            simulation=simulate(with_parameters(cc,handle=>value),analysis)
             simulations[index]=simulation
             get(simulation.stats,:converged,false)||throw(ConvergenceError(
                 "sweep point $(index) did not converge",copy(simulation.stats)))

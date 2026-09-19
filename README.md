@@ -1072,11 +1072,29 @@ shapes. The compiler then:
 5. separates topology from numerical parameters.
 
 `SimulationWorkspace` owns reusable residual, derivative, scaled-Jacobian,
-factorization, and Newton buffers. Linear circuits reuse numeric factorizations
-when the parameter fingerprint and integration coefficient allow it; other
-solves reuse the symbolic sparse structure. `residual!`, `jacobian!`, and
+factorization, and Newton buffers. It caches the linear current and storage
+matrices even in mixed nonlinear circuits. Linear circuits reuse numeric
+factorizations when matrix parameters and the integration coefficient allow it;
+changing independent source amplitudes does not invalidate those matrices.
+AC sweeps reuse symbolic analysis across frequencies. `residual!`, `jacobian!`, and
 `residual_jacobian!` expose the in-place assembly layer for advanced users and
-model verification.
+model verification. Residual-only evaluations leave the Jacobian buffer intact
+and do not call behavioral-source gradients. Newton line searches use a separate
+candidate residual buffer. Conservative transient steps evaluate charge-based
+MOS currents and charges together, requesting only the derivatives they need.
+
+Repeated updates can resolve a parameter selector once:
+
+```julia
+compiled = compile(circuit)
+resistance = parameter_handle(compiled, "R1.value")
+tuned = with_parameters(compiled, resistance => 2kΩ)
+```
+
+Handles also support instance ranges and remain valid for snapshots sharing the
+same compiled topology. Sweeps and Monte Carlo reuse resolved selectors
+internally. Within an update call, each affected batch is copied once; unchanged
+batch fingerprints are reused.
 
 ### Structural and numerical diagnostics
 
@@ -1085,6 +1103,14 @@ unsupported terminal contracts, ideal voltage-constraint loops, and conflicting
 ideal voltages. Lookups rank nearby names and suggest corrections. During a
 failure, solver statistics retain iteration history, rejected continuation or
 time steps, convergence strategy, warnings, and the dominant typed residual.
+
+`structural_analysis(compiled; mode=:dc)` reports equation incidence, unmatched
+equations and unknowns, and strongly connected equation blocks in dependency
+order. Use `mode=:time` to include storage dependencies. Regularization diagonals
+are excluded. Linear incidence uses actual coefficients; nonlinear incidence
+conservatively includes possible device branches. A complete matching does not
+prove numerical nonsingularity. This inspection API does not eliminate equations
+or perform DAE index reduction.
 
 ### Reproducibility by construction
 

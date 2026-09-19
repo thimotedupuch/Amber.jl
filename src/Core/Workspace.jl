@@ -19,6 +19,11 @@ mutable struct SimulationWorkspace{T}
     numeric_factorizations::Int
     storage::Vector{T}
     storage_jacobian::SparseMatrixCSC{T,Int}
+    constant_jacobian::SparseMatrixCSC{T,Int}
+    constant_storage_jacobian::SparseMatrixCSC{T,Int}
+    constant_topology::Union{Nothing,HierarchicalCompiledTopology}
+    constant_fingerprint::UInt128
+    constant_assemblies::Int
 end
 
 function SimulationWorkspace(compiled::AbstractCompiledCircuit; scalar_type::Type{T}=Float64) where {T}
@@ -32,7 +37,8 @@ function SimulationWorkspace(compiled::AbstractCompiledCircuit; scalar_type::Typ
     end
     SimulationWorkspace(zeros(T, n), zeros(T, n), zeros(T, n), zeros(T, n), zeros(T, n), jacobian,
         scaled_jacobian, system, zeros(T, n), zeros(T, n), zeros(T, n), variable_scales,
-        zeros(T, n), zeros(T, n), nothing, nothing, 0, zeros(T,n), copy(jacobian))
+        zeros(T, n), zeros(T, n), nothing, nothing, 0, zeros(T,n), copy(jacobian),
+        copy(jacobian),copy(jacobian),nothing,zero(UInt128),0)
 end
 
 @inline _workspace_value(values, index::Int32) = index == 0 ? zero(eltype(values)) : values[Int(index)]
@@ -44,6 +50,14 @@ end
     slot == 0 || (values[Int(slot)] += value)
     nothing
 end
+@inline _workspace_stamp!(::Nothing, slot::Int32, value) = nothing
+
+# A statically selected sink lets residual-only kernels share the device laws
+# without writing matrix buffers or calling user-supplied derivative functions.
+_assembly_view(workspace, ::Val{J}; residual=workspace.residual) where {J} =
+    (; residual, jacobian=(nzval=J ? workspace.jacobian.nzval : nothing,),
+       storage=workspace.storage,
+       storage_jacobian=(nzval=J ? workspace.storage_jacobian.nzval : nothing,))
 
 function _assemble_batch!(workspace, batch::ResistorBatch, state, derivative, t, α, mode, source_scale, temperature)
     residual = workspace.residual; nzval = workspace.jacobian.nzval
@@ -165,9 +179,10 @@ function _assemble_batch!(workspace, batch::PrimitiveBatch{Val{:behavioral_curre
             _workspace_value(state, q[2index + 2]), 4)
         parameters = batch.parameters[device]
         current = parameters.current(controls, t)
+        _workspace_add!(residual, q[1], current); _workspace_add!(residual, q[2], -current)
+        nzval === nothing && continue
         gradient = parameters.gradient(controls, t)
         length(gradient) == 4 || throw(ArgumentError("behavioral current gradient must have four entries"))
-        _workspace_add!(residual, q[1], current); _workspace_add!(residual, q[2], -current)
         ordinal = 0
         for row_sign in (1, -1), control in 1:4, control_sign in (1, -1)
             ordinal += 1
@@ -187,12 +202,13 @@ function _assemble_batch!(workspace, batch::PrimitiveBatch{Val{:behavioral_volta
             _workspace_value(state, q[2index + 2]), 4)
         parameters = batch.parameters[device]
         imposed_voltage = parameters.voltage(controls, t)
-        gradient = parameters.gradient(controls, t)
-        length(gradient) == 4 || throw(ArgumentError("behavioral voltage gradient must have four entries"))
         current = state[Int(branch)]
         _workspace_add!(residual, q[1], current); _workspace_add!(residual, q[2], -current)
         residual[Int(branch)] += _workspace_value(state, q[1]) -
             _workspace_value(state, q[2]) - imposed_voltage
+        nzval === nothing && continue
+        gradient = parameters.gradient(controls, t)
+        length(gradient) == 4 || throw(ArgumentError("behavioral voltage gradient must have four entries"))
         values = (one(current), -one(current), one(current), -one(current),
             -gradient[1], gradient[1], -gradient[2], gradient[2],
             -gradient[3], gradient[3], -gradient[4], gradient[4])
@@ -303,12 +319,14 @@ function _assemble_mosfet_batch!(workspace, batch, kind::Symbol, state, derivati
         q = ntuple(index -> batch.terminals[index][device], 4); model = batch.parameters[device].model
         vd, vg, vs, vb = (_workspace_value(state, q[index]) for index in 1:4)
         if model isa ChargeBasedMOSFET
-            evaluated=_charge_mos_evaluate(model,kind,(vd,vg,vs,vb);temperature)
+            evaluated=_charge_mos_evaluate(model,kind,(vd,vg,vs,vb);temperature,
+                order=nzval === nothing ? Val(1) : Val(2))
             rates=ntuple(i->_workspace_value(derivative,q[i]),4)
             for row in 1:4
                 conductive=evaluated.currents[row]; charge=evaluated.charges[row]
                 current=conductive.value+sum(charge.gradient[j]*rates[j] for j in 1:4)
                 _workspace_add!(residual,q[row],current)
+                nzval === nothing && continue
                 for column in 1:4
                     tangent=conductive.gradient[column]+α*charge.gradient[column]+
                         sum(charge.hessian[(j-1)*4+column]*rates[j] for j in 1:4)
@@ -408,19 +426,16 @@ _inplace_batch_supported(::PrimitiveBatch{Val{:opamp}}) = true
 _inplace_batch_supported(::AbstractCompiledBatch) = false
 
 _linear_batch(::ResistorBatch) = true
-_linear_batch(::PrimitiveBatch{Val{:resistor}}) = true
-_linear_batch(::PrimitiveBatch{Val{:conductance}}) = true
-_linear_batch(::PrimitiveBatch{Val{:capacitor}}) = true
-_linear_batch(::PrimitiveBatch{Val{:current_source}}) = true
-_linear_batch(::PrimitiveBatch{Val{:behavioral_current_source}}) = false
-_linear_batch(::PrimitiveBatch{Val{:behavioral_voltage_source}}) = false
-_linear_batch(::PrimitiveBatch{Val{:voltage_source}}) = true
-_linear_batch(::PrimitiveBatch{Val{:inductor}}) = true
-_linear_batch(::PrimitiveBatch{Val{:vccs}}) = true
-_linear_batch(::PrimitiveBatch{Val{:vcvs}}) = true
-_linear_batch(::PrimitiveBatch{Val{:cccs}}) = true
-_linear_batch(::PrimitiveBatch{Val{:ccvs}}) = true
+_has_storage(::ResistorBatch) = false
+_has_forcing(::ResistorBatch) = false
+for (kind, contract) in _DEVICE_SPECS
+    @eval _linear_batch(::PrimitiveBatch{Val{$(QuoteNode(kind))}}) = $(contract.dependencies.linear)
+    @eval _has_storage(::PrimitiveBatch{Val{$(QuoteNode(kind))}}) = $(contract.dependencies.storage)
+    @eval _has_forcing(::PrimitiveBatch{Val{$(QuoteNode(kind))}}) = $(contract.dependencies.source)
+end
 _linear_batch(::AbstractCompiledBatch) = false
+_has_storage(::AbstractCompiledBatch) = false
+_has_forcing(::AbstractCompiledBatch) = false
 
 _all_inplace_supported(::Tuple{}) = true
 _all_inplace_supported(batches::Tuple) =
@@ -460,14 +475,15 @@ function residual!(workspace::SimulationWorkspace, compiled::CompiledCircuit, st
         mode=:time, source_scale=1.0, gmin=0.0, temperature=300.0)
     _all_inplace_supported(compiled.parameters.batches) ||
         throw(ArgumentError("one or more compiled batches do not support in-place assembly"))
+    length(state) == compiled.n == length(derivative) || throw(DimensionMismatch("state vectors must match the compiled unknown count"))
     fill!(workspace.residual, zero(eltype(workspace.residual)))
-    fill!(workspace.jacobian.nzval, zero(eltype(workspace.jacobian.nzval)))
     if gmin != 0
         @inbounds for index in 1:compiled.hierarchical_topology.hierarchy.solver_net_count
             workspace.residual[index] += gmin * state[index]
         end
     end
-    _assemble_batches!(workspace, compiled.parameters.batches, state, derivative, t, zero(eltype(state)), mode, source_scale, temperature)
+    _assemble_batches!(_assembly_view(workspace,Val(false)), compiled.parameters.batches,
+        state, derivative, t, zero(eltype(state)), mode, source_scale, temperature)
     workspace.residual
 end
 

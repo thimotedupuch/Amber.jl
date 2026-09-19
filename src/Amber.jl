@@ -20,8 +20,10 @@ export NodeVoltageUnknown, BranchCurrentUnknown, DeviceStateUnknown, PartitionIn
 export KCLCurrentEquation, VoltageConstraintEquation, DynamicStateEquation, DeviceAuxiliaryEquation
 export PrimitiveBatch, ResistorBatch, with_parameters, TopologyParameterError
 export ParameterUpdateError, model_parameters, with_model_parameter
+export ParameterHandle, parameter_handle
 export SimulationWorkspace, residual!, jacobian!, residual_jacobian!
 export storage_jacobian!
+export StructuralAnalysis, structural_analysis
 export AbstractLinearSolver, SuiteSparseLU, SolverOptions, IntegrationOptions
 export ConvergenceError
 export CircuitValidationError, AnalysisValidationError, CircuitLookupError, LinearSolveError
@@ -111,6 +113,7 @@ include("Core/CompilerIR.jl")
 include("Core/Compilation.jl")
 include("Core/Workspace.jl")
 include("Core/Storage.jl")
+include("Core/StructuralAnalysis.jl")
 include("Analysis/Analyses.jl")
 include("Results/Results.jl")
 include("Results/Tabular.jl")
