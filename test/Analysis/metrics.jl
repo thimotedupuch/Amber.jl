@@ -10,3 +10,59 @@
     comparison=compare(small_signal(LowPass(),10Hz=>1kHz;points=10),small_signal(LowPass(R=20kΩ),10Hz=>1kHz;points=10);observable=voltage(:vout))
     @test length(comparison.error)==10
 end
+
+@testset "directional delay and CMOS measurements without plotting" begin
+    # Repeating piecewise-linear inverter with known .2/.4 s delays.
+    t=collect(0.:.025:10.)
+    phase=mod.(t,5.)
+    vin=[q<2 ? clamp((q-.9)/.2,0,1) : clamp((3.1-q)/.2,0,1) for q in phase]
+    vout=[q<2 ? 1-clamp((q-1.1)/.2,0,1) : clamp((q-3.3)/.2,0,1) for q in phase]
+    @test first(vin)==last(vin)==0
+    @test_throws ArgumentError propagation_delay(t,vin,vout)
+    for occurrence in (1,2)
+        @test propagation_delay(t,vin,vout;threshold=.5,input_edge=:rising,
+            output_edge=:falling,occurrence)≈.2 atol=1e-12
+        @test propagation_delay(t,vin,vout;threshold=.5,input_edge=:falling,
+            output_edge=:rising,occurrence)≈.4 atol=1e-12
+    end
+    @test propagation_delay(t,vin,vout;window=.5=>2.)≈.2 atol=1e-12
+    @test propagation_delay(t,vin,2 .* vout;input_threshold=.5,output_threshold=1.,
+        input_edge=:rising,output_edge=:falling)≈.2 atol=1e-12
+    @test isnan(propagation_delay(t,vin,vout;input_edge=:rising,output_edge=:rising))
+    @test isnan(propagation_delay(t,vin,ones(length(t));input_edge=:rising,output_edge=:falling))
+    @test isnan(propagation_delay(t,vin,vout;input_edge=:rising,output_edge=:falling,occurrence=3))
+    ring=copy(vout); ring[1.8 .< t .< 2.2].=1.
+    @test isnan(propagation_delay(t,vin,ring;input_edge=:rising,output_edge=:falling))
+    @test_throws ArgumentError propagation_delay(t,vin,vout;input_edge=:up)
+    @test_throws ArgumentError propagation_delay(t,vin,vout;threshold=NaN)
+    @test_throws ArgumentError propagation_delay(t,vin,vout;occurrence=0)
+    @test_throws ArgumentError propagation_delay(t,vin,vout;window=-1=>2)
+
+    switching_measure=switchingmetrics(t,vin,vout,2 .* t .+ 1;vdd=1.,window=.25=>9.75)
+    @test switching_measure.tphl≈.2 atol=1e-12
+    @test switching_measure.tplh≈.4 atol=1e-12
+    @test length(switching_measure.phl)==length(switching_measure.plh)==2
+    @test switching_measure.energy≈104.5
+    @test isnan(switchingmetrics(t,vin,ring,ones(length(t));vdd=1.,window=.25=>4.75).tphl)
+    @test_throws ArgumentError switchingmetrics(t,vin,vout,ones(length(t));vdd=0.,window=0=>4)
+
+    x=collect(range(0,1.8;length=1001)); y=1.8./(1 .+ exp.(12 .* (x.-.9)))
+    v=invertermetrics(x,y); m=v.measurements
+    q=(1-sqrt(1-4/(1.8*12)))/2
+    @test m.vm≈.9
+    @test m.vil≈.9-log((1-q)/q)/12 atol=2e-5
+    @test m.nml≈m.nmh atol=1e-12
+    @test isempty(v.warnings)
+    bad=copy(y); bad[500]=NaN
+    incomplete=invertermetrics(x,bad)
+    @test isnan(incomplete.measurements.nml)
+    @test !isempty(incomplete.warnings)
+    @test_throws ArgumentError invertermetrics([0.,0.],[1.,0.])
+
+    result=transient(LowPass(),0s=>1ms;saveat=10μs)
+    stats=copy(result.stats); stats[:converged]=false
+    partial=SimulationResult(result.compiled,result.analysis,result.axis,result.values,stats)
+    @test_throws ArgumentError propagation_delay(partial;input=:vin,output=:vout)
+    @test_throws ArgumentError switchingmetrics(partial;input=:vin,output=:vout,supply=:V1,vdd=1.,window=0=>1ms)
+    @test_throws ArgumentError propagation_delay(operating_point(LowPass());input=:vin,output=:vout)
+end

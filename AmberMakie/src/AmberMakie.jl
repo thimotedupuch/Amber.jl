@@ -1,6 +1,7 @@
 module AmberMakie
 
 import Amber
+import Amber: switchingmetrics, _cmos_grid, _cmos_interp
 import Makie
 import LinearAlgebra
 import TOML

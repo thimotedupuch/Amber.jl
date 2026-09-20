@@ -22,13 +22,35 @@ transfer=inverterview(transfer_sweep;output=:output)
 fig=Figure(size=(800,800)); inverterplot(fig[1,1],transfer)
 save(joinpath(output_dir,"34_inverter_noise_margins.png"),fig)
 
-switching=switchingview(;loads=[5e-15,20e-15,80e-15],supplies=[1.5,1.8,2.1]) do load,vdd
-    result=transient(StudyInverter(;load,vdd,switching=true),0.0 =>210e-9;
-        max_step=.5e-9,method=:bdf2,event_mode=:exact)
-    measurements=switchingmetrics(result;input=:input,output=:output,supply=:VDD,vdd,
-        window=100e-9=>200e-9)
-    merge(measurements,(result=result,))
+# Solver convergence alone does not establish delay/energy accuracy. Retain
+# each refinement and require all three measurements to change by <1%.
+function refined_switching(load,vdd;rtol=.01,max_refinements=8)
+    circuit=StudyInverter(;load,vdd,switching=true)
+    @assert isempty(check(circuit))
+    history=NamedTuple[]
+    for refinement in 0:max_refinements
+        step=.5e-9/2^refinement
+        result=transient(circuit,0.0 =>210e-9;max_step=step,method=:bdf2,
+            event_mode=:exact,failure_policy=:throw)
+        measurements=switchingmetrics(result;input=:input,output=:output,supply=:VDD,vdd,
+            window=100e-9=>200e-9)
+        all(isfinite,(measurements.tphl,measurements.tplh,measurements.energy)) ||
+            error("Missing or ambiguous switching measurements")
+        push!(history,(max_step=step,tphl=measurements.tphl,tplh=measurements.tplh,
+            energy=measurements.energy))
+        refinement==0 && continue
+        previous=history[end-1]
+        change=NamedTuple{(:tphl,:tplh,:energy)}(Tuple(
+            abs(getproperty(measurements,k)-getproperty(previous,k))/abs(getproperty(measurements,k))
+            for k in (:tphl,:tplh,:energy)))
+        if all(<(rtol),values(change))
+            println((load_F=load,supply_V=vdd,max_step_s=step,relative_change=change))
+            return merge(measurements,(result=result,refinement=history,relative_change=change))
+        end
+    end
+    error("Switching refinement did not reach $(rtol) relative change: $(history)")
 end
+switching=switchingview(refined_switching;loads=[5e-15,20e-15,80e-15],supplies=[1.5,1.8,2.1])
 @assert isempty(switching.failures)
 @assert all(p->isfinite(p.tphl)&&isfinite(p.tplh)&&p.energy>0,switching.points)
 fig=Figure(size=(1400,500)); switchingplot(fig[1,1],switching)

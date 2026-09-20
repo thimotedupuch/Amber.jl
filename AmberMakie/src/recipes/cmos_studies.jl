@@ -8,59 +8,16 @@ struct InverterView <: AbstractDisplayView
     source::Any
 end
 
-function _cmos_grid(x)
-    a=Float64.(collect(x))
-    length(a)>=2 && all(isfinite,a) && all(>(0),diff(a)) ||
-        throw(ArgumentError("axis needs at least two finite, strictly increasing samples"))
-    a
-end
-function _cmos_crossings(x,y,level;direction=0)
-    hits=Float64[]
-    for i in 2:length(x)
-        a,b=y[i-1],y[i]
-        isfinite(a) && isfinite(b) || continue
-        rising=a<level<=b; falling=a>level>=b
-        ((direction>=0 && rising) || (direction<=0 && falling)) || continue
-        push!(hits,x[i-1]+(level-a)*(x[i]-x[i-1])/(b-a))
-    end
-    hits
-end
-function _cmos_interp(x,y,t)
-    i=clamp(searchsortedlast(x,t),1,length(x)-1)
-    y[i]+(y[i+1]-y[i])*(t-x[i])/(x[i+1]-x[i])
-end
-
 """
-    inverterview(vin, vout)
-    inverterview(sweep; output)
+    inverterview(vin, vout; kwargs...)
+    inverterview(sweep; output, kwargs...)
 
-Extract VIL/VIH at dVout/dVin = -1 and VM at Vout = Vin using linear
-interpolation. VOH = Vout(VIL), VOL = Vout(VIH), NML = VIL - VOL,
-NMH = VOH - VIH. A complete, monotone characteristic with exactly two
-unity-gain crossings is required for margins; otherwise they are NaN.
-Monotonicity allows adjacent increases up to `monotonic_atol=1e-9` volts
-for solver roundoff. Refine the DC grid to check convergence of these sampled measurements.
+Display adapter for [`Amber.invertermetrics`](@ref). Numerical measurements,
+including warnings for unresolved margins, are available without AmberMakie.
 """
-function inverterview(vin,vout;source=nothing,monotonic_atol=1e-9)
-    isfinite(monotonic_atol) && monotonic_atol>=0 || throw(ArgumentError("monotonic_atol must be finite and nonnegative"))
-    x=_cmos_grid(vin); y=Float64.(collect(vout))
-    length(x)==length(y) || throw(ArgumentError("input/output lengths differ"))
-    gain=_finite_derivative(x,y)
-    crossings=_cmos_crossings(x,gain,-1.)
-    switches=_cmos_crossings(x,y.-x,0.)
-    valid=all(isfinite,y) && all(<=(monotonic_atol),diff(y)) && length(crossings)==2 &&
-        first(gain)>-1 && last(gain)>-1
-    vil,vih=valid ? crossings : (NaN,NaN)
-    voh=valid ? _cmos_interp(x,y,vil) : NaN
-    vol=valid ? _cmos_interp(x,y,vih) : NaN
-    vm=all(isfinite,y) && length(switches)==1 ? only(switches) : NaN
-    m=(vil=vil,vih=vih,voh=voh,vol=vol,nml=vil-vol,nmh=voh-vih,vm=vm)
-    warnings=valid ? String[] : ["Noise margins unavailable: require a complete monotone transfer with two unity-gain crossings and low-gain endpoints."]
-    InverterView(x,y,gain,m,warnings,source)
-end
-function inverterview(s::Amber.SweepResult;output,kwargs...)
-    y=[s.converged[i] ? Float64(real(only(Amber.voltage(s.simulations[i],output)))) : NaN for i in eachindex(s.parameter_values)]
-    inverterview(s.parameter_values,y;source=s,kwargs...)
+function inverterview(args...;kwargs...)
+    m=Amber.invertermetrics(args...;kwargs...)
+    InverterView(m.input,m.output,m.gain,m.measurements,m.warnings,m.source)
 end
 
 """Plot inverter transfer, unity-gain boundaries, noise margins, and differential gain."""
@@ -80,48 +37,6 @@ function inverterplot(position,v::InverterView;axis=(;))
     gp=Makie.lines!(gx,v.input,v.gain); Makie.hlines!(gx,[-1.];linestyle=:dash,color=:gray)
     Makie.linkxaxes!(ax,gx)
     PlotHandle(slot,(transfer=ax,gain=gx),(transfer=curve,gain=gp),v)
-end
-
-"""
-    switchingmetrics(result; input, output, supply, vdd, window)
-    switchingmetrics(t, vin, vout, delivered_power; vdd, window)
-
-Average inverter tPHL/tPLH over input edges in the explicit window, measured
-at VDD/2. Each edge must have exactly one opposite output crossing and no recrossing before
-the next input edge or window end; otherwise that delay is NaN. Energy is
-the trapezoidal integral of delivered supply power over the entire window,
-including leakage. The result overload negates Amber's absorbed supply power.
-Use a settled full cycle for energy/cycle. All time and energy units are SI.
-"""
-function switchingmetrics(t,vin,vout,p;vdd,window)
-    x=_cmos_grid(t); a,b,p=Float64.(vin),Float64.(vout),Float64.(p)
-    all(length(z)==length(x) for z in (a,b,p)) || throw(ArgumentError("waveform lengths differ"))
-    all(z->all(isfinite,z),(a,b,p)) || throw(ArgumentError("waveforms must be finite"))
-    isfinite(vdd) && vdd>0 || throw(ArgumentError("vdd must be positive"))
-    lo,hi=Float64(first(window)),Float64(last(window))
-    first(x)<=lo<hi<=last(x) || throw(ArgumentError("window must lie within the trace"))
-    rises=_cmos_crossings(x,a,vdd/2;direction=1)
-    falls=_cmos_crossings(x,a,vdd/2;direction=-1)
-    edges=sort(vcat([(t,1) for t in rises],[(t,-1) for t in falls]))
-    outup=_cmos_crossings(x,b,vdd/2;direction=1)
-    outdown=_cmos_crossings(x,b,vdd/2;direction=-1)
-    phl=Float64[]; plh=Float64[]
-    for (i,(edge,dir)) in enumerate(edges)
-        lo<=edge<hi || continue
-        stop=i<length(edges) ? min(hi,edges[i+1][1]) : hi
-        hits=filter(q->edge<=q<stop,dir==1 ? outdown : outup)
-        count_all=count(q->edge<=q<stop,outup)+count(q->edge<=q<stop,outdown)
-        push!(dir==1 ? phl : plh,length(hits)==1 && count_all==1 ? only(hits)-edge : NaN)
-    end
-    tx=vcat(lo,x[lo.<x.<hi],hi); py=[_cmos_interp(x,p,q) for q in tx]
-    energy=sum(diff(tx).*(py[1:end-1].+py[2:end])./2)
-    avg(z)=isempty(z) ? NaN : sum(z)/length(z)
-    (tphl=avg(phl),tplh=avg(plh),energy=energy,phl=phl,plh=plh,window=(lo,hi))
-end
-function switchingmetrics(r::Amber.SimulationResult;input,output,supply,vdd,window)
-    get(r.stats,:converged,true) || throw(ArgumentError("transient did not converge"))
-    switchingmetrics(r.axis,real.(Amber.voltage(r,input)),real.(Amber.voltage(r,output)),
-        -real.(Amber.power(r,supply));vdd,window)
 end
 
 """Load × supply study with retained per-point measurements and failures."""

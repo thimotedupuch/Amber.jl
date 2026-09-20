@@ -210,7 +210,11 @@ function _unknown_label(compiled, row::Integer)
     1 <= row <= compiled.n || return "residual row $(row)"
     layout = compiled.topology.layout
     kind = layout.kinds[row]
-    kind === NodeVoltageUnknown && return "node-voltage equation $(row)"
+    if kind === NodeVoltageUnknown
+        labels=get(_net_labels(compiled.design,compiled.topology),Int32(row),String[])
+        return isempty(labels) ? "node-voltage equation $(row)" :
+            "KCL at net $(join(unique(labels), " / ")) (equation $(row))"
+    end
     locator = layout.locators[row]
     locator === nothing && return "residual row $(row)"
     instance_name, device_name = _locator_device_name(compiled.design, locator)

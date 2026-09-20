@@ -27,8 +27,8 @@ boundaries](#scope-and-model-boundaries) before using it for sign-off work.
 | Core analyses | operating point, BDF1/BDF2 transient, small-signal AC, parameter sweeps, periodic steady state |
 | Noise | stationary frequency-domain noise, input-referred noise, contribution budgets, integrated noise, stochastic transient noise, cyclostationary periodic noise, oscillator phase noise |
 | RF and control | multiport Z/Y/S/ABCD/H parameters, descriptor-system linearization, poles, zeros, stability, root locus, step/impulse response, bias-preserving loop gain and margins |
-| Measurements | voltage/current/power/charge/state traces, transfer functions, bandwidth, delay, resonances, FFT spectra, THD, THD+N, SNR, SINAD, SFDR, ENOB, sampling and propagation metrics |
-| Visualization (optional AmberMakie) | linked result workbenches, RF/control plots, eye and jitter views, CMOS bias dashboards, inverter noise margins, switching energy/delay, mismatch studies, figures with metadata |
+| Measurements | voltage/current/power/charge/state traces, transfer functions, bandwidth, delay, resonances, FFT spectra, THD, THD+N, SNR, SINAD, SFDR, ENOB, sampling and propagation metrics, CMOS inverter noise margins and switching energy |
+| Visualization (optional AmberMakie) | linked result workbenches, RF/control plots, eye and jitter views, CMOS bias dashboards, inverter and switching plots, mismatch studies, figures with metadata |
 | Studies and reproducibility | copy-on-write parameter overrides, Monte Carlo with independent/correlated/process/matched variation, sample replay, failure retention, provenance, stable TOML serialization |
 | Diagnostics | structural validation, floating-net and ideal-constraint detection, hierarchy-aware lookup errors, dominant residual reporting, validity warnings |
 
@@ -701,6 +701,28 @@ Nonuniform records are resampled and the operation is recorded in result
 warnings. Other helpers include `sampling_metrics`, `propagation_delay`,
 `compare`, `band_power`, `quality_factor`, and `notch_depth`.
 
+CMOS measurements are available in Amber without a plotting dependency:
+
+```julia
+transfer_metrics = invertermetrics(vtc; output=:output)
+transfer_metrics.measurements  # VIL, VIH, VOH, VOL, NML, NMH, VM
+transfer_metrics.warnings      # unresolved or invalid transfer curves
+measurements = switchingmetrics(tr; input=:input, output=:output,
+    supply=:VDD, vdd=1.8V, window=100ns => 200ns)
+```
+
+`switchingmetrics` measures mean 50% delays and delivered supply energy over
+an explicit window; select a settled cycle for energy/cycle, including leakage.
+For a single edge use `propagation_delay(tr; input=:input, output=:output,
+threshold=0.9V, input_edge=:rising, output_edge=:falling, occurrence=1,
+window=100ns=>200ns)`. Separate `input_threshold` and `output_threshold` support
+unequal logic levels. Automatic edge selection rejects ambiguous periodic
+records; missing responses or recrossings return `NaN`. Both timing helpers
+reject nonconverged results. Refine the timestep and compare delays **and**
+energy; a converged solver is not an accuracy guarantee. The
+[Amber-only inverter example](examples/12_cmos_inverter/analyses.jl) demonstrates
+this check.
+
 ## Charge-based CMOS characterization
 
 `ChargeBasedMOSFET` adds continuous weak-to-strong inversion, explicit W/L and
@@ -779,14 +801,17 @@ Circuit-level helpers cover:
 
 | Workflow | API and measurements |
 | --- | --- |
-| Inverter DC transfer | `inverterview` / `inverterplot`: transfer curve, differential gain, switching threshold, unity-gain noise margins from a sweep or raw samples |
-| Switching versus load and supply | `switchingmetrics`, `switchingview` / `switchingplot`: 50% propagation delays and delivered supply energy integrated over an explicit window |
+| Inverter DC transfer | `inverterview` / `inverterplot` wrap Amber's `invertermetrics`: transfer curve, differential gain, switching threshold, unity-gain noise margins from a sweep or raw samples |
+| Switching versus load and supply | Amber's `switchingmetrics`, plus `switchingview` / `switchingplot`: 50% propagation delays and delivered supply energy integrated over an explicit window |
 | Offset and mismatch | `mismatchview` / `mismatchplot`: empirical distributions and mean ± standard deviation grouped by temperature and geometry, retaining failures, seeds, and supplied simulation records |
 
 Switching energy includes leakage over the selected window; use a settled full
 cycle when reporting energy per cycle. See the runnable
 [CMOS studies demo](AmberMakie/demo/cmos_studies.jl) for inverter and seeded
-transistor-pair simulations. Variation parameters in that demo are illustrative.
+transistor-pair simulations. It retains timestep-refinement history and requires
+less than 1% change in both delays and energy before accepting a switching
+point. This is a successive-refinement check, not a bound on absolute error.
+Variation parameters in that demo are illustrative.
 
 Other workbenches provide linked data cursors, noise integration bands, network
 matrix selection and Smith readouts, Floquet participation, and Monte Carlo

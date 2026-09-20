@@ -80,3 +80,27 @@ end
     expected_output=1-100*(1-exp(-0.01))*exp(-(140μs-101μs)/100μs)
     @test voltage(resolved,:output)[end]≈expected_output atol=2e-4
 end
+
+@testset "CMOS roundoff-equivalent stop times" begin
+    inverter_module=Module(:EndpointInverter)
+    Base.include(inverter_module,joinpath(@__DIR__,"..","..","examples","12_cmos_inverter","circuit.jl"))
+    c=inverter_module.CMOSInverter(waveform=Pulse(low=0V,high=5V,frequency=10MHz,
+        duty_cycle=.5,rise=1ns,fall=1ns))
+    stops=(500e-9,500ns,prevfloat(500e-9),501ns)
+    for saveat in (nothing,1ns)
+        results=[transient(c,0s=>stop;max_step=1ns,saveat,event_mode=:exact)
+            for stop in stops]
+        for (r,stop) in zip(results,stops)
+            @test r.stats[:converged]
+            @test last(r.axis)==stop
+            @test minimum(diff(r.axis))>0.99ns
+        end
+        for r in results[2:3]
+            @test length(results[1].axis)==length(r.axis)
+            @test voltage(results[1],:output)≈voltage(r,:output) rtol=1e-9
+        end
+        m=switchingmetrics(results[2];input=voltage(:input),output=:output,
+            supply=:VDD,vdd=5V,window=100ns=>200ns)
+        @test m.tphl>0 && m.tplh>0 && m.energy>0
+    end
+end

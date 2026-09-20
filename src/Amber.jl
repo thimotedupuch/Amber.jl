@@ -22,6 +22,7 @@ export PrimitiveBatch, ResistorBatch, with_parameters, TopologyParameterError
 export ParameterUpdateError, model_parameters, with_model_parameter
 export ParameterHandle, parameter_handle
 export SimulationWorkspace, residual!, jacobian!, residual_jacobian!
+export invertermetrics, switchingmetrics
 export storage_jacobian!
 export StructuralAnalysis, structural_analysis
 export AbstractLinearSolver, SuiteSparseLU, SolverOptions, IntegrationOptions

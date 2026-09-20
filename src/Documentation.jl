@@ -1125,7 +1125,6 @@ unsaved extrema. Use a settled window and sufficiently fine output sampling
 for ripple or overshoot measurements.
 """ peak_to_peak
 @doc """Compute acquisition and hold errors for sampled waveforms.""" sampling_metrics
-@doc """Measure threshold-crossing delay between two waveforms.""" propagation_delay
 @doc """Measure excursion beyond a specified final or reference value.""" overshoot
 @doc """
     noise_psd(result::NoiseResult)

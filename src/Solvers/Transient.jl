@@ -72,7 +72,12 @@ function _waveform_events(cc,t0,t1)
             end
         end
     end
-    filter!(time->t0<time<t1,events); events
+    # Retain a corner at the stop, including roundoff-equivalent timestamps.
+    # It must restart BDF just like an interior corner; excluding an exactly
+    # equal endpoint otherwise changes the final integration order by an ulp.
+    tolerance=32eps(max(abs(t0),abs(t1)))
+    filter!(time->t0<time<=t1+tolerance,events)
+    min.(events,t1)
 end
 
 function _merge_time_grid(times,nominal_step;preferred=Set{Float64}())
@@ -175,7 +180,10 @@ function _transient(c,p::Pair;saveat=nothing,max_step=nothing,method=:bdf2,adapt
     output_targets=saveat===nothing ? Set{Float64}() : Set(vcat(t0,collect((t0+saveat):saveat:t1),t1))
     grid=use_adaptive ? Float64[t1] : vcat(collect((t0+dt):dt:t1),t1)
     saveat===nothing||append!(grid,filter(>(t0),collect(output_targets)))
-    append!(grid,waveform_events); grid=_merge_time_grid(grid,dt;preferred=output_targets)
+    # The requested stop must win over a roundoff-equivalent grid point even
+    # without saveat. Otherwise the loop takes an extra, near-zero final step.
+    append!(grid,waveform_events)
+    grid=_merge_time_grid(grid,dt;preferred=union(output_targets,Set([t1])))
     boundary_index=1
     z=_initial_transient_state(cc,initial;temperature,workspace,solver)
     times=Float64[t0]; states=[copy(z)]; orders=Int[0]

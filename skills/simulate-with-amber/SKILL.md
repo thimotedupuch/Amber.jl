@@ -405,6 +405,36 @@ Validate every important answer with at least one of:
 - timestep, tolerance, frequency-grid, or sample-count refinement;
 - comparison with a datasheet, measured trace, or trusted reference model supplied by the user.
 
+### CMOS measurements without plotting
+
+Amber provides `invertermetrics(vtc; output=:output)` for DC transfer, gain,
+switching threshold, and unity-gain noise margins. Read `.measurements` for
+values and `.warnings` for unresolved crossings. A raw `(vin, vout)` overload
+is also available; refine the input grid around transitions.
+
+For a pulse-driven inverter, use Amber's numerical helper directly:
+
+```julia
+measurements = switchingmetrics(tr; input=:input, output=:output,
+    supply=:VDD, vdd=1.8V, window=100ns => 200ns)
+```
+
+This reports mean 50% `tphl`/`tplh`, individual delays, and delivered supply
+`energy` in joules. It rejects nonconverged results; missing or ambiguous output
+crossings give `NaN` delays. Energy includes leakage over the entire window;
+use a settled full cycle for energy/cycle. Halve `max_step` and compare both
+delays and energy before reporting accuracy; solver convergence alone does not
+establish measurement accuracy.
+
+For one edge, use `propagation_delay(tr; input=:input, output=:output,
+threshold=0.9V, input_edge=:rising, output_edge=:falling, window=100ns=>200ns)`.
+Use `occurrence` to select an input edge within the window, or separate
+`input_threshold`/`output_threshold` for unequal logic levels. Automatic edge
+selection rejects multiple crossings rather than guessing on periodic records.
+
+See `examples/12_cmos_inverter/analyses.jl` for an Amber-only study with
+refinement checks. Add AmberMakie only for displays or visual study helpers.
+
 ## Use AmberMakie for visualization
 
 AmberMakie is Amber's optional visualization companion. Do all circuit construction and simulation with Amber first, then pass Amber result objects to AmberMakie recipes. Do not install or invoke AmberMakie for a simulation that does not need graphs. Use CairoMakie for deterministic PNG/SVG/PDF output in headless agent environments:
@@ -448,14 +478,8 @@ grid gives transfer curves; a dense drain grid gives output curves.
 
 Use circuit simulations for circuit performance:
 
-- `inverterview(sweep_result; output=:output)` and `inverterplot` extract DC
-  transfer, differential gain, switching threshold, and unity-gain noise margins.
-  Inspect warnings when the sweep does not resolve the required crossings.
-- `switchingmetrics(tr; input=:input, output=:output, supply=:VDD, vdd=1.8V,
-  window=100ns => 200ns)` measures 50% propagation delays and delivered supply
-  energy. The result overload negates Amber's absorbed source power. Energy
-  includes leakage over the entire window; select a settled full cycle for
-  energy/cycle. Missing or ambiguous output crossings produce `NaN` delays.
+- `inverterview(sweep_result; output=:output)` wraps Amber's `invertermetrics`
+  for `inverterplot`. Inspect `.warnings` when crossings are unresolved.
 - `switchingview(measure; loads, supplies)` calls a supplied simulation/metric
   function on a load/supply grid and retains exceptions in `failures`;
   `switchingplot` shows the measurements.
@@ -464,7 +488,8 @@ Use circuit simulations for circuit performance:
   and simulation records; these helpers do not invent a process distribution.
 
 Read `AmberMakie/demo/cmos_studies.jl` for complete inverter and seeded pair
-studies, and `AmberMakie/README.md` for plotting signatures and interpretation.
+studies, including bounded timestep refinement with retained delay/energy
+changes, and `AmberMakie/README.md` for plotting signatures and interpretation.
 
 ### Interactive measurements and reproducible exports
 

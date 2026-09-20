@@ -204,6 +204,11 @@ circuit-level simulations; the transistor dashboard characterizes one device.
 
 ### CMOS circuit studies
 
+Numerical `Amber.invertermetrics` and `Amber.switchingmetrics` require only
+Amber. `switchingmetrics` is re-exported here for compatibility; loading both
+packages refers to the same function. `inverterview` adapts the core measurements
+for plotting, preserving the measurements and warnings.
+
 Available helpers include:
 
 - `inverterview` / `inverterplot`: DC transfer, differential gain, switching
@@ -215,7 +220,9 @@ Available helpers include:
   samples, seeds, and caller-provided simulation records.
 
 See [`demo/cmos_studies.jl`](demo/cmos_studies.jl) for runnable inverter and
-seeded transistor-pair examples. Statistical parameters are illustrative.
+seeded transistor-pair examples. The switching study retains refinement history
+and requires less than 1% successive change in delays and energy, with a bounded
+number of halvings. Statistical parameters are illustrative.
 
 Switching energy includes leakage over the entire supplied window; choose a
 settled full cycle for energy/cycle. Missing or ambiguous output crossings yield

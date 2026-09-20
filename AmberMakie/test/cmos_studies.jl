@@ -1,6 +1,8 @@
 @testset "CMOS study measurements and plots" begin
     x=collect(range(0,1.8;length=1001)); y=1.8./(1 .+ exp.(12 .* (x.-.9)))
     v=inverterview(x,y); m=v.measurements
+    @test m==Amber.invertermetrics(x,y).measurements
+    @test AmberMakie.switchingmetrics===Amber.switchingmetrics
     @test m.vm≈.9
     q=(1-sqrt(1-4/(1.8*12)))/2
     @test m.vil≈.9-log((1-q)/q)/12 atol=2e-5
