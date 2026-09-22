@@ -16,11 +16,11 @@ analog simulation, research, education, model development, and workflows that
 benefit from programmatic circuit generation. Read [Scope and model
 boundaries](#scope-and-model-boundaries) before using it for sign-off work.
 
-![Bode gain and phase of an Amber RC low-pass simulation, alongside its Nyquist plot](AmberMakie/demo/generated/02_frequency_response.png)
+![Amber overview showing transient simulation, frequency response, CMOS bias sweep, and RF reflection in four coordinated plots](AmberMakie/demo/generated/readme_overview.png)
 
-*An RC low-pass response simulated with Amber and plotted with
-[AmberMakie](AmberMakie/). The gain rolls off above the 1.6 kHz corner; the
-phase and complex-plane views show the same transfer function.*
+*Four views of Amber: transient and frequency-domain analysis, charge-based
+CMOS characterization, and a two-port Smith chart. Generated with
+[AmberMakie](AmberMakie/) from the [reproducible example](AmberMakie/demo/readme_overview.jl).*
 
 ## What is in Amber?
 
@@ -773,23 +773,6 @@ charges are phasors linearized at the DC bias. Junction areas and perimeters
 must be supplied explicitly; they are not inferred from W/L.
 
 ## Visualization and CMOS studies with AmberMakie
-
-AmberMakie turns analysis results into figures and linked workbenches. These
-plots come from the runnable [rendering demo](AmberMakie/demo/generate.jl):
-
-![Input pulse and simulated RC output over three cycles, with cursor and interval measurements](AmberMakie/demo/generated/01_transient_workbench.png)
-
-*Transient workbench: an input pulse and the filtered output, with linked
-cursors and interval measurements.*
-
-![Transient-derived output spectrum and harmonic amplitudes for the RC demo](AmberMakie/demo/generated/03_spectrum_harmonics.png)
-
-*Spectrum and harmonic analysis of the simulated transient output.*
-
-![Two-port transmission magnitude and phase next to an input-reflection Smith chart](AmberMakie/demo/generated/04_network_smith.png)
-
-*Two-port network response: transmission versus frequency and input reflection
-on a 50 Ω Smith chart.*
 
 Install the companion and a rendering backend into an environment that already
 contains Amber:
