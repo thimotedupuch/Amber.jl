@@ -29,6 +29,14 @@ and integrated amplifier noise, and a 10 kHz oscillator starting up. The bridge
 variation is illustrative. Reproduce the figure with the
 [advanced example](AmberMakie/demo/readme_advanced.jl).*
 
+![Amber design exploration showing a control root locus, signal-integrity eye diagram, two-parameter yield map, and resonant Lissajous curves](AmberMakie/demo/generated/readme_design_space.png)
+
+*Design exploration: closed-loop poles crossing the stability boundary, an eye
+diagram with sinusoidal interference, sampled yield over two resistor values,
+and Lissajous curves around an RLC resonance. The yield variations are
+illustrative. Reproduce the figure with the
+[design-space example](AmberMakie/demo/readme_design_space.jl).*
+
 ## What is in Amber?
 
 | Area | Capabilities |
