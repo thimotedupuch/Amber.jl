@@ -22,6 +22,13 @@ boundaries](#scope-and-model-boundaries) before using it for sign-off work.
 CMOS characterization, and a two-port Smith chart. Generated with
 [AmberMakie](AmberMakie/) from the [reproducible example](AmberMakie/demo/readme_overview.jl).*
 
+![Amber advanced analysis showing CMOS inverter noise margins, Monte Carlo bridge offsets, amplifier noise integration, and oscillator startup spectrogram](AmberMakie/demo/generated/readme_advanced.png)
+
+*Deeper analyses: inverter noise margins, correlated bridge variation, spectral
+and integrated amplifier noise, and a 10 kHz oscillator starting up. The bridge
+variation is illustrative. Reproduce the figure with the
+[advanced example](AmberMakie/demo/readme_advanced.jl).*
+
 ## What is in Amber?
 
 | Area | Capabilities |

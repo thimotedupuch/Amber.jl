@@ -63,7 +63,7 @@ set_theme!(Theme(
 fig = Figure(size=(1600, 1050), figure_padding=(65, 65, 42, 42))
 Label(fig[1, 1:2], "AMBER  /  CIRCUIT SIMULATION";
     color=CYAN, fontsize=22, font=:bold, halign=:left, tellwidth=false)
-Label(fig[2, 1:2], "Circuit simulation, from signal to silicon";
+Label(fig[2, 1:2], "Circuit simulation, fully programmable";
     color=TEXT, fontsize=47, font=:bold, halign=:left, tellwidth=false)
 Label(fig[3, 1:2], "Time domain     ·     Frequency response     ·     Device physics     ·     RF networks";
     color=MUTED, fontsize=21, halign=:left, tellwidth=false)
