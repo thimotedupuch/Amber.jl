@@ -1,90 +1,90 @@
-struct SimulationResult{T,A<:AbstractAnalysis}
+struct SimulationResult{T, A <: AbstractAnalysis}
     compiled::AbstractCompiledCircuit
     analysis::A
     axis::Vector{Float64}
     values::Matrix{T}
-    stats::Dict{Symbol,Any}
-    function SimulationResult(compiled::AbstractCompiledCircuit, analysis::A, axis::Vector{Float64}, values::Matrix{T}, stats::Dict{Symbol,Any}) where {T,A<:AbstractAnalysis}
-        new{T,A}(_snapshot_compiled(compiled), analysis, axis, values, stats)
+    stats::Dict{Symbol, Any}
+    function SimulationResult(compiled::AbstractCompiledCircuit, analysis::A, axis::Vector{Float64}, values::Matrix{T}, stats::Dict{Symbol, Any}) where {T, A <: AbstractAnalysis}
+        return new{T, A}(_snapshot_compiled(compiled), analysis, axis, values, stats)
     end
 end
 
-frequencies(r::SimulationResult{<:Any,<:SmallSignal})=r.axis
+frequencies(r::SimulationResult{<:Any, <:SmallSignal}) = r.axis
 
-_unknown_trace(r,index::Integer)=index==0 ? zeros(eltype(r.values),length(r.axis)) : vec(r.values[Int(index),:])
+_unknown_trace(r, index::Integer) = index == 0 ? zeros(eltype(r.values), length(r.axis)) : vec(r.values[Int(index), :])
 
-function _hierarchical_net_index(cc,name)
-    target=String(name); design=cc.design; hierarchy=cc.hierarchical_topology.hierarchy
-    for (local_index,segment) in enumerate(design.root_ir.net_names)
-        rendered=_render_segment((_name(design.names,segment.base),segment.index))
-        rendered==target&&return hierarchy.root_net_to_solver[local_index]
+function _hierarchical_net_index(cc, name)
+    target = String(name); design = cc.design; hierarchy = cc.hierarchical_topology.hierarchy
+    for (local_index, segment) in enumerate(design.root_ir.net_names)
+        rendered = _render_segment((_name(design.names, segment.base), segment.index))
+        rendered == target&&return hierarchy.root_net_to_solver[local_index]
     end
-    split_at=findlast(==('.'),target); split_at===nothing&&return nothing
-    instance_path=target[1:split_at-1]; local_name=target[split_at+1:end]
-    for (instance,record) in enumerate(design.root.records)
-        string(InstancePath(_path_segments(design,record.path)))==instance_path||continue
-        template=design.templates.templates[Int(record.template)]
-        for (port_index,port) in enumerate(template.ports)
-            _name(template.names,port.name)==local_name||continue
-            actual_index=Int(record.connections.start)+port_index-1
-            root_net=design.root.connection_data[actual_index]
+    split_at = findlast(==('.'), target); split_at === nothing&&return nothing
+    instance_path = target[1:(split_at - 1)]; local_name = target[(split_at + 1):end]
+    for (instance, record) in enumerate(design.root.records)
+        string(InstancePath(_path_segments(design, record.path))) == instance_path||continue
+        template = design.templates.templates[Int(record.template)]
+        for (port_index, port) in enumerate(template.ports)
+            _name(template.names, port.name) == local_name||continue
+            actual_index = Int(record.connections.start) + port_index - 1
+            root_net = design.root.connection_data[actual_index]
             return hierarchy.root_net_to_solver[Int(root_net)]
         end
-        for local_index in (length(template.ports)+1):length(template.body.net_names)
-            segment=template.body.net_names[local_index]
-            _render_segment((_name(template.names,segment.base),segment.index))==local_name||continue
-            return hierarchy.instance_internal_base[instance]+local_index-length(template.ports)-1
+        for local_index in (length(template.ports) + 1):length(template.body.net_names)
+            segment = template.body.net_names[local_index]
+            _render_segment((_name(template.names, segment.base), segment.index)) == local_name||continue
+            return hierarchy.instance_internal_base[instance] + local_index - length(template.ports) - 1
         end
     end
-    nothing
+    return nothing
 end
 
-_batch_terminal(batch::ResistorBatch,index,device)=index==1 ? batch.p[device] : batch.n[device]
-_batch_terminal(batch::PrimitiveBatch,index,device)=batch.terminals[index][device]
+_batch_terminal(batch::ResistorBatch, index, device) = index == 1 ? batch.p[device] : batch.n[device]
+_batch_terminal(batch::PrimitiveBatch, index, device) = batch.terminals[index][device]
 
-function _hierarchical_device(cc,name)
-    target=String(name)
+function _hierarchical_device(cc, name)
+    target = String(name)
     for batch in cc.parameters.batches, device in eachindex(batch.locators)
-        instance_name,device_name=_locator_device_name(cc.design,batch.locators[device])
-        path=isempty(instance_name) ? device_name : string(instance_name,'.',device_name)
-        path==target&&return batch,device
+        instance_name, device_name = _locator_device_name(cc.design, batch.locators[device])
+        path = isempty(instance_name) ? device_name : string(instance_name, '.', device_name)
+        path == target&&return batch, device
     end
-    nothing
+    return nothing
 end
 
 function _net_names(cc)
-    sort!(unique!(reduce(vcat,values(_net_labels(cc.design,cc.topology));init=String[])))
+    return sort!(unique!(reduce(vcat, values(_net_labels(cc.design, cc.topology)); init = String[])))
 end
 
 function _device_names(cc)
-    sort!([string(item.path) for item in devices(cc.design;limit=typemax(Int))])
+    return sort!([string(item.path) for item in devices(cc.design; limit = typemax(Int))])
 end
 
-_lookup_error(kind,name,candidates)=CircuitLookupError(kind,String(name),candidates)
+_lookup_error(kind, name, candidates) = CircuitLookupError(kind, String(name), candidates)
 
-function _observation_path(reference,body,names,prefix)
+function _observation_path(reference, body, names, prefix)
     if reference isa BuilderNet
-        segment=body.net_names[Int(reference.id)]
-        local_name=_render_segment((_name(names,segment.base),segment.index))
+        segment = body.net_names[Int(reference.id)]
+        local_name = _render_segment((_name(names, segment.base), segment.index))
     elseif reference isa BuilderPrimitive
-        local_name=_name(names,body.primitives[Int(reference.id)].name)
-    elseif reference isa Union{Symbol,String}
+        local_name = _name(names, body.primitives[Int(reference.id)].name)
+    elseif reference isa Union{Symbol, String}
         return String(reference)
-    elseif reference===nothing
+    elseif reference === nothing
         return nothing
     else
         throw(ArgumentError("unsupported observation reference $(typeof(reference))"))
     end
-    isempty(prefix) ? local_name : string(prefix,'.',local_name)
+    return isempty(prefix) ? local_name : string(prefix, '.', local_name)
 end
 
-function _resolved_observation(value,body,names,prefix)
-    value isa BuilderNet&&return voltage(Symbol(_observation_path(value,body,names,prefix)))
-    value isa BuilderPrimitive&&return current(Symbol(_observation_path(value,body,names,prefix)))
+function _resolved_observation(value, body, names, prefix)
+    value isa BuilderNet&&return voltage(Symbol(_observation_path(value, body, names, prefix)))
+    value isa BuilderPrimitive&&return current(Symbol(_observation_path(value, body, names, prefix)))
     value isa Observable||throw(ArgumentError("unsupported observation value $(typeof(value))"))
-    target=_observation_path(value.target,body,names,prefix)
-    extra=_observation_path(value.extra,body,names,prefix)
-    Observable(value.kind,target===nothing ? nothing : Symbol(target),extra===nothing ? nothing : Symbol(extra))
+    target = _observation_path(value.target, body, names, prefix)
+    extra = _observation_path(value.extra, body, names, prefix)
+    return Observable(value.kind, target === nothing ? nothing : Symbol(target), extra === nothing ? nothing : Symbol(extra))
 end
 
 """
@@ -98,29 +98,30 @@ measured values. Use `observation(result, name)` or `trace(result, observable)`
 to evaluate them.
 """
 function observations(design::CircuitDesign)
-    output=NamedTuple[]
-    function append_body!(body,names,prefix)
+    output = NamedTuple[]
+    function append_body!(body, names, prefix)
         for entry in body.observations
-            resolved=_resolved_observation(entry.value,body,names,prefix)
-            observation_name=entry.name===nothing ? nothing : Symbol(isempty(prefix) ? entry.name : string(prefix,'.',entry.name))
-            push!(output,(name=observation_name,observable=resolved))
+            resolved = _resolved_observation(entry.value, body, names, prefix)
+            observation_name = entry.name === nothing ? nothing : Symbol(isempty(prefix) ? entry.name : string(prefix, '.', entry.name))
+            push!(output, (name = observation_name, observable = resolved))
         end
+        return
     end
-    append_body!(design.root_ir,design.names,"")
+    append_body!(design.root_ir, design.names, "")
     for record in design.root.records
-        template=design.templates.templates[Int(record.template)]
-        append_body!(template.body,template.names,string(InstancePath(_path_segments(design,record.path))))
+        template = design.templates.templates[Int(record.template)]
+        append_body!(template.body, template.names, string(InstancePath(_path_segments(design, record.path))))
     end
-    output
+    return output
 end
-observations(result::SimulationResult)=observations(result.compiled.design)
+observations(result::SimulationResult) = observations(result.compiled.design)
 
-function _named_observable(result,name)
-    target=Symbol(name)
-    found=findall(entry->entry.name===target,observations(result))
+function _named_observable(result, name)
+    target = Symbol(name)
+    found = findall(entry -> entry.name === target, observations(result))
     isempty(found)&&return nothing
-    length(found)==1||throw(ArgumentError("observation name $(name) is ambiguous; use a hierarchy-qualified name"))
-    observations(result)[only(found)].observable
+    length(found) == 1||throw(ArgumentError("observation name $(name) is ambiguous; use a hierarchy-qualified name"))
+    return observations(result)[only(found)].observable
 end
 
 """
@@ -138,84 +139,84 @@ Unlike `trace(result, name)`, this requires a registered observation and does no
 fall back to node lookup. Unknown names raise `CircuitLookupError` with available
 names. Use [`observations`](@ref) to discover definitions.
 """
-function observation(result::SimulationResult,name::Union{Symbol,String})
-    observable=_named_observable(result,name)
-    observable===nothing&&throw(_lookup_error(:observation,name,String[string(entry.name) for entry in observations(result) if entry.name!==nothing]))
-    _observable(result,observable)
+function observation(result::SimulationResult, name::Union{Symbol, String})
+    observable = _named_observable(result, name)
+    observable === nothing&&throw(_lookup_error(:observation, name, String[string(entry.name) for entry in observations(result) if entry.name !== nothing]))
+    return _observable(result, observable)
 end
 
-function voltage(r::SimulationResult,name::Union{Symbol,String})
-    index=_hierarchical_net_index(r.compiled,name)
-    if index===nothing
-        observable=_named_observable(r,name)
-        observable===nothing&&throw(_lookup_error(:net,name,_net_names(r.compiled)))
-        observable.kind===:voltage||throw(ArgumentError("named observation $(name) is not a voltage"))
-        return _observable(r,observable)
+function voltage(r::SimulationResult, name::Union{Symbol, String})
+    index = _hierarchical_net_index(r.compiled, name)
+    if index === nothing
+        observable = _named_observable(r, name)
+        observable === nothing&&throw(_lookup_error(:net, name, _net_names(r.compiled)))
+        observable.kind === :voltage||throw(ArgumentError("named observation $(name) is not a voltage"))
+        return _observable(r, observable)
     end
-    _unknown_trace(r,index)
+    return _unknown_trace(r, index)
 end
-voltage(r::SimulationResult,a::Union{Symbol,String},b::Union{Symbol,String})=voltage(r,a)-voltage(r,b)
-function current(r::SimulationResult,name::Union{Symbol,String},branch=nothing)
-    located=_hierarchical_device(r.compiled,name); located===nothing&&throw(_lookup_error(:device,name,_device_names(r.compiled)))
-    batch,device=located
-    kind=_batch_kind(batch)
-    parameters=batch.parameters[device]
-    if batch isa PrimitiveBatch && batch.branch_unknowns[device]!=0
-        return _unknown_trace(r,batch.branch_unknowns[device])
+voltage(r::SimulationResult, a::Union{Symbol, String}, b::Union{Symbol, String}) = voltage(r, a) - voltage(r, b)
+function current(r::SimulationResult, name::Union{Symbol, String}, branch = nothing)
+    located = _hierarchical_device(r.compiled, name); located === nothing&&throw(_lookup_error(:device, name, _device_names(r.compiled)))
+    batch, device = located
+    kind = _batch_kind(batch)
+    parameters = batch.parameters[device]
+    if batch isa PrimitiveBatch && batch.branch_unknowns[device] != 0
+        return _unknown_trace(r, batch.branch_unknowns[device])
     end
-    terminal(index)=_unknown_trace(r,_batch_terminal(batch,index,device))
-    va=terminal(1); vb=terminal(2)
-    kind===:resistor&&return (va-vb).*batch.conductance[device]
-    kind===:conductance&&return (va-vb).*parameters.value
-    kind===:capacitor&&return parameters.value.*_storage_derivative(r,va-vb).+
-        (hasproperty(parameters,:leakage_resistance) ? (va-vb)./parameters.leakage_resistance : zero(va))
-    if kind===:current_source
-        r.analysis isa SmallSignal&&return fill(ComplexF64(get(parameters,:ac,0.)),length(r.axis))
-        r.analysis isa OperatingPoint&&return [Float64(get(parameters,:dc,0.))]
-        waveform=get(parameters,:waveform,nothing)
-        return waveform===nothing ? fill(Float64(get(parameters,:dc,0.)),length(r.axis)) : waveform.(r.axis)
-    elseif kind===:diode
-        model=parameters.model; voltage_values=va-vb; temperature=get(r.stats,:temperature,300.)
+    terminal(index) = _unknown_trace(r, _batch_terminal(batch, index, device))
+    va = terminal(1); vb = terminal(2)
+    kind === :resistor&&return (va - vb) .* batch.conductance[device]
+    kind === :conductance&&return (va - vb) .* parameters.value
+    kind === :capacitor&&return parameters.value .* _storage_derivative(r, va - vb) .+
+        (hasproperty(parameters, :leakage_resistance) ? (va - vb) ./ parameters.leakage_resistance : zero(va))
+    if kind === :current_source
+        r.analysis isa SmallSignal&&return fill(ComplexF64(get(parameters, :ac, 0.0)), length(r.axis))
+        r.analysis isa OperatingPoint&&return [Float64(get(parameters, :dc, 0.0))]
+        waveform = get(parameters, :waveform, nothing)
+        return waveform === nothing ? fill(Float64(get(parameters, :dc, 0.0)), length(r.axis)) : waveform.(r.axis)
+    elseif kind === :diode
+        model = parameters.model; voltage_values = va - vb; temperature = get(r.stats, :temperature, 300.0)
         if r.analysis isa SmallSignal
-            bias=r.stats[:operating_point]
-            v=_workspace_value(bias,_batch_terminal(batch,1,device))-
-                _workspace_value(bias,_batch_terminal(batch,2,device))
-            _,g=_diode_conduction(model,v,temperature)
-            c=differential_capacitance(model,v;temperature)
-            return (g .+ im.*2π.*r.axis.*c).*voltage_values
+            bias = r.stats[:operating_point]
+            v = _workspace_value(bias, _batch_terminal(batch, 1, device)) -
+                _workspace_value(bias, _batch_terminal(batch, 2, device))
+            _, g = _diode_conduction(model, v, temperature)
+            c = differential_capacitance(model, v; temperature)
+            return (g .+ im .* 2π .* r.axis .* c) .* voltage_values
         end
-        conductive=map(value->_diode_conduction(model,real(value),temperature)[1],voltage_values)
-        charges=map(value->charge(model,real(value);temperature),voltage_values)
-        return conductive.+_storage_derivative(r,charges)
-    elseif kind===:npn
-        vc=terminal(1); vbias=terminal(2); ve=terminal(3); model=parameters.model
-        vt=_thermal_voltage(get(r.stats,:temperature,300.)); If=model.saturation_current.*expm1.(clamp.((vbias.-ve)./vt,-80,40)); Ir=model.saturation_current.*expm1.(clamp.((vbias.-vc)./vt,-80,40))
-        αf=model.forward_beta/(model.forward_beta+1); αr=model.reverse_beta/(model.reverse_beta+1)
-        collector=αf.*If.*(1 .+(vc.-ve)./model.early_voltage).-Ir; base=(1-αf).*If.+(1-αr).*Ir
-        branch===:base&&return base
-        branch===:emitter&&return .-collector.-base
+        conductive = map(value -> _diode_conduction(model, real(value), temperature)[1], voltage_values)
+        charges = map(value -> charge(model, real(value); temperature), voltage_values)
+        return conductive .+ _storage_derivative(r, charges)
+    elseif kind === :npn
+        vc = terminal(1); vbias = terminal(2); ve = terminal(3); model = parameters.model
+        vt = _thermal_voltage(get(r.stats, :temperature, 300.0)); If = model.saturation_current .* expm1.(clamp.((vbias .- ve) ./ vt, -80, 40)); Ir = model.saturation_current .* expm1.(clamp.((vbias .- vc) ./ vt, -80, 40))
+        αf = model.forward_beta / (model.forward_beta + 1); αr = model.reverse_beta / (model.reverse_beta + 1)
+        collector = αf .* If .* (1 .+ (vc .- ve) ./ model.early_voltage) .- Ir; base = (1 - αf) .* If .+ (1 - αr) .* Ir
+        branch === :base&&return base
+        branch === :emitter&&return .-collector .- base
         return collector
-    elseif kind in (:nmos,:pmos)
-        vd=terminal(1); vg=terminal(2); vs=terminal(3); bulk=terminal(4); model=parameters.model
+    elseif kind in (:nmos, :pmos)
+        vd = terminal(1); vg = terminal(2); vs = terminal(3); bulk = terminal(4); model = parameters.model
         if model isa ChargeBasedMOSFET
-            index=branch===:gate ? 2 : branch===:source ? 3 : branch===:bulk ? 4 : 1
-            return _charge_mos_current_trace(r,batch,device,index)
+            index = branch === :gate ? 2 : branch === :source ? 3 : branch === :bulk ? 4 : 1
+            return _charge_mos_current_trace(r, batch, device, index)
         end
-        channel=map((d,g,s,b)->_mosfet_channel(model,kind,real(d),real(g),real(s),real(b))[1],vd,vg,vs,bulk)
-        igs=model.gate_source_capacitance.*_derivative(r,vg.-vs)
-        igd=model.gate_drain_capacitance.*_derivative(r,vg.-vd)
-        igb=model.gate_bulk_capacitance.*_derivative(r,vg.-bulk)
-        branch===:gate&&return igs.+igd.+igb
-        branch===:source&&return .-channel.-igs
-        branch===:bulk&&return .-igb
-        return channel.-igd
-    elseif kind===:switch
-        control=terminal(3)-terminal(4)
-        return (va-vb).*_switch_conductance.(Ref(parameters.model),real.(control))
-    elseif kind===:vccs
-        return parameters.gm.*(terminal(1)-terminal(2))
-    elseif kind===:cccs
-        return parameters.gain.*_unknown_trace(r,batch.control_unknowns[device])
+        channel = map((d, g, s, b) -> _mosfet_channel(model, kind, real(d), real(g), real(s), real(b))[1], vd, vg, vs, bulk)
+        igs = model.gate_source_capacitance .* _derivative(r, vg .- vs)
+        igd = model.gate_drain_capacitance .* _derivative(r, vg .- vd)
+        igb = model.gate_bulk_capacitance .* _derivative(r, vg .- bulk)
+        branch === :gate&&return igs .+ igd .+ igb
+        branch === :source&&return .-channel .- igs
+        branch === :bulk&&return .-igb
+        return channel .- igd
+    elseif kind === :switch
+        control = terminal(3) - terminal(4)
+        return (va - vb) .* _switch_conductance.(Ref(parameters.model), real.(control))
+    elseif kind === :vccs
+        return parameters.gm .* (terminal(1) - terminal(2))
+    elseif kind === :cccs
+        return parameters.gain .* _unknown_trace(r, batch.control_unknowns[device])
     end
     throw(ArgumentError("current is not implemented for device $(name) of kind $(kind)"))
 end
@@ -223,303 +224,341 @@ end
 # Use the actual BDF stencil where the full fixed integration grid is retained.
 # Other records (e.g. decimated adaptive output) use a derivative of the saved
 # charge trace; they cannot reconstruct unsaved integration histories.
-function _storage_derivative(r::SimulationResult,values)
-    orders=get(r.stats,:bdf_orders,nothing)
-    orders===nothing&&return _derivative(r,values)
-    length(values)<=1&&return zero(values)
-    derivative=similar(values)
+function _storage_derivative(r::SimulationResult, values)
+    orders = get(r.stats, :bdf_orders, nothing)
+    orders === nothing&&return _derivative(r, values)
+    length(values) <= 1&&return zero(values)
+    derivative = similar(values)
     for k in 2:length(values)
-        h=r.axis[k]-r.axis[k-1]
-        if orders[k]==2
-            ratio=h/(r.axis[k-1]-r.axis[k-2])
-            derivative[k]=((1+2ratio)/(1+ratio)*(values[k]-values[k-1])-
-                ratio^2/(1+ratio)*(values[k-1]-values[k-2]))/h
+        h = r.axis[k] - r.axis[k - 1]
+        if orders[k] == 2
+            ratio = h / (r.axis[k - 1] - r.axis[k - 2])
+            derivative[k] = (
+                (1 + 2ratio) / (1 + ratio) * (values[k] - values[k - 1]) -
+                    ratio^2 / (1 + ratio) * (values[k - 1] - values[k - 2])
+            ) / h
         else
-            derivative[k]=(values[k]-values[k-1])/h
+            derivative[k] = (values[k] - values[k - 1]) / h
         end
     end
-    derivative[1]=derivative[2]
-    derivative
+    derivative[1] = derivative[2]
+    return derivative
 end
 
-function _derivative(r::SimulationResult,values)
+function _derivative(r::SimulationResult, values)
     if r.analysis isa SmallSignal
-        return im.*2π.*r.axis.*values
-    elseif length(r.axis)==1
+        return im .* 2π .* r.axis .* values
+    elseif length(r.axis) == 1
         return zero(values)
     end
-    output=similar(values)
-    if length(values)==2
-        output.=((values[2]-values[1])/(r.axis[2]-r.axis[1])); return output
+    output = similar(values)
+    if length(values) == 2
+        output .= ((values[2] - values[1]) / (r.axis[2] - r.axis[1])); return output
     end
-    h0=r.axis[2]-r.axis[1]; h1=r.axis[3]-r.axis[2]
-    output[1]=-(2h0+h1)/(h0*(h0+h1))*values[1]+(h0+h1)/(h0*h1)*values[2]-h0/(h1*(h0+h1))*values[3]
-    for i in 2:length(values)-1
-        left=r.axis[i]-r.axis[i-1]; right=r.axis[i+1]-r.axis[i]
-        output[i]=-right/(left*(left+right))*values[i-1]+(right-left)/(left*right)*values[i]+left/(right*(left+right))*values[i+1]
+    h0 = r.axis[2] - r.axis[1]; h1 = r.axis[3] - r.axis[2]
+    output[1] = -(2h0 + h1) / (h0 * (h0 + h1)) * values[1] + (h0 + h1) / (h0 * h1) * values[2] - h0 / (h1 * (h0 + h1)) * values[3]
+    for i in 2:(length(values) - 1)
+        left = r.axis[i] - r.axis[i - 1]; right = r.axis[i + 1] - r.axis[i]
+        output[i] = -right / (left * (left + right)) * values[i - 1] + (right - left) / (left * right) * values[i] + left / (right * (left + right)) * values[i + 1]
     end
-    h0=r.axis[end-1]-r.axis[end-2]; h1=r.axis[end]-r.axis[end-1]
-    output[end]=h1/(h0*(h0+h1))*values[end-2]-(h0+h1)/(h0*h1)*values[end-1]+(h0+2h1)/(h1*(h0+h1))*values[end]
-    output
+    h0 = r.axis[end - 1] - r.axis[end - 2]; h1 = r.axis[end] - r.axis[end - 1]
+    output[end] = h1 / (h0 * (h0 + h1)) * values[end - 2] - (h0 + h1) / (h0 * h1) * values[end - 1] + (h0 + 2h1) / (h1 * (h0 + h1)) * values[end]
+    return output
 end
 
-function power(r::SimulationResult,name::Union{Symbol,String})
-    located=_hierarchical_device(r.compiled,name); located===nothing&&throw(_lookup_error(:device,name,_device_names(r.compiled)))
-    batch,device=located; kind=_batch_kind(batch)
-    terminal(index)=_unknown_trace(r,_batch_terminal(batch,index,device))
-    if kind===:npn
-        return (terminal(1)-terminal(3)).*current(r,name,:collector).+
-            (terminal(2)-terminal(3)).*current(r,name,:base)
-    elseif kind in (:nmos,:pmos)
-        return (terminal(1)-terminal(3)).*current(r,name,:drain).+
-            (terminal(2)-terminal(3)).*current(r,name,:gate).+
-            (terminal(4)-terminal(3)).*current(r,name,:bulk)
+function power(r::SimulationResult, name::Union{Symbol, String})
+    located = _hierarchical_device(r.compiled, name); located === nothing&&throw(_lookup_error(:device, name, _device_names(r.compiled)))
+    batch, device = located; kind = _batch_kind(batch)
+    terminal(index) = _unknown_trace(r, _batch_terminal(batch, index, device))
+    if kind === :npn
+        return (terminal(1) - terminal(3)) .* current(r, name, :collector) .+
+            (terminal(2) - terminal(3)) .* current(r, name, :base)
+    elseif kind in (:nmos, :pmos)
+        return (terminal(1) - terminal(3)) .* current(r, name, :drain) .+
+            (terminal(2) - terminal(3)) .* current(r, name, :gate) .+
+            (terminal(4) - terminal(3)) .* current(r, name, :bulk)
     end
-    (terminal(1)-terminal(2)).*current(r,name)
+    return (terminal(1) - terminal(2)) .* current(r, name)
 end
 
-function charge(r::SimulationResult,name::Union{Symbol,String})
-    located=_hierarchical_device(r.compiled,name); located===nothing&&throw(_lookup_error(:device,name,_device_names(r.compiled)))
-    batch,device=located; kind=_batch_kind(batch)
-    voltage_values=_unknown_trace(r,_batch_terminal(batch,1,device))-_unknown_trace(r,_batch_terminal(batch,2,device))
-    kind===:capacitor&&return batch.parameters[device].value.*voltage_values
-    kind===:diode&&return map(value->charge(batch.parameters[device].model,real(value);
-        temperature=get(r.stats,:temperature,300.)),voltage_values)
+function charge(r::SimulationResult, name::Union{Symbol, String})
+    located = _hierarchical_device(r.compiled, name); located === nothing&&throw(_lookup_error(:device, name, _device_names(r.compiled)))
+    batch, device = located; kind = _batch_kind(batch)
+    voltage_values = _unknown_trace(r, _batch_terminal(batch, 1, device)) - _unknown_trace(r, _batch_terminal(batch, 2, device))
+    kind === :capacitor&&return batch.parameters[device].value .* voltage_values
+    kind === :diode&&return map(
+        value -> charge(
+            batch.parameters[device].model, real(value);
+            temperature = get(r.stats, :temperature, 300.0)
+        ), voltage_values
+    )
     throw(ArgumentError("charge is not available for device $(name)"))
 end
 
-function state(r::SimulationResult,name::Union{Symbol,String},state_name::Symbol)
-    located=_hierarchical_device(r.compiled,name); located===nothing&&throw(_lookup_error(:device,name,_device_names(r.compiled)))
-    batch,device=located; batch isa PrimitiveBatch||throw(KeyError((name,state_name)))
-    contract=device_contract(_batch_kind(batch)); state_index=findfirst(==(state_name),contract.states)
-    state_index===nothing&&throw(KeyError((name,state_name)))
-    _unknown_trace(r,batch.state_unknowns[device][state_index])
+function state(r::SimulationResult, name::Union{Symbol, String}, state_name::Symbol)
+    located = _hierarchical_device(r.compiled, name); located === nothing&&throw(_lookup_error(:device, name, _device_names(r.compiled)))
+    batch, device = located; batch isa PrimitiveBatch||throw(KeyError((name, state_name)))
+    contract = device_contract(_batch_kind(batch)); state_index = findfirst(==(state_name), contract.states)
+    state_index === nothing&&throw(KeyError((name, state_name)))
+    return _unknown_trace(r, batch.state_unknowns[device][state_index])
 end
-function trace(result,x)
-    x isa Observable&&return _observable(result,x)
-    named=_named_observable(result,x)
-    named===nothing ? voltage(result,x) : _observable(result,named)
+function trace(result, x)
+    x isa Observable&&return _observable(result, x)
+    named = _named_observable(result, x)
+    return named === nothing ? voltage(result, x) : _observable(result, named)
 end
-_observable_name(value)=value isa AbstractNode ? value.name : value
-_observable(r,o)=throw(ArgumentError("Expected an observable such as voltage(:out) or current(:R1), received $(repr(o)). Use trace(result, :name) to read a named observation."))
-_observable(r,o::Observable)=o.kind===:voltage ?
-    (o.extra===nothing ? voltage(r,_observable_name(o.target)) :
-        voltage(r,_observable_name(o.target),_observable_name(o.extra))) :
-    o.kind===:current ? current(r,_observable_name(o.target),o.extra) :
-    o.kind===:power ? power(r,_observable_name(o.target)) :
-    o.kind===:charge ? charge(r,_observable_name(o.target)) :
-    o.kind===:state ? state(r,_observable_name(o.target),Symbol(o.extra)) :
+_observable_name(value) = value isa AbstractNode ? value.name : value
+_observable(r, o) = throw(ArgumentError("Expected an observable such as voltage(:out) or current(:R1), received $(repr(o)). Use trace(result, :name) to read a named observation."))
+_observable(r, o::Observable) = o.kind === :voltage ?
+    (
+        o.extra === nothing ? voltage(r, _observable_name(o.target)) :
+        voltage(r, _observable_name(o.target), _observable_name(o.extra))
+    ) :
+    o.kind === :current ? current(r, _observable_name(o.target), o.extra) :
+    o.kind === :power ? power(r, _observable_name(o.target)) :
+    o.kind === :charge ? charge(r, _observable_name(o.target)) :
+    o.kind === :state ? state(r, _observable_name(o.target), Symbol(o.extra)) :
     throw(ArgumentError("unsupported observation kind $(o.kind)"))
-transfer(r::SimulationResult;input,output)=_observable(r,output)./_observable(r,input)
-magnitude(x)=abs.(x)
+transfer(r::SimulationResult; input, output) = _observable(r, output) ./ _observable(r, input)
+magnitude(x) = abs.(x)
 function _unwrap_phase(values)
     isempty(values)&&return Float64[]
-    raw=Float64.(values); output=copy(raw); offset=0.
+    raw = Float64.(values); output = copy(raw); offset = 0.0
     for index in 2:length(output)
-        jump=raw[index]-raw[index-1]
-        if jump>π
-            offset-=2π
+        jump = raw[index] - raw[index - 1]
+        if jump > π
+            offset -= 2π
         elseif jump < -π
-            offset+=2π
+            offset += 2π
         end
-        output[index]=raw[index]+offset
+        output[index] = raw[index] + offset
     end
-    output
+    return output
 end
-function phase(x;unwrap=false,degrees=false)
-    values=angle.(x)
-    unwrap&&(values=_unwrap_phase(values))
-    degrees ? rad2deg.(values) : values
+function phase(x; unwrap = false, degrees = false)
+    values = angle.(x)
+    unwrap&&(values = _unwrap_phase(values))
+    return degrees ? rad2deg.(values) : values
 end
 
 @enum DeviceRegion Cutoff ForwardActive Saturation Triode
-function region(r::SimulationResult,name::Union{Symbol,String})
-    located=_hierarchical_device(r.compiled,name); located===nothing&&throw(_lookup_error(:device,name,_device_names(r.compiled)))
-    batch,device=located; kind=_batch_kind(batch)
-    terminal(index)=_unknown_trace(r,_batch_terminal(batch,index,device))[1]
-    if kind===:npn
-        vc,vb,ve=terminal(1),terminal(2),terminal(3)
-        return vb-ve<.45 ? Cutoff : vb>vc ? Saturation : ForwardActive
-    elseif kind in (:nmos,:pmos)
-        polarity=kind===:nmos ? 1. : -1.; vd,vg,vs,vb=polarity.*(terminal(1),terminal(2),terminal(3),terminal(4))
-        if vd<vs; vd,vs=vs,vd end
-        model=batch.parameters[device].model
+function region(r::SimulationResult, name::Union{Symbol, String})
+    located = _hierarchical_device(r.compiled, name); located === nothing&&throw(_lookup_error(:device, name, _device_names(r.compiled)))
+    batch, device = located; kind = _batch_kind(batch)
+    terminal(index) = _unknown_trace(r, _batch_terminal(batch, index, device))[1]
+    if kind === :npn
+        vc, vb, ve = terminal(1), terminal(2), terminal(3)
+        return vb - ve < 0.45 ? Cutoff : vb > vc ? Saturation : ForwardActive
+    elseif kind in (:nmos, :pmos)
+        polarity = kind === :nmos ? 1.0 : -1.0; vd, vg, vs, vb = polarity .* (terminal(1), terminal(2), terminal(3), terminal(4))
+        if vd < vs
+            vd, vs = vs, vd
+        end
+        model = batch.parameters[device].model
         model isa ChargeBasedMOSFET && throw(ArgumentError("ChargeBasedMOSFET has continuous inversion; use mosfet_operating_point instead of discrete region labels"))
-        threshold=model.threshold_voltage+model.body_effect*(sqrt(max(2model.surface_potential+vs-vb,eps()))-sqrt(2model.surface_potential))
-        overdrive=vg-vs-threshold
-        return overdrive<=0 ? Cutoff : vd-vs<overdrive ? Triode : Saturation
+        threshold = model.threshold_voltage + model.body_effect * (sqrt(max(2model.surface_potential + vs - vb, eps())) - sqrt(2model.surface_potential))
+        overdrive = vg - vs - threshold
+        return overdrive <= 0 ? Cutoff : vd - vs < overdrive ? Triode : Saturation
     end
     throw(ArgumentError("region is only defined for BJT and MOSFET devices"))
 end
 
-_snapshot_value(value)=value
-_snapshot_value(value::AbstractWaveform)=string(typeof(value),NamedTuple{fieldnames(typeof(value))}(Tuple(getfield(value,key) for key in fieldnames(typeof(value)))))
-_snapshot_value(value::NamedTuple)=Dict(key=>_snapshot_value(item) for (key,item) in pairs(value))
+_snapshot_value(value) = value
+_snapshot_value(value::AbstractWaveform) = string(typeof(value), NamedTuple{fieldnames(typeof(value))}(Tuple(getfield(value, key) for key in fieldnames(typeof(value)))))
+_snapshot_value(value::NamedTuple) = Dict(key => _snapshot_value(item) for (key, item) in pairs(value))
 function _snapshot_value(value::AbstractDeviceModel)
-    Dict(:model=>string(typeof(value)),:parameters=>_snapshot_value(getfield(value,:data)))
+    return Dict(:model => string(typeof(value)), :parameters => _snapshot_value(getfield(value, :data)))
 end
 function provenance(r)
-    parameters=Dict{String,Any}()
+    parameters = Dict{String, Any}()
     for batch in r.compiled.parameters.batches, device in eachindex(batch.locators)
-        instance_name,device_name=_locator_device_name(r.compiled.design,batch.locators[device])
-        path=isempty(instance_name) ? device_name : string(instance_name,'.',device_name)
-        parameters[path]=_snapshot_value(batch.parameters[device])
+        instance_name, device_name = _locator_device_name(r.compiled.design, batch.locators[device])
+        path = isempty(instance_name) ? device_name : string(instance_name, '.', device_name)
+        parameters[path] = _snapshot_value(batch.parameters[device])
     end
-    Dict(:amber_version=>v"0.1.0",:design_fingerprint=>r.compiled.design.structural_fingerprint,
-        :parameter_fingerprint=>r.compiled.parameters.fingerprint,:topology_fingerprint=>r.compiled.fingerprint,
-        :analysis=>string(typeof(r.analysis)),:parameters=>parameters,:unit_system=>:SI,
-        :statistics=>copy(r.stats),:warnings=>copy(get(r.stats,:warnings,String[])))
+    return Dict(
+        :amber_version => v"0.1.0", :design_fingerprint => r.compiled.design.structural_fingerprint,
+        :parameter_fingerprint => r.compiled.parameters.fingerprint, :topology_fingerprint => r.compiled.fingerprint,
+        :analysis => string(typeof(r.analysis)), :parameters => parameters, :unit_system => :SI,
+        :statistics => copy(r.stats), :warnings => copy(get(r.stats, :warnings, String[]))
+    )
 end
 
 # Preserve dictionary access while giving explicit reports an engineering display.
-struct EngineeringReport <: AbstractDict{Symbol,Any}
-    data::Dict{Symbol,Any}
+struct EngineeringReport <: AbstractDict{Symbol, Any}
+    data::Dict{Symbol, Any}
 end
-Base.length(r::EngineeringReport)=length(r.data)
-Base.iterate(r::EngineeringReport,args...)=iterate(r.data,args...)
-Base.getindex(r::EngineeringReport,key)=r.data[key]
-Base.get(r::EngineeringReport,key,default)=get(r.data,key,default)
-Base.get(f::Union{Function,Type},r::EngineeringReport,key)=get(f,r.data,key)
-Base.get!(r::EngineeringReport,key,default)=get!(r.data,key,default)
-Base.get!(f::Union{Function,Type},r::EngineeringReport,key)=get!(f,r.data,key)
-Base.haskey(r::EngineeringReport,key)=haskey(r.data,key)
-Base.keys(r::EngineeringReport)=keys(r.data)
-Base.setindex!(r::EngineeringReport,value,key)=setindex!(r.data,value,key)
-Base.delete!(r::EngineeringReport,key)=(delete!(r.data,key);r)
-Base.empty!(r::EngineeringReport)=(empty!(r.data);r)
-Base.copy(r::EngineeringReport)=EngineeringReport(copy(r.data))
+Base.length(r::EngineeringReport) = length(r.data)
+Base.iterate(r::EngineeringReport, args...) = iterate(r.data, args...)
+Base.getindex(r::EngineeringReport, key) = r.data[key]
+Base.get(r::EngineeringReport, key, default) = get(r.data, key, default)
+Base.get(f::Union{Function, Type}, r::EngineeringReport, key) = get(f, r.data, key)
+Base.get!(r::EngineeringReport, key, default) = get!(r.data, key, default)
+Base.get!(f::Union{Function, Type}, r::EngineeringReport, key) = get!(f, r.data, key)
+Base.haskey(r::EngineeringReport, key) = haskey(r.data, key)
+Base.keys(r::EngineeringReport) = keys(r.data)
+Base.setindex!(r::EngineeringReport, value, key) = setindex!(r.data, value, key)
+Base.delete!(r::EngineeringReport, key) = (delete!(r.data, key); r)
+Base.empty!(r::EngineeringReport) = (empty!(r.data); r)
+Base.copy(r::EngineeringReport) = EngineeringReport(copy(r.data))
 
-function _device_report_window(r,window)
-    temporal=r.analysis isa Union{Transient,TransientNoise}
-    window!==nothing&&!temporal&&throw(ArgumentError("device metric windows require a transient result"))
-    indices=eachindex(r.axis)
-    if window!==nothing
+function _device_report_window(r, window)
+    temporal = r.analysis isa Union{Transient, TransientNoise}
+    window !== nothing&&!temporal&&throw(ArgumentError("device metric windows require a transient result"))
+    indices = eachindex(r.axis)
+    if window !== nothing
         window isa Pair||throw(ArgumentError("window must be start => stop in seconds"))
-        lo,hi=Float64(first(window)),Float64(last(window))
-        isfinite(lo)&&isfinite(hi)&&lo<=hi||throw(ArgumentError("window bounds must be finite and ordered"))
-        first(r.axis)<=lo<=hi<=last(r.axis)||throw(ArgumentError("window must lie within the saved result interval"))
-        indices=searchsortedfirst(r.axis,lo):searchsortedlast(r.axis,hi)
+        lo, hi = Float64(first(window)), Float64(last(window))
+        isfinite(lo)&&isfinite(hi)&&lo <= hi||throw(ArgumentError("window bounds must be finite and ordered"))
+        first(r.axis) <= lo <= hi <= last(r.axis)||throw(ArgumentError("window must lie within the saved result interval"))
+        indices = searchsortedfirst(r.axis, lo):searchsortedlast(r.axis, hi)
         isempty(indices)&&throw(ArgumentError("window contains no saved samples"))
     end
-    interval=r.axis[first(indices)]=>r.axis[last(indices)]
-    indices,(scope=window===nothing ? :full_record : :selected_window,
-        requested=window,interval=interval,samples=length(indices),
-        axis_unit=temporal ? "s" : r.analysis isa SmallSignal ? "Hz" : "",
-        rms_method=temporal&&length(indices)>1 ? :time_weighted_trapezoidal : :sample_rms)
+    interval = r.axis[first(indices)] => r.axis[last(indices)]
+    return indices, (
+            scope = window === nothing ? :full_record : :selected_window,
+            requested = window, interval = interval, samples = length(indices),
+            axis_unit = temporal ? "s" : r.analysis isa SmallSignal ? "Hz" : "",
+            rms_method = temporal&&length(indices) > 1 ? :time_weighted_trapezoidal : :sample_rms,
+        )
 end
 
-function _device_current_rms(r,values,indices,window)
-    window.rms_method===:sample_rms&&return sqrt(sum(abs2,values[indices])/length(indices))
-    energy=sum((abs2(values[i])+abs2(values[i+1]))/2*(r.axis[i+1]-r.axis[i])
-        for i in first(indices):last(indices)-1)
-    sqrt(energy/(last(window.interval)-first(window.interval)))
+function _device_current_rms(r, values, indices, window)
+    window.rms_method === :sample_rms&&return sqrt(sum(abs2, values[indices]) / length(indices))
+    energy = sum(
+        (abs2(values[i]) + abs2(values[i + 1])) / 2 * (r.axis[i + 1] - r.axis[i])
+            for i in first(indices):(last(indices) - 1)
+    )
+    return sqrt(energy / (last(window.interval) - first(window.interval)))
 end
 
-function report(r::SimulationResult;detailed=false,window=nothing)
-    devices=Dict{String,Any}()
+function report(r::SimulationResult; detailed = false, window = nothing)
+    devices = Dict{String, Any}()
     if r.analysis isa OperatingPoint
         for batch in r.compiled.parameters.batches
-            _batch_kind(batch)===:npn||continue
+            _batch_kind(batch) === :npn||continue
             for device in eachindex(batch.locators)
-                instance_name,device_name=_locator_device_name(r.compiled.design,batch.locators[device])
-                path=isempty(instance_name) ? device_name : string(instance_name,'.',device_name)
-                collector=_unknown_trace(r,_batch_terminal(batch,1,device)); base=_unknown_trace(r,_batch_terminal(batch,2,device)); emitter=_unknown_trace(r,_batch_terminal(batch,3,device))
-                devices[path]=(vbe=(base-emitter)[1],vce=(collector-emitter)[1],
-                    collector_current=current(r,path,:collector)[1],base_current=current(r,path,:base)[1])
+                instance_name, device_name = _locator_device_name(r.compiled.design, batch.locators[device])
+                path = isempty(instance_name) ? device_name : string(instance_name, '.', device_name)
+                collector = _unknown_trace(r, _batch_terminal(batch, 1, device)); base = _unknown_trace(r, _batch_terminal(batch, 2, device)); emitter = _unknown_trace(r, _batch_terminal(batch, 3, device))
+                devices[path] = (
+                    vbe = (base - emitter)[1], vce = (collector - emitter)[1],
+                    collector_current = current(r, path, :collector)[1], base_current = current(r, path, :base)[1],
+                )
             end
         end
     end
-    validity=validity_report(r;window)
-    merge!(devices,validity[:devices])
-    statistics=copy(r.stats)
+    validity = validity_report(r; window)
+    merge!(devices, validity[:devices])
+    statistics = copy(r.stats)
     if !detailed
-        for key in (:residual_history,:bdf_orders,:integration_orders)
-            pop!(statistics,key,nothing)
+        for key in (:residual_history, :bdf_orders, :integration_orders)
+            pop!(statistics, key, nothing)
         end
     end
-    EngineeringReport(Dict(:analysis=>string(typeof(r.analysis)),:statistics=>statistics,:devices=>devices,
-        :samples=>length(r.axis),:interval=>(first(r.axis)=>last(r.axis)),
-        :axis_unit=>validity[:device_window].axis_unit,:device_window=>validity[:device_window],
-        :warnings=>validity[:warnings],:detailed=>detailed))
+    return EngineeringReport(
+        Dict(
+            :analysis => string(typeof(r.analysis)), :statistics => statistics, :devices => devices,
+            :samples => length(r.axis), :interval => (first(r.axis) => last(r.axis)),
+            :axis_unit => validity[:device_window].axis_unit, :device_window => validity[:device_window],
+            :warnings => validity[:warnings], :detailed => detailed
+        )
+    )
 end
 
-function validity_report(r::SimulationResult;window=nothing)
-    indices,device_window=_device_report_window(r,window)
-    devices=Dict{String,Any}(); warnings=copy(get(r.stats,:warnings,String[]))
+function validity_report(r::SimulationResult; window = nothing)
+    indices, device_window = _device_report_window(r, window)
+    devices = Dict{String, Any}(); warnings = copy(get(r.stats, :warnings, String[]))
     for batch in r.compiled.parameters.batches, device in eachindex(batch.locators)
-        kind=_batch_kind(batch)
-        instance_name,device_name=_locator_device_name(r.compiled.design,batch.locators[device])
-        path=isempty(instance_name) ? device_name : string(instance_name,'.',device_name)
-        if kind===:diode
-            terminal_voltage=real.(_unknown_trace(r,_batch_terminal(batch,1,device))-_unknown_trace(r,_batch_terminal(batch,2,device)))
-            device_current=real.(current(r,path))
-            devices[path]=(maximum_forward_current=maximum(device_current[indices]),maximum_reverse_voltage=max(0.,-minimum(terminal_voltage[indices])),model_validity=:satisfied)
-        elseif kind===:capacitor
-            ripple=current(r,path); rms=_device_current_rms(r,ripple,indices,device_window)
-            devices[path]=(ripple_current_rms=rms,rated_ripple_current=:unspecified)
-            push!(warnings,"$(path): rated ripple current is unspecified; thermal validity cannot be evaluated")
-        elseif r.analysis isa TransientNoise&&kind in (:nmos,:pmos)
-            push!(warnings,"$(path): "*_mos_noise_warning(batch.parameters[device].model))
+        kind = _batch_kind(batch)
+        instance_name, device_name = _locator_device_name(r.compiled.design, batch.locators[device])
+        path = isempty(instance_name) ? device_name : string(instance_name, '.', device_name)
+        if kind === :diode
+            terminal_voltage = real.(_unknown_trace(r, _batch_terminal(batch, 1, device)) - _unknown_trace(r, _batch_terminal(batch, 2, device)))
+            device_current = real.(current(r, path))
+            devices[path] = (maximum_forward_current = maximum(device_current[indices]), maximum_reverse_voltage = max(0.0, -minimum(terminal_voltage[indices])), model_validity = :satisfied)
+        elseif kind === :capacitor
+            ripple = current(r, path); rms = _device_current_rms(r, ripple, indices, device_window)
+            devices[path] = (ripple_current_rms = rms, rated_ripple_current = :unspecified)
+            push!(warnings, "$(path): rated ripple current is unspecified; thermal validity cannot be evaluated")
+        elseif r.analysis isa TransientNoise&&kind in (:nmos, :pmos)
+            push!(warnings, "$(path): " * _mos_noise_warning(batch.parameters[device].model))
         end
     end
-    Dict(:devices=>devices,:warnings=>warnings,:device_window=>device_window)
+    return Dict(:devices => devices, :warnings => warnings, :device_window => device_window)
 end
 function available_observables(x)
-    contract=device_contract(x.kind); contract===nothing&&throw(ArgumentError("unsupported device kind $(x.kind)"))
-    contract.observables
+    contract = device_contract(x.kind); contract === nothing&&throw(ArgumentError("unsupported device kind $(x.kind)"))
+    return contract.observables
 end
 
-function _charge_mos_result_evaluation(r,batch,device)
-    model=batch.parameters[device].model
-    temperature=get(r.stats,:temperature,300.)
+function _charge_mos_result_evaluation(r, batch, device)
+    model = batch.parameters[device].model
+    temperature = get(r.stats, :temperature, 300.0)
     if r.analysis isa SmallSignal
-        bias=r.stats[:operating_point]
-        voltages=ntuple(i->_workspace_value(bias,_batch_terminal(batch,i,device)),4)
-        return _charge_mos_evaluate(model,_batch_kind(batch),voltages;temperature)
+        bias = r.stats[:operating_point]
+        voltages = ntuple(i -> _workspace_value(bias, _batch_terminal(batch, i, device)), 4)
+        return _charge_mos_evaluate(model, _batch_kind(batch), voltages; temperature)
     end
-    traces=ntuple(i->_unknown_trace(r,_batch_terminal(batch,i,device)),4)
-    [_charge_mos_evaluate(model,_batch_kind(batch),
-        ntuple(i->real(traces[i][k]),4);temperature)
-        for k in eachindex(r.axis)]
+    traces = ntuple(i -> _unknown_trace(r, _batch_terminal(batch, i, device)), 4)
+    return [
+        _charge_mos_evaluate(
+            model, _batch_kind(batch),
+            ntuple(i -> real(traces[i][k]), 4); temperature
+        )
+            for k in eachindex(r.axis)
+    ]
 end
 
-function _charge_mos_current_trace(r,batch,device,index)
-    evaluated=_charge_mos_result_evaluation(r,batch,device)
+function _charge_mos_current_trace(r, batch, device, index)
+    evaluated = _charge_mos_result_evaluation(r, batch, device)
     if r.analysis isa SmallSignal
-        return [sum((evaluated.currents[index].gradient[j]+im*2π*f*evaluated.charges[index].gradient[j])*
-            _unknown_trace(r,_batch_terminal(batch,j,device))[k] for j in 1:4) for (k,f) in enumerate(r.axis)]
+        return [
+            sum(
+                (evaluated.currents[index].gradient[j] + im * 2π * f * evaluated.charges[index].gradient[j]) *
+                    _unknown_trace(r, _batch_terminal(batch, j, device))[k] for j in 1:4
+            ) for (k, f) in enumerate(r.axis)
+        ]
     end
-    charges=[e.charges[index].value for e in evaluated]
-    [e.currents[index].value for e in evaluated].+_storage_derivative(r,charges)
+    charges = [e.charges[index].value for e in evaluated]
+    return [e.currents[index].value for e in evaluated] .+ _storage_derivative(r, charges)
 end
 
 """Return named drain/gate/source/bulk charge traces (AC returns charge phasors)."""
-function terminal_charges(r::SimulationResult,name::Union{Symbol,String})
-    located=_hierarchical_device(r.compiled,name)
-    located===nothing && throw(_lookup_error(:device,name,_device_names(r.compiled)))
-    batch,device=located
-    _batch_kind(batch) in (:nmos,:pmos) && batch.parameters[device].model isa ChargeBasedMOSFET ||
+function terminal_charges(r::SimulationResult, name::Union{Symbol, String})
+    located = _hierarchical_device(r.compiled, name)
+    located === nothing && throw(_lookup_error(:device, name, _device_names(r.compiled)))
+    batch, device = located
+    _batch_kind(batch) in (:nmos, :pmos) && batch.parameters[device].model isa ChargeBasedMOSFET ||
         throw(ArgumentError("terminal_charges requires ChargeBasedMOSFET"))
-    e=_charge_mos_result_evaluation(r,batch,device)
-    traces=if r.analysis isa SmallSignal
-        ntuple(i->[sum(e.charges[i].gradient[j]*_unknown_trace(r,_batch_terminal(batch,j,device))[k]
-            for j in 1:4) for k in eachindex(r.axis)],4)
+    e = _charge_mos_result_evaluation(r, batch, device)
+    traces = if r.analysis isa SmallSignal
+        ntuple(
+            i -> [
+                sum(
+                    e.charges[i].gradient[j] * _unknown_trace(r, _batch_terminal(batch, j, device))[k]
+                        for j in 1:4
+                ) for k in eachindex(r.axis)
+            ], 4
+        )
     else
-        ntuple(i->[point.charges[i].value for point in e],4)
+        ntuple(i -> [point.charges[i].value for point in e], 4)
     end
-    NamedTuple{(:drain,:gate,:source,:bulk)}(traces)
+    return NamedTuple{(:drain, :gate, :source, :bulk)}(traces)
 end
 
 """Characterize a ChargeBasedMOSFET instance at a solved DC operating point."""
-function mosfet_operating_point(r::SimulationResult,name::Union{Symbol,String})
+function mosfet_operating_point(r::SimulationResult, name::Union{Symbol, String})
     r.analysis isa OperatingPoint || throw(ArgumentError("mosfet_operating_point requires an OperatingPoint result"))
-    get(r.stats,:converged,false) || throw(ArgumentError("operating point did not converge"))
-    located=_hierarchical_device(r.compiled,name)
-    located===nothing && throw(_lookup_error(:device,name,_device_names(r.compiled)))
-    batch,device=located
-    _batch_kind(batch) in (:nmos,:pmos) && batch.parameters[device].model isa ChargeBasedMOSFET ||
+    get(r.stats, :converged, false) || throw(ArgumentError("operating point did not converge"))
+    located = _hierarchical_device(r.compiled, name)
+    located === nothing && throw(_lookup_error(:device, name, _device_names(r.compiled)))
+    batch, device = located
+    _batch_kind(batch) in (:nmos, :pmos) && batch.parameters[device].model isa ChargeBasedMOSFET ||
         throw(ArgumentError("mosfet_operating_point requires ChargeBasedMOSFET"))
-    voltages=ntuple(i->_unknown_trace(r,_batch_terminal(batch,i,device))[1],4)
-    mosfet_operating_point(batch.parameters[device].model,_batch_kind(batch),voltages...;
-        temperature=get(r.stats,:temperature,300.))
+    voltages = ntuple(i -> _unknown_trace(r, _batch_terminal(batch, i, device))[1], 4)
+    return mosfet_operating_point(
+        batch.parameters[device].model, _batch_kind(batch), voltages...;
+        temperature = get(r.stats, :temperature, 300.0)
+    )
 end

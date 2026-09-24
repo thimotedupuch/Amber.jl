@@ -1,6 +1,6 @@
 @testset "on-disk example gallery" begin
-    root=normpath(joinpath(@__DIR__,"..","..","examples"))
-    files=[
+    root = normpath(joinpath(@__DIR__, "..", "..", "examples"))
+    files = [
         "01_practical_rc/circuit.jl",
         "02_diode_rectifier/circuit.jl",
         "03_common_emitter/circuit.jl",
@@ -16,52 +16,52 @@
         "13_cmos_ring_oscillator/circuit.jl",
         "14_conductance_crossbar/circuit.jl",
     ]
-    modules=Module[]
+    modules = Module[]
     for file in files
-        example_module=Module(gensym(:AmberExample))
-        Base.include(example_module,joinpath(root,file)); push!(modules,example_module)
+        example_module = Module(gensym(:AmberExample))
+        Base.include(example_module, joinpath(root, file)); push!(modules, example_module)
     end
-    @test isempty(check(getfield(modules[1],:PracticalLowPass)()))
-    @test isempty(check(getfield(modules[2],:HalfWaveRectifier)()))
-    amplifier=getfield(modules[3],:CommonEmitterAmplifier)()
-    amplifier_op=operating_point(amplifier)
+    @test isempty(check(getfield(modules[1], :PracticalLowPass)()))
+    @test isempty(check(getfield(modules[2], :HalfWaveRectifier)()))
+    amplifier = getfield(modules[3], :CommonEmitterAmplifier)()
+    amplifier_op = operating_point(amplifier)
     @test amplifier_op.stats[:converged]
-    @test region(amplifier_op,:Q1)==ForwardActive
-    amplifier_ac=small_signal(amplifier,1kHz=>1kHz;source=:Input)
-    amplifier_gain=transfer(amplifier_ac;input=voltage(:src),output=voltage(:out))
-    @test abs(amplifier_gain[1])>10
-    @test operating_point(getfield(modules[4],:DifferentialPair)()).stats[:converged]
-    @test isempty(check(getfield(modules[5],:WienOscillator)()))
-    @test isempty(check(getfield(modules[6],:SampleAndHold)()))
-    @test summary(getfield(modules[7],:RLGCLine)(sections=5)).primitive_devices==22
-    @test !isempty(check(getfield(modules[8],:ContradictorySources)()))
-    @test !isempty(check(getfield(modules[8],:FloatingInput)()))
-    buck=getfield(modules[9],:BuckConverter)()
+    @test region(amplifier_op, :Q1) == ForwardActive
+    amplifier_ac = small_signal(amplifier, 1kHz => 1kHz; source = :Input)
+    amplifier_gain = transfer(amplifier_ac; input = voltage(:src), output = voltage(:out))
+    @test abs(amplifier_gain[1]) > 10
+    @test operating_point(getfield(modules[4], :DifferentialPair)()).stats[:converged]
+    @test isempty(check(getfield(modules[5], :WienOscillator)()))
+    @test isempty(check(getfield(modules[6], :SampleAndHold)()))
+    @test summary(getfield(modules[7], :RLGCLine)(sections = 5)).primitive_devices == 22
+    @test !isempty(check(getfield(modules[8], :ContradictorySources)()))
+    @test !isempty(check(getfield(modules[8], :FloatingInput)()))
+    buck = getfield(modules[9], :BuckConverter)()
     @test isempty(check(buck))
-    buck_start=transient(buck,0s=>10μs;initial=:discharged,event_mode=:exact,max_step=200ns,saveat=1μs)
+    buck_start = transient(buck, 0s => 10μs; initial = :discharged, event_mode = :exact, max_step = 200ns, saveat = 1μs)
     @test buck_start.stats[:converged]
-    active_filter=getfield(modules[10],:HierarchicalActiveFilter)()
+    active_filter = getfield(modules[10], :HierarchicalActiveFilter)()
     @test isempty(check(active_filter))
-    active_response=small_signal(active_filter,1kHz=>1kHz;source=:Source)
-    @test all(isfinite,voltage(active_response,:output))
-    bridge=getfield(modules[11],:PrecisionBridge)()
-    bridge_result=operating_point(bridge)
+    active_response = small_signal(active_filter, 1kHz => 1kHz; source = :Source)
+    @test all(isfinite, voltage(active_response, :output))
+    bridge = getfield(modules[11], :PrecisionBridge)()
+    bridge_result = operating_point(bridge)
     @test bridge_result.stats[:converged]
-    @test isfinite(voltage(bridge_result,:output)[1])
-    inverter=getfield(modules[12],:CMOSInverter)()
+    @test isfinite(voltage(bridge_result, :output)[1])
+    inverter = getfield(modules[12], :CMOSInverter)()
     @test isempty(check(inverter))
-    ring=getfield(modules[13],:CMOSRingOscillator)()
+    ring = getfield(modules[13], :CMOSRingOscillator)()
     @test isempty(check(ring))
-    @test count(x->x.kind in (:nmos,:pmos),devices(ring))==10
-    ring_start=transient(ring,0s=>300ns;max_step=1ns,saveat=1ns)
-    ring_metrics=harmonic_analysis(ring_start;signal=voltage(:stage5),interval=100ns=>300ns)
+    @test count(x -> x.kind in (:nmos, :pmos), devices(ring)) == 10
+    ring_start = transient(ring, 0s => 300ns; max_step = 1ns, saveat = 1ns)
+    ring_metrics = harmonic_analysis(ring_start; signal = voltage(:stage5), interval = 100ns => 300ns)
     @test ring_start.stats[:converged]
-    @test ring_metrics.fundamental.frequency>10MHz
-    @test ring_metrics.fundamental.amplitude_rms>1V
-    crossbar=getfield(modules[14],:ConductanceCrossbar)()
-    crossbar_result=operating_point(crossbar)
-    crossbar_outputs=[voltage(crossbar_result,Symbol(:output_,row))[1] for row in 1:2]
-    expected=-100kΩ.*([2.0 1.0 0.5; 0.5 1.5 2.0].*μS*[0.2,0.5,0.8].*V)
+    @test ring_metrics.fundamental.frequency > 10MHz
+    @test ring_metrics.fundamental.amplitude_rms > 1V
+    crossbar = getfield(modules[14], :ConductanceCrossbar)()
+    crossbar_result = operating_point(crossbar)
+    crossbar_outputs = [voltage(crossbar_result, Symbol(:output_, row))[1] for row in 1:2]
+    expected = -100kΩ .* ([2.0 1.0 0.5; 0.5 1.5 2.0] .* μS * [0.2, 0.5, 0.8] .* V)
     @test crossbar_result.stats[:converged]
-    @test isapprox(crossbar_outputs,expected;rtol=2e-5)
+    @test isapprox(crossbar_outputs, expected; rtol = 2.0e-5)
 end

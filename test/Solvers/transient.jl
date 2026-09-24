@@ -1,106 +1,114 @@
 @testset "transient" begin
-    @test_throws MethodError transient(LowPass(),0s=>1ms;initialization=:consistent)
-    result=transient(LowPass(),0s=>1ms;saveat=10μs)
-    @test result.stats[:converged]; @test voltage(result,:vout)[end]>.9V
-    first_order=transient(LowPass(),0s=>200μs;saveat=10μs,method=:bdf1)
-    @test first_order.analysis.method==:bdf1
+    @test_throws MethodError transient(LowPass(), 0s => 1ms; initialization = :consistent)
+    result = transient(LowPass(), 0s => 1ms; saveat = 10μs)
+    @test result.stats[:converged]; @test voltage(result, :vout)[end] > 0.9V
+    first_order = transient(LowPass(), 0s => 200μs; saveat = 10μs, method = :bdf1)
+    @test first_order.analysis.method == :bdf1
     @circuit InitializedCapacitor() begin
-        gnd=ground(); output=node(); R1=resistor(output,gnd;value=1kΩ)
-        C1=capacitor(output,gnd;value=1μF); initial_voltage(C1,2V)
+        gnd = ground(); output = node(); R1 = resistor(output, gnd; value = 1kΩ)
+        C1 = capacitor(output, gnd; value = 1μF); initial_voltage(C1, 2V)
     end
-    initialized=transient(InitializedCapacitor(),0s=>100μs;saveat=10μs)
-    @test voltage(initialized,:output)[1]≈2V
-    @test voltage(initialized,:output)[end]<2V
-    supplied=transient(InitializedCapacitor(),0s=>100μs;saveat=10μs,initial=[.5])
-    @test voltage(supplied,:output)[1]==.5
-    compiled=compile(LowPass())
-    overridden=simulate(compiled,Transient(0s=>200μs;saveat=10μs,overrides=Dict(Symbol("V1.waveform")=>Step(low=0V,high=2V,at=0s))))
-    @test voltage(overridden,:vout)[end]>1V
-    original=transient(compiled,0s=>200μs;saveat=10μs)
-    @test voltage(original,:vin)[end]≈1V
+    initialized = transient(InitializedCapacitor(), 0s => 100μs; saveat = 10μs)
+    @test voltage(initialized, :output)[1] ≈ 2V
+    @test voltage(initialized, :output)[end] < 2V
+    supplied = transient(InitializedCapacitor(), 0s => 100μs; saveat = 10μs, initial = [0.5])
+    @test voltage(supplied, :output)[1] == 0.5
+    compiled = compile(LowPass())
+    overridden = simulate(compiled, Transient(0s => 200μs; saveat = 10μs, overrides = Dict(Symbol("V1.waveform") => Step(low = 0V, high = 2V, at = 0s))))
+    @test voltage(overridden, :vout)[end] > 1V
+    original = transient(compiled, 0s => 200μs; saveat = 10μs)
+    @test voltage(original, :vin)[end] ≈ 1V
     @circuit PulseEvents() begin
-        pulse_ground=ground(); pulse_node=node()
-        Clock=voltage_source(pulse_node,pulse_ground;waveform=Pulse(frequency=100kHz,rise=2ns,fall=2ns,duty_cycle=.15))
+        pulse_ground = ground(); pulse_node = node()
+        Clock = voltage_source(pulse_node, pulse_ground; waveform = Pulse(frequency = 100kHz, rise = 2ns, fall = 2ns, duty_cycle = 0.15))
     end
-    pulse_circuit=PulseEvents()
-    event_result=transient(pulse_circuit,0s=>3μs;max_step=50ns,event_mode=:exact)
-    @test any(==(2ns),event_result.axis)
-    @test any(==(1.5μs),event_result.axis)
-    sampler_module=Module(:SwitchEventSampler)
-    Base.include(sampler_module,normpath(joinpath(@__DIR__,"..","..","examples","06_sample_and_hold","circuit.jl")))
-    sampler_result=transient(getfield(sampler_module,:SampleAndHold)(),0s=>3μs;max_step=50ns,event_mode=:exact)
+    pulse_circuit = PulseEvents()
+    event_result = transient(pulse_circuit, 0s => 3μs; max_step = 50ns, event_mode = :exact)
+    @test any(==(2ns), event_result.axis)
+    @test any(==(1.5μs), event_result.axis)
+    sampler_module = Module(:SwitchEventSampler)
+    Base.include(sampler_module, normpath(joinpath(@__DIR__, "..", "..", "examples", "06_sample_and_hold", "circuit.jl")))
+    sampler_result = transient(getfield(sampler_module, :SampleAndHold)(), 0s => 3μs; max_step = 50ns, event_mode = :exact)
     @test sampler_result.stats[:converged]
-    @test all(isfinite,voltage(sampler_result,:hold))
-    adaptive_result=transient(LowPass(),0s=>1ms;adaptive=true,reltol=1e-4,abstol=1e-8,event_mode=:exact)
+    @test all(isfinite, voltage(sampler_result, :hold))
+    adaptive_result = transient(LowPass(), 0s => 1ms; adaptive = true, reltol = 1.0e-4, abstol = 1.0e-8, event_mode = :exact)
     @test adaptive_result.stats[:converged]
 
     # The analysis object preserves the same automatic policy as the direct
     # API: an explicit output/maximum step selects the deterministic grid,
     # while an unconstrained transient selects adaptive stepping.
-    fixed_from_analysis=simulate(LowPass(),Transient(0s=>100μs;max_step=10μs))
-    automatic_from_analysis=simulate(LowPass(),Transient(0s=>100μs))
+    fixed_from_analysis = simulate(LowPass(), Transient(0s => 100μs; max_step = 10μs))
+    automatic_from_analysis = simulate(LowPass(), Transient(0s => 100μs))
     @test fixed_from_analysis.analysis.adaptive === false
     @test automatic_from_analysis.analysis.adaptive === true
-    @test adaptive_result.stats[:rejected_steps]>=0
-    @test length(unique(round.(diff(adaptive_result.axis);sigdigits=6)))>1
-    @test voltage(adaptive_result,:vout)[end]>.9V
+    @test adaptive_result.stats[:rejected_steps] >= 0
+    @test length(unique(round.(diff(adaptive_result.axis); sigdigits = 6))) > 1
+    @test voltage(adaptive_result, :vout)[end] > 0.9V
 end
 
 
 @testset "transient validation and save grid" begin
-    @test_throws AnalysisValidationError transient(LowPass(),1s=>0s)
-    result=transient(LowPass(),0s=>95μs;saveat=10μs)
-    @test result.axis==vcat(0.,collect(10μs:10μs:90μs),95μs)
+    @test_throws AnalysisValidationError transient(LowPass(), 1s => 0s)
+    result = transient(LowPass(), 0s => 95μs; saveat = 10μs)
+    @test result.axis == vcat(0.0, collect(10μs:10μs:90μs), 95μs)
 
     @circuit SaveGridRC() begin
-        gnd=ground(); input=node(); output=node()
-        Source=voltage_source(input,gnd;waveform=Step(low=0V,high=1V,at=100μs,rise=1μs))
-        R1=resistor(input,output;value=10kΩ)
-        C1=capacitor(output,gnd;value=10nF)
+        gnd = ground(); input = node(); output = node()
+        Source = voltage_source(input, gnd; waveform = Step(low = 0V, high = 1V, at = 100μs, rise = 1μs))
+        R1 = resistor(input, output; value = 10kΩ)
+        C1 = capacitor(output, gnd; value = 10nF)
     end
     # 100μs and the corresponding save-grid timestamp differ by roundoff.
     # Corners must remain integration boundaries without adding or losing
     # output samples, even when the internal step is smaller than saveat.
-    expected=vcat(0.,collect(2μs:2μs:140μs),141μs)
-    saved_axes=Vector{Float64}[]
-    for adaptive in (false,true), max_step in (2μs,1μs)
-        sampled=transient(SaveGridRC(),0s=>141μs;saveat=2μs,max_step,adaptive,event_mode=:exact)
+    expected = vcat(0.0, collect(2μs:2μs:140μs), 141μs)
+    saved_axes = Vector{Float64}[]
+    for adaptive in (false, true), max_step in (2μs, 1μs)
+        sampled = transient(SaveGridRC(), 0s => 141μs; saveat = 2μs, max_step, adaptive, event_mode = :exact)
         @test sampled.stats[:converged]
-        @test sampled.axis≈expected
-        push!(saved_axes,sampled.axis)
-        @test size(sampled.values,2)==length(expected)
-        @test any(t->isapprox(t,100μs),sampled.stats[:event_times])
-        @test any(t->isapprox(t,101μs),sampled.stats[:event_times])
-        @test !haskey(sampled.stats,:bdf_orders)
-        @test all(isfinite,current(sampled,:C1))
+        @test sampled.axis ≈ expected
+        push!(saved_axes, sampled.axis)
+        @test size(sampled.values, 2) == length(expected)
+        @test any(t -> isapprox(t, 100μs), sampled.stats[:event_times])
+        @test any(t -> isapprox(t, 101μs), sampled.stats[:event_times])
+        @test !haskey(sampled.stats, :bdf_orders)
+        @test all(isfinite, current(sampled, :C1))
     end
-    @test all(==(first(saved_axes)),saved_axes)
-    resolved=transient(SaveGridRC(),0s=>140μs;saveat=2μs,max_step=0.1μs,event_mode=:exact)
+    @test all(==(first(saved_axes)), saved_axes)
+    resolved = transient(SaveGridRC(), 0s => 140μs; saveat = 2μs, max_step = 0.1μs, event_mode = :exact)
     # Exact response after the one-microsecond linear ramp.
-    expected_output=1-100*(1-exp(-0.01))*exp(-(140μs-101μs)/100μs)
-    @test voltage(resolved,:output)[end]≈expected_output atol=2e-4
+    expected_output = 1 - 100 * (1 - exp(-0.01)) * exp(-(140μs - 101μs) / 100μs)
+    @test voltage(resolved, :output)[end] ≈ expected_output atol = 2.0e-4
 end
 
 @testset "CMOS roundoff-equivalent stop times" begin
-    inverter_module=Module(:EndpointInverter)
-    Base.include(inverter_module,joinpath(@__DIR__,"..","..","examples","12_cmos_inverter","circuit.jl"))
-    c=inverter_module.CMOSInverter(waveform=Pulse(low=0V,high=5V,frequency=10MHz,
-        duty_cycle=.5,rise=1ns,fall=1ns))
-    stops=(500e-9,500ns,prevfloat(500e-9),501ns)
-    for saveat in (nothing,1ns)
-        results=[transient(c,0s=>stop;max_step=1ns,saveat,event_mode=:exact)
-            for stop in stops]
-        for (r,stop) in zip(results,stops)
+    inverter_module = Module(:EndpointInverter)
+    Base.include(inverter_module, joinpath(@__DIR__, "..", "..", "examples", "12_cmos_inverter", "circuit.jl"))
+    c = inverter_module.CMOSInverter(
+        waveform = Pulse(
+            low = 0V, high = 5V, frequency = 10MHz,
+            duty_cycle = 0.5, rise = 1ns, fall = 1ns
+        )
+    )
+    stops = (500.0e-9, 500ns, prevfloat(500.0e-9), 501ns)
+    for saveat in (nothing, 1ns)
+        results = [
+            transient(c, 0s => stop; max_step = 1ns, saveat, event_mode = :exact)
+                for stop in stops
+        ]
+        for (r, stop) in zip(results, stops)
             @test r.stats[:converged]
-            @test last(r.axis)==stop
-            @test minimum(diff(r.axis))>0.99ns
+            @test last(r.axis) == stop
+            @test minimum(diff(r.axis)) > 0.99ns
         end
         for r in results[2:3]
-            @test length(results[1].axis)==length(r.axis)
-            @test voltage(results[1],:output)≈voltage(r,:output) rtol=1e-9
+            @test length(results[1].axis) == length(r.axis)
+            @test voltage(results[1], :output) ≈ voltage(r, :output) rtol = 1.0e-9
         end
-        m=switchingmetrics(results[2];input=voltage(:input),output=:output,
-            supply=:VDD,vdd=5V,window=100ns=>200ns)
-        @test m.tphl>0 && m.tplh>0 && m.energy>0
+        m = switchingmetrics(
+            results[2]; input = voltage(:input), output = :output,
+            supply = :VDD, vdd = 5V, window = 100ns => 200ns
+        )
+        @test m.tphl > 0 && m.tplh > 0 && m.energy > 0
     end
 end

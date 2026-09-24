@@ -15,22 +15,24 @@ rows = result_table(result; signals=(output_V=voltage(:out),
 This is the dependency-free tabular core consumed by optional Tables/Arrow
 integrations.
 """
-function result_table(result::SimulationResult;signals=nothing)
-    axis_name=result.analysis isa SmallSignal ? :frequency :
-        result.analysis isa Union{Transient,TransientNoise} ? :time : :point
-    design=result.compiled.design
-    nodes=[_render_segment((_name(design.names,segment.base),segment.index))
-        for (index,segment) in enumerate(design.root_ir.net_names) if index!=design.root_ir.ground_net]
-    columns=Any[result.axis]
-    if signals===nothing
-        names=Tuple(vcat(axis_name,Symbol.(nodes)))
-        append!(columns,[voltage(result,node) for node in nodes])
+function result_table(result::SimulationResult; signals = nothing)
+    axis_name = result.analysis isa SmallSignal ? :frequency :
+        result.analysis isa Union{Transient, TransientNoise} ? :time : :point
+    design = result.compiled.design
+    nodes = [
+        _render_segment((_name(design.names, segment.base), segment.index))
+            for (index, segment) in enumerate(design.root_ir.net_names) if index != design.root_ir.ground_net
+    ]
+    columns = Any[result.axis]
+    if signals === nothing
+        names = Tuple(vcat(axis_name, Symbol.(nodes)))
+        append!(columns, [voltage(result, node) for node in nodes])
     else
         signals isa NamedTuple||throw(ArgumentError("signals must be a named tuple of observables or named observations"))
         axis_name in keys(signals)&&throw(ArgumentError("signal column names must not reuse the axis column $(axis_name)"))
-        names=(axis_name,keys(signals)...)
-        append!(columns,[trace(result,signal) for signal in values(signals)])
+        names = (axis_name, keys(signals)...)
+        append!(columns, [trace(result, signal) for signal in values(signals)])
     end
-    row_type=NamedTuple{names}
-    [row_type(Tuple(column[index] for column in columns)) for index in eachindex(result.axis)]
+    row_type = NamedTuple{names}
+    return [row_type(Tuple(column[index] for column in columns)) for index in eachindex(result.axis)]
 end

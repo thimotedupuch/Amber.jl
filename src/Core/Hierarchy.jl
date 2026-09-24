@@ -36,22 +36,22 @@ NameSegment(base::NameId) = NameSegment(base, nothing)
 
 abstract type AbstractElementPath end
 struct InstancePath <: AbstractElementPath
-    segments::Vector{Tuple{String,Any}}
+    segments::Vector{Tuple{String, Any}}
 end
 struct NetPath <: AbstractElementPath
-    segments::Vector{Tuple{String,Any}}
+    segments::Vector{Tuple{String, Any}}
 end
 struct DevicePath <: AbstractElementPath
-    segments::Vector{Tuple{String,Any}}
+    segments::Vector{Tuple{String, Any}}
 end
 
 function _parse_segment(text::AbstractString)
     match_result = match(r"^([^\[\]]+)(?:\[(-?\d+)\])?$", text)
     match_result === nothing && throw(ArgumentError("invalid hierarchical path segment $(repr(text))"))
-    (String(match_result.captures[1]), match_result.captures[2] === nothing ? nothing : parse(Int, match_result.captures[2]))
+    return (String(match_result.captures[1]), match_result.captures[2] === nothing ? nothing : parse(Int, match_result.captures[2]))
 end
 parsepath(text::AbstractString) = InstancePath(_parse_segment.(split(String(text), '.')))
-_render_segment(segment::Tuple{String,Any}) = segment[2] === nothing ? segment[1] : "$(segment[1])[$(segment[2])]"
+_render_segment(segment::Tuple{String, Any}) = segment[2] === nothing ? segment[1] : "$(segment[1])[$(segment[2])]"
 Base.string(path::AbstractElementPath) = join(_render_segment.(path.segments), '.')
 Base.show(io::IO, path::AbstractElementPath) = print(io, string(path))
 
@@ -62,28 +62,28 @@ _name(table::NameTable, id::NameId) = table.strings[Int(id)]
 
 mutable struct _NameBuilder
     strings::Vector{String}
-    ids::Dict{String,NameId}
-    static_ids::Dict{Symbol,NameId}
+    ids::Dict{String, NameId}
+    static_ids::Dict{Symbol, NameId}
 end
-_NameBuilder() = _NameBuilder(String[], Dict{String,NameId}(), Dict{Symbol,NameId}())
+_NameBuilder() = _NameBuilder(String[], Dict{String, NameId}(), Dict{Symbol, NameId}())
 function _intern!(table::_NameBuilder, value::AbstractString)
     text = String(value)
-    get!(table.ids, text) do
+    return get!(table.ids, text) do
         push!(table.strings, text)
         NameId(length(table.strings))
     end
 end
 function _intern!(table::_NameBuilder, value::Symbol)
-    get!(table.static_ids, value) do
+    return get!(table.static_ids, value) do
         id = _intern!(table, String(value))
         id
     end
 end
 
 function _name_segment!(table::_NameBuilder, value)
-    if value isa Union{Symbol,AbstractString}
+    if value isa Union{Symbol, AbstractString}
         return NameSegment(_intern!(table, value))
-    elseif value isa Tuple && length(value) == 2 && first(value) isa Union{Symbol,AbstractString}
+    elseif value isa Tuple && length(value) == 2 && first(value) isa Union{Symbol, AbstractString}
         return NameSegment(_intern!(table, first(value)), last(value))
     end
     throw(ArgumentError("a name must be a String, Symbol, or `(base, index)` tuple; got $(repr(value))"))
@@ -112,7 +112,7 @@ struct ParameterCall <: AbstractParameterExpression
     arguments::Vector{AbstractParameterExpression}
 end
 
-const _PARAMETER_OPERATIONS = Dict{Symbol,UInt8}(
+const _PARAMETER_OPERATIONS = Dict{Symbol, UInt8}(
     :+ => 0x01, :- => 0x02, :* => 0x03, :/ => 0x04, :^ => 0x05,
     :sqrt => 0x06, :exp => 0x07, :log => 0x08, :abs => 0x09,
     :min => 0x0a, :max => 0x0b,
@@ -193,7 +193,7 @@ end
 end
 PartitionHint(value::Symbol) = value === :auto ? PartitionAuto : value === :atomic ? PartitionAtomic : value === :boundary ? PartitionBoundary : throw(ArgumentError("partition must be :auto, :atomic, or :boundary"))
 
-struct PrimitiveSpec{K,P}
+struct PrimitiveSpec{K, P}
     kernel::K
     terminals::UnitRange{Int32}
     parameters::P
@@ -227,14 +227,16 @@ struct TemplateInvocation
 end
 
 
-function (template::SubcircuitTemplate)(connections...; instance_name=nothing, partition=:auto, kwargs...)
+function (template::SubcircuitTemplate)(connections...; instance_name = nothing, partition = :auto, kwargs...)
     length(connections) == length(template.ports) || throw(ArgumentError("template expects $(length(template.ports)) port connections"))
-    TemplateInvocation(template, connections, (; kwargs...), instance_name,
-        partition isa PartitionHint ? partition : PartitionHint(partition))
+    return TemplateInvocation(
+        template, connections, (; kwargs...), instance_name,
+        partition isa PartitionHint ? partition : PartitionHint(partition)
+    )
 end
 
 
-instance(template::SubcircuitTemplate, connections...; instance_name, partition=:auto, kwargs...) =
+instance(template::SubcircuitTemplate, connections...; instance_name, partition = :auto, kwargs...) =
     template(connections...; instance_name, partition, kwargs...)
 
 struct TemplateRegistry
@@ -260,11 +262,11 @@ end
 struct ObservationSet
     values::Vector{Any}
 end
-Base.length(observations::ObservationSet)=length(observations.values)
-Base.iterate(observations::ObservationSet,state...)=iterate(observations.values,state...)
-Base.getindex(observations::ObservationSet,index)=observations.values[index]
+Base.length(observations::ObservationSet) = length(observations.values)
+Base.iterate(observations::ObservationSet, state...) = iterate(observations.values, state...)
+Base.getindex(observations::ObservationSet, index) = observations.values[index]
 struct DesignMetadata
-    values::Dict{String,Any}
+    values::Dict{String, Any}
 end
 
 struct _PathNode
@@ -322,7 +324,7 @@ mutable struct CircuitBuilder
     primitives::Vector{Any}
     observations::Vector{Any}
     templates::Vector{SubcircuitTemplate}
-    template_ids::Dict{UInt128,TemplateId}
+    template_ids::Dict{UInt128, TemplateId}
     instances::Vector{InstanceRecord}
     connections::Vector{Int32}
     parameters::Vector{Any}
@@ -330,12 +332,14 @@ mutable struct CircuitBuilder
     finished::Bool
 end
 
-function CircuitBuilder(name::Union{Symbol,AbstractString}=:anonymous; _mode::Symbol=:design)
+function CircuitBuilder(name::Union{Symbol, AbstractString} = :anonymous; _mode::Symbol = :design)
     names = _NameBuilder()
     name_id = _intern!(names, name)
     owner = Threads.atomic_add!(_BUILDER_OWNER, UInt64(1)) + UInt64(1)
-    CircuitBuilder(owner, 0x00000001, _mode, name_id, names, NameSegment[], Int32(0), Int32[], Any[], Any[],
-        SubcircuitTemplate[], Dict{UInt128,TemplateId}(), InstanceRecord[], Int32[], Any[], _PathNode[], false)
+    return CircuitBuilder(
+        owner, 0x00000001, _mode, name_id, names, NameSegment[], Int32(0), Int32[], Any[], Any[],
+        SubcircuitTemplate[], Dict{UInt128, TemplateId}(), InstanceRecord[], Int32[], Any[], _PathNode[], false
+    )
 end
 
 struct BuilderOwnershipError <: Exception
@@ -344,37 +348,43 @@ end
 Base.showerror(io::IO, error::BuilderOwnershipError) = print(io, error.message)
 
 function _assert_open(builder::CircuitBuilder)
-    builder.finished && throw(BuilderOwnershipError("this CircuitBuilder has already been finished"))
+    return builder.finished && throw(BuilderOwnershipError("this CircuitBuilder has already been finished"))
 end
 function _assert_owned(builder::CircuitBuilder, handle)
     _assert_open(builder)
-    handle.owner == builder.owner || throw(BuilderOwnershipError(
-        "cannot use a node or device handle from another CircuitBuilder; create the handle with node!(this_builder, ...) or ground!(this_builder, ...)"))
-    handle.generation == builder.generation || throw(BuilderOwnershipError(
-        "this builder handle is stale; obtain a new handle from the current CircuitBuilder generation"))
-    handle
+    handle.owner == builder.owner || throw(
+        BuilderOwnershipError(
+            "cannot use a node or device handle from another CircuitBuilder; create the handle with node!(this_builder, ...) or ground!(this_builder, ...)"
+        )
+    )
+    handle.generation == builder.generation || throw(
+        BuilderOwnershipError(
+            "this builder handle is stale; obtain a new handle from the current CircuitBuilder generation"
+        )
+    )
+    return handle
 end
 
-function node!(builder::CircuitBuilder, name::Union{Symbol,AbstractString}=(:n, length(builder.net_names) + 1))
+function node!(builder::CircuitBuilder, name::Union{Symbol, AbstractString} = (:n, length(builder.net_names) + 1))
     _assert_open(builder)
     segment = _name_segment!(builder.names, name)
     push!(builder.net_names, segment)
-    BuilderNet(builder.owner, builder.generation, Int32(length(builder.net_names)), segment)
+    return BuilderNet(builder.owner, builder.generation, Int32(length(builder.net_names)), segment)
 end
 function node!(builder::CircuitBuilder, name::Tuple)
     _assert_open(builder)
     segment = _name_segment!(builder.names, name)
     push!(builder.net_names, segment)
-    BuilderNet(builder.owner, builder.generation, Int32(length(builder.net_names)), segment)
+    return BuilderNet(builder.owner, builder.generation, Int32(length(builder.net_names)), segment)
 end
-function ground!(builder::CircuitBuilder, name::Union{Symbol,AbstractString}=:gnd)
+function ground!(builder::CircuitBuilder, name::Union{Symbol, AbstractString} = :gnd)
     builder.ground_net == 0 || throw(ArgumentError("a CircuitBuilder may contain only one top-level reference net"))
     net = node!(builder, name)
     builder.ground_net = net.id
-    net
+    return net
 end
 
-struct NetArray{N,A<:Tuple}
+struct NetArray{N, A <: Tuple}
     owner::UInt64
     generation::UInt32
     data::Vector{BuilderNet}
@@ -392,16 +402,16 @@ function _axis_position(axis, index)
     end
     position = findfirst(isequal(index), axis)
     position === nothing && throw(BoundsError(axis, index))
-    position
+    return position
 end
 function Base.getindex(array::NetArray, indices...)
     positions = ntuple(i -> _axis_position(array.array_axes[i], indices[i]), length(indices))
     linear = LinearIndices(map(length, array.array_axes))[positions...]
-    array.data[linear]
+    return array.data[linear]
 end
-Base.iterate(array::NetArray, state=1) = state > length(array.data) ? nothing : (array.data[state], state + 1)
+Base.iterate(array::NetArray, state = 1) = state > length(array.data) ? nothing : (array.data[state], state + 1)
 
-function node_array!(builder::CircuitBuilder, name::Union{Symbol,AbstractString}, axes...)
+function node_array!(builder::CircuitBuilder, name::Union{Symbol, AbstractString}, axes...)
     normalized = length(axes) == 1 && axes[1] isa Tuple ? axes[1] : axes
     isempty(normalized) && throw(ArgumentError("node_array! requires at least one axis"))
     data = BuilderNet[]
@@ -411,7 +421,7 @@ function node_array!(builder::CircuitBuilder, name::Union{Symbol,AbstractString}
         display_index = length(normalized) == 1 ? index[1] : Tuple(index)
         push!(data, node!(builder, (name, display_index)))
     end
-    NetArray{length(normalized),typeof(normalized)}(builder.owner, builder.generation, data, normalized)
+    return NetArray{length(normalized), typeof(normalized)}(builder.owner, builder.generation, data, normalized)
 end
 
 function _builder_parameter(builder::CircuitBuilder, value)
@@ -419,13 +429,13 @@ function _builder_parameter(builder::CircuitBuilder, value)
     value isa Tuple && return Tuple(_builder_parameter(builder, item) for item in value)
     value isa NamedTuple && return NamedTuple{keys(value)}(Tuple(_builder_parameter(builder, item) for item in value))
     value isa AbstractVector && return [_builder_parameter(builder, item) for item in value]
-    value
+    return value
 end
 
 function _primitive_parameters(builder::CircuitBuilder, parameters)
-    keys_ordered = sort!(collect(keys(parameters)); by=String)
+    keys_ordered = sort!(collect(keys(parameters)); by = String)
     names = Tuple(keys_ordered)
-    NamedTuple{names}(Tuple(_builder_parameter(builder, parameters[key]) for key in keys_ordered))
+    return NamedTuple{names}(Tuple(_builder_parameter(builder, parameters[key]) for key in keys_ordered))
 end
 
 function _add_raw!(builder::CircuitBuilder, component::PrimitiveDraft, name)
@@ -439,177 +449,184 @@ function _add_raw!(builder::CircuitBuilder, component::PrimitiveDraft, name)
     start = Int32(length(builder.terminal_data) + 1)
     append!(builder.terminal_data, terminals)
     segment = _name_segment!(builder.names, name)
-    name_id = _intern!(builder.names, _render_segment((builder.names.strings[Int(segment.base)],segment.index)))
+    name_id = _intern!(builder.names, _render_segment((builder.names.strings[Int(segment.base)], segment.index)))
     parameters = _primitive_parameters(builder, component.parameters)
     kernel = Val(_draft_kind(component))
     stop = start + Int32(length(terminals) - 1)
     push!(builder.primitives, PrimitiveSpec(kernel, start:stop, parameters, name_id))
-    BuilderPrimitive(builder.owner, builder.generation, Int32(length(builder.primitives)), name_id)
+    return BuilderPrimitive(builder.owner, builder.generation, Int32(length(builder.primitives)), name_id)
 end
 
-_model_value(model,key,default=0.)=model===nothing ? default : get(model.data,key,default)
-_without(parameters::NamedTuple,removed::Tuple)=begin
-    retained=Tuple(key for key in keys(parameters) if key ∉ removed)
-    NamedTuple{retained}(Tuple(getproperty(parameters,key) for key in retained))
+_model_value(model, key, default = 0.0) = model === nothing ? default : get(model.data, key, default)
+_without(parameters::NamedTuple, removed::Tuple) = begin
+    retained = Tuple(key for key in keys(parameters) if key ∉ removed)
+    NamedTuple{retained}(Tuple(getproperty(parameters, key) for key in retained))
 end
-_hidden_name(name,suffix)=string(name,'.',suffix)
+_hidden_name(name, suffix) = string(name, '.', suffix)
 
-function _check_package_fields(kind,package,unused)
-    package===nothing&&return
+function _check_package_fields(kind, package, unused)
+    package === nothing&&return
     for parameter in unused
-        iszero(getproperty(package,parameter))||throw(ArgumentError(
-            "$(kind) does not use package.$(parameter); omit it or set it to zero"))
+        iszero(getproperty(package, parameter))||throw(
+            ArgumentError(
+                "$(kind) does not use package.$(parameter); omit it or set it to zero"
+            )
+        )
     end
+    return
 end
 
-function add!(builder::CircuitBuilder, component::PrimitiveDraft; name=string(_draft_kind(component),length(builder.primitives) + 1))
-    kind=_draft_kind(component); parameters=component.parameters; terminals=component.terminals
-    kind in _CATALOG_COMPOSITES && return _add_catalog!(builder,component,name)
-    hasproperty(parameters,:tolerance)&&_finite_nonnegative_parameter(:tolerance,parameters.tolerance)
-    if hasproperty(parameters,:match)
-        match=parameters.match
-        match===nothing || match isa MatchedGroup || throw(ArgumentError("npn.match requires a MatchedGroup"))
+function add!(builder::CircuitBuilder, component::PrimitiveDraft; name = string(_draft_kind(component), length(builder.primitives) + 1))
+    kind = _draft_kind(component); parameters = component.parameters; terminals = component.terminals
+    kind in _CATALOG_COMPOSITES && return _add_catalog!(builder, component, name)
+    hasproperty(parameters, :tolerance)&&_finite_nonnegative_parameter(:tolerance, parameters.tolerance)
+    if hasproperty(parameters, :match)
+        match = parameters.match
+        match === nothing || match isa MatchedGroup || throw(ArgumentError("npn.match requires a MatchedGroup"))
     end
-    for key in (:model,:material,:package,:dielectric,:dielectric_absorption)
-        hasproperty(parameters,key)||continue
-        value=getproperty(parameters,key)
-        value===nothing&&continue
-        expected=key===:material ? AbstractResistorMaterial :
-            key===:package ? AbstractPassivePackage :
-            key===:dielectric ? AbstractCapacitorDielectric :
-            key===:dielectric_absorption ? DebyeBranches : nothing
-        expected===nothing || value isa expected ||
+    for key in (:model, :material, :package, :dielectric, :dielectric_absorption)
+        hasproperty(parameters, key)||continue
+        value = getproperty(parameters, key)
+        value === nothing&&continue
+        expected = key === :material ? AbstractResistorMaterial :
+            key === :package ? AbstractPassivePackage :
+            key === :dielectric ? AbstractCapacitorDielectric :
+            key === :dielectric_absorption ? DebyeBranches : nothing
+        expected === nothing || value isa expected ||
             throw(ArgumentError("$(kind).$(key) requires a $(expected)"))
         _validate_model_parameters(value)
     end
-    if kind===:resistor
-        package=get(parameters,:package,nothing)
-        _check_package_fields(kind,package,(:esr,:esl))
-        series_inductance=_model_value(package,:series_inductance)
-        parallel_capacitance=_model_value(package,:parallel_capacitance)
-        main=if series_inductance>0
-            internal=node!(builder,_hidden_name(name,"__series"))
-            handle=_add_raw!(builder,_component(:resistor,terminals[1],internal;parameters...),name)
-            _add_raw!(builder,inductor(internal,terminals[2];value=series_inductance),_hidden_name(name,"package_inductance")); handle
+    if kind === :resistor
+        package = get(parameters, :package, nothing)
+        _check_package_fields(kind, package, (:esr, :esl))
+        series_inductance = _model_value(package, :series_inductance)
+        parallel_capacitance = _model_value(package, :parallel_capacitance)
+        main = if series_inductance > 0
+            internal = node!(builder, _hidden_name(name, "__series"))
+            handle = _add_raw!(builder, _component(:resistor, terminals[1], internal; parameters...), name)
+            _add_raw!(builder, inductor(internal, terminals[2]; value = series_inductance), _hidden_name(name, "package_inductance")); handle
         else
-            _add_raw!(builder,component,name)
+            _add_raw!(builder, component, name)
         end
-        parallel_capacitance>0&&_add_raw!(builder,capacitor(terminals[1],terminals[2];value=parallel_capacitance),_hidden_name(name,"package_capacitance"))
+        parallel_capacitance > 0&&_add_raw!(builder, capacitor(terminals[1], terminals[2]; value = parallel_capacitance), _hidden_name(name, "package_capacitance"))
         return main
-    elseif kind===:capacitor
-        package=get(parameters,:package,nothing)
-        _check_package_fields(kind,package,(:series_inductance,:parallel_capacitance))
-        esr=Float64(get(parameters,:esr,_model_value(package,:esr)))
-        esl=Float64(get(parameters,:esl,_model_value(package,:esl)))
-        dielectric=get(parameters,:dielectric,nothing)
-        if dielectric isa AbstractCapacitorDielectric && dielectric.loss_tangent>0
+    elseif kind === :capacitor
+        package = get(parameters, :package, nothing)
+        _check_package_fields(kind, package, (:series_inductance, :parallel_capacitance))
+        esr = Float64(get(parameters, :esr, _model_value(package, :esr)))
+        esl = Float64(get(parameters, :esl, _model_value(package, :esl)))
+        dielectric = get(parameters, :dielectric, nothing)
+        if dielectric isa AbstractCapacitorDielectric && dielectric.loss_tangent > 0
             # A constant series resistor calibrated at one frequency, usable in
             # every analysis (including transient and thermal noise).
-            capacitance=parameters.value
-            isfinite(capacitance)&&capacitance>0 ||
+            capacitance = parameters.value
+            isfinite(capacitance)&&capacitance > 0 ||
                 throw(ArgumentError("dielectric loss requires finite positive capacitance"))
-            esr += dielectric.loss_tangent/(2π*dielectric.reference_frequency*capacitance)
+            esr += dielectric.loss_tangent / (2π * dielectric.reference_frequency * capacitance)
         end
-        _finite_nonnegative_parameter(:esr,esr)
-        _finite_nonnegative_parameter(:esl,esl)
-        leakage=Float64(get(parameters,:leakage_resistance,Inf))
-        leakage>0||throw(ArgumentError("leakage_resistance must be positive or Inf"))
-        terminal=terminals[1]
-        if esr>0
-            following=node!(builder,_hidden_name(name,"__esr"))
-            _add_raw!(builder,resistor(terminal,following;value=esr),_hidden_name(name,"esr")); terminal=following
+        _finite_nonnegative_parameter(:esr, esr)
+        _finite_nonnegative_parameter(:esl, esl)
+        leakage = Float64(get(parameters, :leakage_resistance, Inf))
+        leakage > 0||throw(ArgumentError("leakage_resistance must be positive or Inf"))
+        terminal = terminals[1]
+        if esr > 0
+            following = node!(builder, _hidden_name(name, "__esr"))
+            _add_raw!(builder, resistor(terminal, following; value = esr), _hidden_name(name, "esr")); terminal = following
         end
-        if esl>0
-            following=node!(builder,_hidden_name(name,"__esl"))
-            _add_raw!(builder,inductor(terminal,following;value=esl),_hidden_name(name,"esl")); terminal=following
+        if esl > 0
+            following = node!(builder, _hidden_name(name, "__esl"))
+            _add_raw!(builder, inductor(terminal, following; value = esl), _hidden_name(name, "esl")); terminal = following
         end
-        main_parameters=_without(parameters,(:esr,:esl,:leakage_resistance))
-        main=_add_raw!(builder,_component(:capacitor,terminal,terminals[2];main_parameters...),name)
-        isfinite(leakage)&&leakage>0&&_add_raw!(builder,resistor(terminal,terminals[2];value=leakage),_hidden_name(name,"leakage_resistance"))
-        absorption=get(parameters,:dielectric_absorption,nothing)
+        main_parameters = _without(parameters, (:esr, :esl, :leakage_resistance))
+        main = _add_raw!(builder, _component(:capacitor, terminal, terminals[2]; main_parameters...), name)
+        isfinite(leakage)&&leakage > 0&&_add_raw!(builder, resistor(terminal, terminals[2]; value = leakage), _hidden_name(name, "leakage_resistance"))
+        absorption = get(parameters, :dielectric_absorption, nothing)
         if absorption isa DebyeBranches
-            length(absorption.time_constants)==length(absorption.fractions)||throw(ArgumentError("Debye time constants and fractions must have equal lengths"))
-            for (index,(time_constant,fraction)) in enumerate(zip(absorption.time_constants,absorption.fractions))
-                fraction>0||continue
-                branch_capacitance=Float64(parameters.value)*fraction
-                branch_node=node!(builder,_hidden_name(name,"__da$(index)"))
-                _add_raw!(builder,resistor(terminal,branch_node;value=time_constant/branch_capacitance),_hidden_name(name,"da$(index)_resistor"))
-                _add_raw!(builder,capacitor(branch_node,terminals[2];value=branch_capacitance),_hidden_name(name,"da$(index)_capacitor"))
+            length(absorption.time_constants) == length(absorption.fractions)||throw(ArgumentError("Debye time constants and fractions must have equal lengths"))
+            for (index, (time_constant, fraction)) in enumerate(zip(absorption.time_constants, absorption.fractions))
+                fraction > 0||continue
+                branch_capacitance = Float64(parameters.value) * fraction
+                branch_node = node!(builder, _hidden_name(name, "__da$(index)"))
+                _add_raw!(builder, resistor(terminal, branch_node; value = time_constant / branch_capacitance), _hidden_name(name, "da$(index)_resistor"))
+                _add_raw!(builder, capacitor(branch_node, terminals[2]; value = branch_capacitance), _hidden_name(name, "da$(index)_capacitor"))
             end
         end
         return main
-    elseif kind===:inductor
-        hasproperty(parameters,:winding_resistance)&&hasproperty(parameters,:series_resistance)&&
+    elseif kind === :inductor
+        hasproperty(parameters, :winding_resistance)&&hasproperty(parameters, :series_resistance)&&
             throw(ArgumentError("specify only one of winding_resistance and series_resistance"))
-        resistance=Float64(get(parameters,:winding_resistance,get(parameters,:series_resistance,0.)))
-        parallel_capacitance=Float64(get(parameters,:parallel_capacitance,0.))
-        _finite_nonnegative_parameter(:winding_resistance,resistance)
-        _finite_nonnegative_parameter(:parallel_capacitance,parallel_capacitance)
-        main=if resistance>0
-            internal=node!(builder,_hidden_name(name,"__winding"))
-            handle=_add_raw!(builder,_component(:inductor,terminals[1],internal;parameters...),name)
-            _add_raw!(builder,resistor(internal,terminals[2];value=resistance),_hidden_name(name,"winding_resistance")); handle
+        resistance = Float64(get(parameters, :winding_resistance, get(parameters, :series_resistance, 0.0)))
+        parallel_capacitance = Float64(get(parameters, :parallel_capacitance, 0.0))
+        _finite_nonnegative_parameter(:winding_resistance, resistance)
+        _finite_nonnegative_parameter(:parallel_capacitance, parallel_capacitance)
+        main = if resistance > 0
+            internal = node!(builder, _hidden_name(name, "__winding"))
+            handle = _add_raw!(builder, _component(:inductor, terminals[1], internal; parameters...), name)
+            _add_raw!(builder, resistor(internal, terminals[2]; value = resistance), _hidden_name(name, "winding_resistance")); handle
         else
-            _add_raw!(builder,component,name)
+            _add_raw!(builder, component, name)
         end
-        parallel_capacitance>0&&_add_raw!(builder,capacitor(terminals[1],terminals[2];value=parallel_capacitance),_hidden_name(name,"parallel_capacitance"))
+        parallel_capacitance > 0&&_add_raw!(builder, capacitor(terminals[1], terminals[2]; value = parallel_capacitance), _hidden_name(name, "parallel_capacitance"))
         return main
-    elseif kind===:diode&&parameters.model.series_resistance>0
-        internal=node!(builder,_hidden_name(name,"__series"))
-        _add_raw!(builder,resistor(terminals[1],internal;value=parameters.model.series_resistance),_hidden_name(name,"series_resistance"))
-        return _add_raw!(builder,_component(:diode,internal,terminals[2];parameters...),name)
-    elseif kind===:npn&&parameters.model.base_resistance>0
-        internal=node!(builder,_hidden_name(name,"__base"))
-        main=_add_raw!(builder,_component(:npn,terminals[1],internal,terminals[3];parameters...),name)
-        _add_raw!(builder,resistor(terminals[2],internal;value=parameters.model.base_resistance),_hidden_name(name,"base_resistance"))
+    elseif kind === :diode&&parameters.model.series_resistance > 0
+        internal = node!(builder, _hidden_name(name, "__series"))
+        _add_raw!(builder, resistor(terminals[1], internal; value = parameters.model.series_resistance), _hidden_name(name, "series_resistance"))
+        return _add_raw!(builder, _component(:diode, internal, terminals[2]; parameters...), name)
+    elseif kind === :npn&&parameters.model.base_resistance > 0
+        internal = node!(builder, _hidden_name(name, "__base"))
+        main = _add_raw!(builder, _component(:npn, terminals[1], internal, terminals[3]; parameters...), name)
+        _add_raw!(builder, resistor(terminals[2], internal; value = parameters.model.base_resistance), _hidden_name(name, "base_resistance"))
         return main
     end
-    main=_add_raw!(builder,component,name)
-    if kind===:switch&&parameters.model.clock_feedthrough>0
-        _add_raw!(builder,capacitor(terminals[3],terminals[2];value=parameters.model.clock_feedthrough),_hidden_name(name,"clock_feedthrough"))
-    elseif kind===:opamp
-        model=parameters.model
-        model.input_capacitance>0&&_add_raw!(builder,capacitor(terminals[1],terminals[2];value=model.input_capacitance),_hidden_name(name,"input_capacitance"))
-        if model.input_bias_current!=0
-            _add_raw!(builder,current_source(terminals[1],terminals[5];dc=model.input_bias_current),_hidden_name(name,"positive_bias_current"))
-            _add_raw!(builder,current_source(terminals[2],terminals[5];dc=model.input_bias_current),_hidden_name(name,"negative_bias_current"))
+    main = _add_raw!(builder, component, name)
+    if kind === :switch&&parameters.model.clock_feedthrough > 0
+        _add_raw!(builder, capacitor(terminals[3], terminals[2]; value = parameters.model.clock_feedthrough), _hidden_name(name, "clock_feedthrough"))
+    elseif kind === :opamp
+        model = parameters.model
+        model.input_capacitance > 0&&_add_raw!(builder, capacitor(terminals[1], terminals[2]; value = model.input_capacitance), _hidden_name(name, "input_capacitance"))
+        if model.input_bias_current != 0
+            _add_raw!(builder, current_source(terminals[1], terminals[5]; dc = model.input_bias_current), _hidden_name(name, "positive_bias_current"))
+            _add_raw!(builder, current_source(terminals[2], terminals[5]; dc = model.input_bias_current), _hidden_name(name, "negative_bias_current"))
         end
     end
-    main
+    return main
 end
 
 function _set_initial_voltage!(builder::CircuitBuilder, primitive::BuilderPrimitive, value)
-    _assert_owned(builder,primitive)
-    specification=builder.primitives[Int(primitive.id)]
-    kind=typeof(specification.kernel).parameters[1]
-    kind===:capacitor||throw(ArgumentError("initial_voltage applies only to capacitors"))
-    parameters=merge(specification.parameters,(initial_voltage=_builder_parameter(builder,value),))
-    builder.primitives[Int(primitive.id)]=PrimitiveSpec(specification.kernel,specification.terminals,parameters,specification.name)
-    primitive
+    _assert_owned(builder, primitive)
+    specification = builder.primitives[Int(primitive.id)]
+    kind = typeof(specification.kernel).parameters[1]
+    kind === :capacitor||throw(ArgumentError("initial_voltage applies only to capacitors"))
+    parameters = merge(specification.parameters, (initial_voltage = _builder_parameter(builder, value),))
+    builder.primitives[Int(primitive.id)] = PrimitiveSpec(specification.kernel, specification.terminals, parameters, specification.name)
+    return primitive
 end
 
-function _attach_value!(builder::CircuitBuilder,value,name=nothing)
-    value isa PrimitiveDraft&&return add!(builder,value;name=name===nothing ? string(_draft_kind(value),length(builder.primitives)+1) : name)
-    value isa TemplateInvocation&&return instance!(builder,value;instance_name=name===nothing ? value.instance_name : name)
-    value
+function _attach_value!(builder::CircuitBuilder, value, name = nothing)
+    value isa PrimitiveDraft&&return add!(builder, value; name = name === nothing ? string(_draft_kind(value), length(builder.primitives) + 1) : name)
+    value isa TemplateInvocation&&return instance!(builder, value; instance_name = name === nothing ? value.instance_name : name)
+    return value
 end
 
-function observe!(builder::CircuitBuilder, values...; name=nothing)
+function observe!(builder::CircuitBuilder, values...; name = nothing)
     _assert_open(builder)
-    if name!==nothing
-        length(values)==1||throw(ArgumentError("a named observation requires exactly one value; use separate observe calls with distinct names"))
-        any(entry->entry.name==String(name),builder.observations)&&throw(ArgumentError(
-            "observation name $(repr(name)) is already registered in this scope; choose a distinct name"))
+    if name !== nothing
+        length(values) == 1||throw(ArgumentError("a named observation requires exactly one value; use separate observe calls with distinct names"))
+        any(entry -> entry.name == String(name), builder.observations)&&throw(
+            ArgumentError(
+                "observation name $(repr(name)) is already registered in this scope; choose a distinct name"
+            )
+        )
     end
     for value in values
         value isa BuilderNet && _assert_owned(builder, value)
-        push!(builder.observations, (name=name === nothing ? nothing : String(name), value=value))
+        push!(builder.observations, (name = name === nothing ? nothing : String(name), value = value))
     end
-    isempty(values) ? builder : last(values)
+    return isempty(values) ? builder : last(values)
 end
 
 function _register_template!(builder::CircuitBuilder, template::SubcircuitTemplate)
-    get!(builder.template_ids, template.structural_fingerprint) do
+    return get!(builder.template_ids, template.structural_fingerprint) do
         push!(builder.templates, template)
         TemplateId(length(builder.templates))
     end
@@ -632,11 +649,13 @@ function _named_values(specs, table::NameTable, supplied, what::AbstractString)
             throw(ArgumentError("missing required $(what) $(String(name))"))
         end
     end
-    output
+    return output
 end
 
-function instance!(builder::CircuitBuilder, template::SubcircuitTemplate;
-        instance_name, connections, parameters=NamedTuple(), partition=:auto, parent=InstanceId(0))
+function instance!(
+        builder::CircuitBuilder, template::SubcircuitTemplate;
+        instance_name, connections, parameters = NamedTuple(), partition = :auto, parent = InstanceId(0)
+    )
     _assert_open(builder)
     template_id = _register_template!(builder, template)
     connections isa NamedTuple || (connections = (; connections...))
@@ -646,13 +665,17 @@ function instance!(builder::CircuitBuilder, template::SubcircuitTemplate;
     parameter_names = Tuple(Symbol(_name(template.names, spec.name)) for spec in template.parameters)
     unknown_parameters = setdiff(keys(parameters), parameter_names)
     isempty(unknown_parameters) || throw(ArgumentError("unknown parameter(s): $(join(string.(unknown_parameters), ", "))"))
-    _append_instance!(builder, template, template_id, instance_name, connections, parameters,
-        partition isa PartitionHint ? partition : PartitionHint(partition), parent, parameter_names)
+    return _append_instance!(
+        builder, template, template_id, instance_name, connections, parameters,
+        partition isa PartitionHint ? partition : PartitionHint(partition), parent, parameter_names
+    )
 end
 
-function _append_instance!(builder::CircuitBuilder, template::SubcircuitTemplate, template_id::TemplateId,
+function _append_instance!(
+        builder::CircuitBuilder, template::SubcircuitTemplate, template_id::TemplateId,
         instance_name, connections::NamedTuple, parameters::NamedTuple, partition::PartitionHint,
-        parent::InstanceId, parameter_names)
+        parent::InstanceId, parameter_names
+    )
     connection_start = UInt32(length(builder.connections) + 1)
     for connection in values(connections)
         connection isa BuilderNet || throw(BuilderOwnershipError("instance connections must be net handles from the receiving builder"))
@@ -665,28 +688,34 @@ function _append_instance!(builder::CircuitBuilder, template::SubcircuitTemplate
     segment = _name_segment!(builder.names, instance_name)
     parent_path = parent.value == 0 ? PathId(0) : builder.instances[Int(parent)].path
     push!(builder.path_nodes, _PathNode(parent_path, segment))
-    record = InstanceRecord(template_id, parent, segment,
+    record = InstanceRecord(
+        template_id, parent, segment,
         ConnectionRange(connection_start, UInt16(length(template.ports))),
         ParameterRange(parameter_start, UInt16(length(template.parameters))),
-        partition, PathId(length(builder.path_nodes)))
+        partition, PathId(length(builder.path_nodes))
+    )
     push!(builder.instances, record)
-    BuilderInstance(builder.owner, builder.generation, InstanceId(length(builder.instances)))
+    return BuilderInstance(builder.owner, builder.generation, InstanceId(length(builder.instances)))
 end
 
-function instance!(builder::CircuitBuilder, template::SubcircuitTemplate, connections::BuilderNet...;
-        instance_name, partition=:auto, kwargs...)
+function instance!(
+        builder::CircuitBuilder, template::SubcircuitTemplate, connections::BuilderNet...;
+        instance_name, partition = :auto, kwargs...
+    )
     length(connections) == length(template.ports) || throw(ArgumentError("template expects $(length(template.ports)) port connections"))
     connection_tuple = NamedTuple{Tuple(Symbol(_name(template.names, port.name)) for port in template.ports)}(connections)
-    instance!(builder, template; instance_name, connections=connection_tuple, parameters=(; kwargs...), partition)
+    return instance!(builder, template; instance_name, connections = connection_tuple, parameters = (; kwargs...), partition)
 end
 
-function instance!(builder::CircuitBuilder, invocation::TemplateInvocation; instance_name=invocation.instance_name)
+function instance!(builder::CircuitBuilder, invocation::TemplateInvocation; instance_name = invocation.instance_name)
     instance_name === nothing && throw(ArgumentError("an explicit instance name is required outside @circuit assignment inference"))
-    instance!(builder, invocation.template, invocation.connections...; instance_name,
-        partition=invocation.partition, invocation.parameters...)
+    return instance!(
+        builder, invocation.template, invocation.connections...; instance_name,
+        partition = invocation.partition, invocation.parameters...
+    )
 end
 
-struct InstanceArray{N,A<:Tuple}
+struct InstanceArray{N, A <: Tuple}
     owner::UInt64
     generation::UInt32
     data::Vector{BuilderInstance}
@@ -697,12 +726,14 @@ Base.size(array::InstanceArray) = map(length, array.array_axes)
 Base.length(array::InstanceArray) = length(array.data)
 function Base.getindex(array::InstanceArray, indices...)
     positions = ntuple(i -> _axis_position(array.array_axes[i], indices[i]), length(indices))
-    array.data[LinearIndices(map(length, array.array_axes))[positions...]]
+    return array.data[LinearIndices(map(length, array.array_axes))[positions...]]
 end
-Base.iterate(array::InstanceArray, state=1) = state > length(array.data) ? nothing : (array.data[state], state + 1)
+Base.iterate(array::InstanceArray, state = 1) = state > length(array.data) ? nothing : (array.data[state], state + 1)
 
-function instances!(builder::CircuitBuilder, template::SubcircuitTemplate, axis;
-        name, connections, parameters=(_ -> NamedTuple()), partition=:auto)
+function instances!(
+        builder::CircuitBuilder, template::SubcircuitTemplate, axis;
+        name, connections, parameters = (_ -> NamedTuple()), partition = :auto
+    )
     data = BuilderInstance[]
     count = length(axis)
     sizehint!(data, count)
@@ -721,11 +752,15 @@ function instances!(builder::CircuitBuilder, template::SubcircuitTemplate, axis;
         parameter_values = parameters(index)
         parameter_values isa NamedTuple || (parameter_values = (; parameter_values...))
         all(key -> key in parameter_names, keys(parameter_values)) || throw(ArgumentError("unknown instance parameter"))
-        push!(data, _append_instance!(builder, template, template_id, name(index), connection_values,
-            parameter_values, hint isa PartitionHint ? hint : PartitionHint(hint), InstanceId(0), parameter_names))
+        push!(
+            data, _append_instance!(
+                builder, template, template_id, name(index), connection_values,
+                parameter_values, hint isa PartitionHint ? hint : PartitionHint(hint), InstanceId(0), parameter_names
+            )
+        )
     end
     normalized_axes = (axis,)
-    InstanceArray{1,typeof(normalized_axes)}(builder.owner, builder.generation, data, normalized_axes)
+    return InstanceArray{1, typeof(normalized_axes)}(builder.owner, builder.generation, data, normalized_axes)
 end
 
 function _fingerprint128(parts...)
@@ -734,11 +769,11 @@ function _fingerprint128(parts...)
     for byte in digest[1:16]
         value = (value << 8) | UInt128(byte)
     end
-    value
+    return value
 end
 
 function _design_fingerprints(builder::CircuitBuilder, root_fingerprint::UInt128)
-    structural_io = IOBuffer(sizehint=max(1024, 48 * length(builder.instances)))
+    structural_io = IOBuffer(sizehint = max(1024, 48 * length(builder.instances)))
     print(structural_io, root_fingerprint, '|')
     for template in builder.templates
         print(structural_io, template.structural_fingerprint, ';')
@@ -752,7 +787,7 @@ function _design_fingerprints(builder::CircuitBuilder, root_fingerprint::UInt128
         end
         write(structural_io, UInt8(';'))
     end
-    parameter_io = IOBuffer(sizehint=max(256, 16 * length(builder.parameters)))
+    parameter_io = IOBuffer(sizehint = max(256, 16 * length(builder.parameters)))
     for parameter in builder.parameters
         print(parameter_io, repr(parameter), ';')
     end
@@ -765,14 +800,14 @@ function _design_fingerprints(builder::CircuitBuilder, root_fingerprint::UInt128
         end
         value
     end
-    to_uint128(structural_digest), to_uint128(parameter_digest)
+    return to_uint128(structural_digest), to_uint128(parameter_digest)
 end
 
 function _root_fingerprint(builder::CircuitBuilder, names::NameTable, body::TemplateIR)
-    io = IOBuffer(sizehint=max(512, 16 * length(body.net_names) + 48 * length(body.primitives)))
+    io = IOBuffer(sizehint = max(512, 16 * length(body.net_names) + 48 * length(body.primitives)))
     print(io, _name(names, builder.name), '|', body.ground_net, '|')
     for segment in body.net_names
-        print(io, segment.base.value, '[', repr(segment.index), "];" )
+        print(io, segment.base.value, '[', repr(segment.index), "];")
     end
     for primitive in body.primitives
         print(io, typeof(primitive.kernel).parameters[1], ':', primitive.name.value, ':')
@@ -785,14 +820,16 @@ function _root_fingerprint(builder::CircuitBuilder, names::NameTable, body::Temp
     for byte in digest[1:16]
         value = (value << 8) | UInt128(byte)
     end
-    value
+    return value
 end
 
 function _template_signature(name, ports, parameters, body, names)
     primitive_signature = [(primitive.kernel, collect(body.terminal_data[primitive.terminals]), primitive.parameters, _name(names, primitive.name)) for primitive in body.primitives]
-    (name, [(_name(names, port.name), port.required, port.reference) for port in ports],
+    return (
+        name, [(_name(names, port.name), port.required, port.reference) for port in ports],
         [(_name(names, parameter.name), parameter.default, parameter.structural) for parameter in parameters],
-        [(segment.base.value, segment.index) for segment in body.net_names], primitive_signature)
+        [(segment.base.value, segment.index) for segment in body.net_names], primitive_signature,
+    )
 end
 
 """Finish a top-level builder and return its immutable `CircuitDesign`."""
@@ -807,10 +844,12 @@ function finish(builder::CircuitBuilder)
     end
     root_fingerprint = _root_fingerprint(builder, names, body)
     structural, parameter = _design_fingerprints(builder, root_fingerprint)
-    CircuitDesign(builder.name, TemplateRegistry(copy(builder.templates)),
+    return CircuitDesign(
+        builder.name, TemplateRegistry(copy(builder.templates)),
         InstanceGraph(copy(builder.instances), copy(builder.connections), copy(builder.parameters)),
-        ObservationSet(copy(builder.observations)), DesignMetadata(Dict{String,Any}()), structural, parameter,
-        names, body, PathTrie(copy(builder.path_nodes)))
+        ObservationSet(copy(builder.observations)), DesignMetadata(Dict{String, Any}()), structural, parameter,
+        names, body, PathTrie(copy(builder.path_nodes))
+    )
 end
 
 function _finish_template(builder::CircuitBuilder, ports::Vector{PortSpec}, parameters::Vector{ParameterSpec})
@@ -820,11 +859,11 @@ function _finish_template(builder::CircuitBuilder, ports::Vector{PortSpec}, para
     names = NameTable(copy(builder.names.strings))
     body = TemplateIR(copy(builder.net_names), builder.ground_net, copy(builder.terminal_data), copy(builder.primitives), copy(builder.observations))
     signature = _template_signature(_name(names, builder.name), ports, parameters, body, names)
-    SubcircuitTemplate(builder.name, ports, parameters, body, _fingerprint128(signature), names)
+    return SubcircuitTemplate(builder.name, ports, parameters, body, _fingerprint128(signature), names)
 end
 
 function _define_subcircuit(f::Function, name::Symbol, port_names::Tuple, defaults::Tuple)
-    builder = CircuitBuilder(name; _mode=:template)
+    builder = CircuitBuilder(name; _mode = :template)
     ports = BuilderNet[]
     port_specs = PortSpec[]
     for port_name in port_names
@@ -841,25 +880,32 @@ function _define_subcircuit(f::Function, name::Symbol, port_names::Tuple, defaul
     parameter_names = Tuple(first(item) for item in defaults)
     parameter_tuple = NamedTuple{parameter_names}(Tuple(references))
     f(builder, port_tuple, parameter_tuple)
-    _finish_template(builder, port_specs, parameter_specs)
+    return _finish_template(builder, port_specs, parameter_specs)
 end
 
-const _HIERARCHY_PRIMITIVES = (:resistor, :capacitor, :inductor, :conductance, :voltage_source, :current_source,
+const _HIERARCHY_PRIMITIVES = (
+    :resistor, :capacitor, :inductor, :conductance, :voltage_source, :current_source,
     :transconductance, :voltage_controlled_voltage_source, :current_controlled_current_source,
     :current_controlled_voltage_source, :diode, :npn, :nmos, :pmos, :opamp, :analog_switch,
     :behavioral_current_source, :behavioral_voltage_source,
     :zener, :schottky, :led, :photodiode, :solar_cell, :njfet, :pjfet,
     :analog_multiplier, :voltage_limiter, :comparator, :voltage_controlled_resistor,
-    :varistor, :thermistor, :potentiometer, :ideal_transformer, :bridge_rectifier, :crystal, :transmission_line)
+    :varistor, :thermistor, :potentiometer, :ideal_transformer, :bridge_rectifier, :crystal, :transmission_line,
+)
 
 function _template_macro_rewrite(expression, builder)
     expression isa Expr || return expression
     if expression.head === :(=) && expression.args[1] isa Symbol && expression.args[2] isa Expr && expression.args[2].head === :call
         name = expression.args[1]; call = expression.args[2]
         call.args[1] === :node && return :($name = node!($builder, $(QuoteNode(name))))
-        call.args[1] === :ground && return :(throw(ArgumentError(
-            "ground() is not allowed inside @subcircuit; add an explicit reference port and connect it at the top level")))
-        call.args[1] in _HIERARCHY_PRIMITIVES && return :($name = add!($builder, $call; name=$(QuoteNode(name))))
+        call.args[1] === :ground && return :(
+            throw(
+                ArgumentError(
+                    "ground() is not allowed inside @subcircuit; add an explicit reference port and connect it at the top level"
+                )
+            )
+        )
+        call.args[1] in _HIERARCHY_PRIMITIVES && return :($name = add!($builder, $call; name = $(QuoteNode(name))))
     elseif expression.head === :call && expression.args[1] === :observe
         arguments = Any[expression.args[2:end]...]
         if !isempty(arguments) && arguments[1] isa Expr && arguments[1].head === :parameters
@@ -867,7 +913,7 @@ function _template_macro_rewrite(expression, builder)
         end
         return Expr(:call, :observe!, builder, arguments...)
     elseif expression.head === :call && expression.args[1] === :initial_voltage
-        return Expr(:call,GlobalRef(@__MODULE__, :_set_initial_voltage!),builder,expression.args[2:end]...)
+        return Expr(:call, GlobalRef(@__MODULE__, :_set_initial_voltage!), builder, expression.args[2:end]...)
     elseif expression.head === :call && expression.args[1] in _HIERARCHY_PRIMITIVES
         return :(add!($builder, $expression))
     elseif expression.head === :block
@@ -877,57 +923,57 @@ function _template_macro_rewrite(expression, builder)
     elseif expression.head === :if
         return Expr(:if, expression.args[1], map(item -> _template_macro_rewrite(item, builder), expression.args[2:end])...)
     end
-    expression
+    return expression
 end
 
-function _design_macro_rewrite(expression,builder)
+function _design_macro_rewrite(expression, builder)
     expression isa Expr||return expression
-    attach=GlobalRef(@__MODULE__, :_attach_value!)
-    set_initial=GlobalRef(@__MODULE__, :_set_initial_voltage!)
-    if expression.head===:(=)&&expression.args[1] isa Symbol&&expression.args[2] isa Expr&&expression.args[2].head===:call
-        name=expression.args[1]; call=expression.args[2]; function_name=call.args[1]
-        function_name===:node&&return :($name=node!($builder,$(QuoteNode(name))))
-        function_name===:ground&&return :($name=ground!($builder,$(QuoteNode(name))))
-        return :($name=$attach($builder,$call,$(QuoteNode(name))))
-    elseif expression.head===:call&&expression.args[1]===:observe
-        arguments=Any[expression.args[2:end]...]
-        if !isempty(arguments)&&arguments[1] isa Expr&&arguments[1].head===:parameters
-            return Expr(:call,:observe!,arguments[1],builder,arguments[2:end]...)
+    attach = GlobalRef(@__MODULE__, :_attach_value!)
+    set_initial = GlobalRef(@__MODULE__, :_set_initial_voltage!)
+    if expression.head === :(=)&&expression.args[1] isa Symbol&&expression.args[2] isa Expr&&expression.args[2].head === :call
+        name = expression.args[1]; call = expression.args[2]; function_name = call.args[1]
+        function_name === :node&&return :($name = node!($builder, $(QuoteNode(name))))
+        function_name === :ground&&return :($name = ground!($builder, $(QuoteNode(name))))
+        return :($name = $attach($builder, $call, $(QuoteNode(name))))
+    elseif expression.head === :call&&expression.args[1] === :observe
+        arguments = Any[expression.args[2:end]...]
+        if !isempty(arguments)&&arguments[1] isa Expr&&arguments[1].head === :parameters
+            return Expr(:call, :observe!, arguments[1], builder, arguments[2:end]...)
         end
-        return Expr(:call,:observe!,builder,arguments...)
-    elseif expression.head===:call&&expression.args[1]===:initial_voltage
-        return Expr(:call,set_initial,builder,expression.args[2:end]...)
-    elseif expression.head===:call
-        return :($attach($builder,$expression))
-    elseif expression.head===:block
-        return Expr(:block,map(item->_design_macro_rewrite(item,builder),expression.args)...)
-    elseif expression.head in (:for,:while)
-        return Expr(expression.head,expression.args[1],_design_macro_rewrite(expression.args[2],builder))
-    elseif expression.head===:if
-        return Expr(:if,expression.args[1],map(item->_design_macro_rewrite(item,builder),expression.args[2:end])...)
-    elseif expression.head===:let
-        return Expr(:let,expression.args[1:end-1]...,_design_macro_rewrite(expression.args[end],builder))
+        return Expr(:call, :observe!, builder, arguments...)
+    elseif expression.head === :call&&expression.args[1] === :initial_voltage
+        return Expr(:call, set_initial, builder, expression.args[2:end]...)
+    elseif expression.head === :call
+        return :($attach($builder, $expression))
+    elseif expression.head === :block
+        return Expr(:block, map(item -> _design_macro_rewrite(item, builder), expression.args)...)
+    elseif expression.head in (:for, :while)
+        return Expr(expression.head, expression.args[1], _design_macro_rewrite(expression.args[2], builder))
+    elseif expression.head === :if
+        return Expr(:if, expression.args[1], map(item -> _design_macro_rewrite(item, builder), expression.args[2:end])...)
+    elseif expression.head === :let
+        return Expr(:let, expression.args[1:(end - 1)]..., _design_macro_rewrite(expression.args[end], builder))
     end
-    expression
+    return expression
 end
 
-macro circuit(signature,block)
-    parsed=signature isa Symbol ? Expr(:call,signature) : signature
-    parsed isa Expr&&parsed.head===:call||error("@circuit requires a function-like signature")
-    ports=Symbol[]
+macro circuit(signature, block)
+    parsed = signature isa Symbol ? Expr(:call, signature) : signature
+    parsed isa Expr&&parsed.head === :call||error("@circuit requires a function-like signature")
+    ports = Symbol[]
     for argument in parsed.args[2:end]
-        argument isa Expr&&argument.head===:parameters&&continue
-        port=argument isa Symbol ? argument : argument isa Expr&&argument.head===:(::) ? argument.args[1] : nothing
-        port isa Symbol&&push!(ports,port)
+        argument isa Expr&&argument.head === :parameters&&continue
+        port = argument isa Symbol ? argument : argument isa Expr&&argument.head === :(::) ? argument.args[1] : nothing
+        port isa Symbol&&push!(ports, port)
     end
-    isempty(ports)||return var"@subcircuit"(__source__,__module__,signature,block)
-    name=parsed.args[1]; builder=gensym(:builder); rewritten=_design_macro_rewrite(block,builder)
-    body=quote
-        $builder=CircuitBuilder($(QuoteNode(name)))
+    isempty(ports)||return var"@subcircuit"(__source__, __module__, signature, block)
+    name = parsed.args[1]; builder = gensym(:builder); rewritten = _design_macro_rewrite(block, builder)
+    body = quote
+        $builder = CircuitBuilder($(QuoteNode(name)))
         $rewritten
         finish($builder)
     end
-    esc(Expr(:function,parsed,body))
+    return esc(Expr(:function, parsed, body))
 end
 
 macro subcircuit(signature, block)
@@ -962,26 +1008,26 @@ macro subcircuit(signature, block)
             nothing
         end
     end
-    esc(definition)
+    return esc(definition)
 end
 
 function _path_segments(design::CircuitDesign, path::PathId)
-    output = Tuple{String,Any}[]
+    output = Tuple{String, Any}[]
     current = path
     while current.value != 0
         node = design.paths.nodes[Int(current)]
         push!(output, (_name(design.names, node.segment.base), node.segment.index))
         current = node.parent
     end
-    reverse!(output)
+    return reverse!(output)
 end
 
 function _primitive_count(template::SubcircuitTemplate)
-    length(template.body.primitives)
+    return length(template.body.primitives)
 end
 
 function Base.summary(design::CircuitDesign)
-    counts = Dict{UInt32,Int}()
+    counts = Dict{UInt32, Int}()
     for record in design.root.records
         counts[record.template.value] = get(counts, record.template.value, 0) + 1
     end
@@ -989,32 +1035,34 @@ function Base.summary(design::CircuitDesign)
     for (template_id, count) in counts
         primitive_count += count * _primitive_count(design.templates.templates[Int(template_id)])
     end
-    (name=_name(design.names, design.name), templates=length(design.templates.templates), instances=length(design.root.records),
-        nets=length(design.root_ir.net_names), primitive_devices=primitive_count,
-        structural_fingerprint=design.structural_fingerprint, parameter_fingerprint=design.parameter_fingerprint)
+    return (
+        name = _name(design.names, design.name), templates = length(design.templates.templates), instances = length(design.root.records),
+        nets = length(design.root_ir.net_names), primitive_devices = primitive_count,
+        structural_fingerprint = design.structural_fingerprint, parameter_fingerprint = design.parameter_fingerprint,
+    )
 end
 
-function Base.instances(design::CircuitDesign; under=nothing, template=nothing, limit::Integer=100)
+function Base.instances(design::CircuitDesign; under = nothing, template = nothing, limit::Integer = 100)
     output = NamedTuple[]
     for (index, record) in enumerate(design.root.records)
         path = InstancePath(_path_segments(design, record.path))
         under !== nothing && !startswith(string(path), string(under)) && continue
         template_value = design.templates.templates[Int(record.template)]
         template !== nothing && _name(template_value.names, template_value.name) != String(template) && continue
-        push!(output, (id=InstanceId(index), path=path, template=_name(template_value.names, template_value.name), partition=record.partition_hint))
+        push!(output, (id = InstanceId(index), path = path, template = _name(template_value.names, template_value.name), partition = record.partition_hint))
         length(output) >= limit && break
     end
-    output
+    return output
 end
 
-function devices(design::CircuitDesign; under=nothing, kind=nothing, limit::Integer=100)
+function devices(design::CircuitDesign; under = nothing, kind = nothing, limit::Integer = 100)
     output = NamedTuple[]
     if under === nothing || isempty(String(under))
         for (primitive_index, primitive) in enumerate(design.root_ir.primitives)
             primitive_kind = typeof(primitive.kernel).parameters[1]
             kind !== nothing && primitive_kind != kind && continue
             path = DevicePath([(_name(design.names, primitive.name), nothing)])
-            push!(output, (instance=nothing, path, kind=primitive_kind))
+            push!(output, (instance = nothing, path, kind = primitive_kind))
             length(output) >= limit && return output
         end
     end
@@ -1026,31 +1074,31 @@ function devices(design::CircuitDesign; under=nothing, kind=nothing, limit::Inte
             primitive_kind = typeof(primitive.kernel).parameters[1]
             kind !== nothing && primitive_kind != kind && continue
             path = DevicePath(vcat(prefix, [(_name(template.names, primitive.name), nothing)]))
-            push!(output, (instance=InstanceId(instance_index), path, kind=primitive_kind))
+            push!(output, (instance = InstanceId(instance_index), path, kind = primitive_kind))
             length(output) >= limit && return output
         end
     end
-    output
+    return output
 end
 
-function nets(design::CircuitDesign; under=nothing, floating=false, limit::Integer=100)
+function nets(design::CircuitDesign; under = nothing, floating = false, limit::Integer = 100)
     output = NamedTuple[]
     for (index, segment) in enumerate(design.root_ir.net_names)
         path = NetPath([(_name(design.names, segment.base), segment.index)])
-        push!(output, (id=Int32(index), path, ground=Int32(index) == design.root_ir.ground_net))
+        push!(output, (id = Int32(index), path, ground = Int32(index) == design.root_ir.ground_net))
         length(output) >= limit && break
     end
-    output
+    return output
 end
 
 struct ResolvedElement
     kind::Symbol
     path::AbstractElementPath
-    instance::Union{Nothing,InstanceId}
+    instance::Union{Nothing, InstanceId}
     local_index::Int
 end
 
-function resolve(design::CircuitDesign, path_value::Union{AbstractString,AbstractElementPath})
+function resolve(design::CircuitDesign, path_value::Union{AbstractString, AbstractElementPath})
     path = path_value isa AbstractString ? parsepath(path_value) : path_value
     target = string(path)
     for (primitive_index, primitive) in enumerate(design.root_ir.primitives)
@@ -1062,19 +1110,19 @@ function resolve(design::CircuitDesign, path_value::Union{AbstractString,Abstrac
         string(instance_path) == target && return ResolvedElement(:instance, instance_path, InstanceId(index), index)
         prefix = string(instance_path) * "."
         startswith(target, prefix) || continue
-        local_name = target[length(prefix)+1:end]
+        local_name = target[(length(prefix) + 1):end]
         template = design.templates.templates[Int(record.template)]
         for (primitive_index, primitive) in enumerate(template.body.primitives)
             _name(template.names, primitive.name) == local_name && return ResolvedElement(:device, DevicePath(path.segments), InstanceId(index), primitive_index)
         end
     end
-    for (index, net) in enumerate(nets(design; limit=typemax(Int)))
+    for (index, net) in enumerate(nets(design; limit = typemax(Int)))
         string(net.path) == target && return ResolvedElement(:net, net.path, nothing, index)
     end
     throw(KeyError(target))
 end
 
-function describe(design::CircuitDesign; depth::Integer=2, limit::Integer=100)
+function describe(design::CircuitDesign; depth::Integer = 2, limit::Integer = 100)
     info = summary(design)
     io = IOBuffer()
     println(io, "CircuitDesign: ", info.name)
@@ -1087,5 +1135,5 @@ function describe(design::CircuitDesign; depth::Integer=2, limit::Integer=100)
         end
         info.instances > limit && println(io, "  … ", info.instances - limit, " more instances")
     end
-    String(take!(io))
+    return String(take!(io))
 end

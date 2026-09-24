@@ -1,6 +1,6 @@
 abstract type AbstractDisplayView end
 
-struct TraceView{X<:AbstractVector,Y<:AbstractVector} <: AbstractDisplayView
+struct TraceView{X <: AbstractVector, Y <: AbstractVector} <: AbstractDisplayView
     axis::X
     values::Y
     label::String
@@ -10,7 +10,7 @@ struct TraceView{X<:AbstractVector,Y<:AbstractVector} <: AbstractDisplayView
     provenance::Dict
 end
 
-struct FrequencyView{F<:AbstractVector,R<:AbstractVector} <: AbstractDisplayView
+struct FrequencyView{F <: AbstractVector, R <: AbstractVector} <: AbstractDisplayView
     frequencies::F
     response::R
     input_label::String
@@ -19,7 +19,7 @@ struct FrequencyView{F<:AbstractVector,R<:AbstractVector} <: AbstractDisplayView
     provenance::Dict
 end
 
-struct SpectrumView{F<:AbstractVector,A<:AbstractVector,P<:AbstractVector} <: AbstractDisplayView
+struct SpectrumView{F <: AbstractVector, A <: AbstractVector, P <: AbstractVector} <: AbstractDisplayView
     frequencies::F
     amplitude_rms::A
     psd::P
@@ -35,10 +35,10 @@ struct SpectrumCursorReadout
     phase_degrees::Float64
     psd::Float64
     classification::Symbol
-    harmonic_order::Union{Nothing,Int}
+    harmonic_order::Union{Nothing, Int}
 end
 
-struct SpectrogramView{T<:AbstractVector,F<:AbstractVector,P<:AbstractMatrix} <: AbstractDisplayView
+struct SpectrogramView{T <: AbstractVector, F <: AbstractVector, P <: AbstractMatrix} <: AbstractDisplayView
     times::T
     frequencies::F
     psd::P
@@ -49,7 +49,7 @@ struct SpectrogramView{T<:AbstractVector,F<:AbstractVector,P<:AbstractMatrix} <:
     provenance::Dict
 end
 
-struct NoiseView{F<:AbstractVector,D<:AbstractVector} <: AbstractDisplayView
+struct NoiseView{F <: AbstractVector, D <: AbstractVector} <: AbstractDisplayView
     frequencies::F
     density::D
     referred::Symbol
@@ -58,28 +58,28 @@ struct NoiseView{F<:AbstractVector,D<:AbstractVector} <: AbstractDisplayView
     provenance::Dict
 end
 
-struct NoiseContributionView{V<:AbstractVector} <: AbstractDisplayView
+struct NoiseContributionView{V <: AbstractVector} <: AbstractDisplayView
     labels::Vector{String}
     values::V
     total_variance::Float64
-    band::Pair{Float64,Float64}
+    band::Pair{Float64, Float64}
     referred::Symbol
     warnings::Vector{String}
     provenance::Dict
 end
 
-struct NetworkView{F<:AbstractVector,V<:AbstractVector} <: AbstractDisplayView
+struct NetworkView{F <: AbstractVector, V <: AbstractVector} <: AbstractDisplayView
     frequencies::F
     values::V
     parameter::Symbol
-    element::Tuple{Int,Int}
+    element::Tuple{Int, Int}
     port_labels::Vector{String}
     reference_impedances::Vector{Float64}
     warnings::Vector{String}
     provenance::Dict
 end
 
-struct EnsembleView{X<:AbstractVector,M<:AbstractVector} <: AbstractDisplayView
+struct EnsembleView{X <: AbstractVector, M <: AbstractVector} <: AbstractDisplayView
     indices::X
     metrics::M
     converged::BitVector
@@ -123,7 +123,7 @@ end
 
 function _threshold_crossings(times, values, threshold, edge)
     crossings = Float64[]
-    for index in 1:length(times)-1
+    for index in 1:(length(times) - 1)
         first_value = values[index] - threshold
         second_value = values[index + 1] - threshold
         matches = edge === :rising ? first_value < 0 <= second_value :
@@ -134,12 +134,14 @@ function _threshold_crossings(times, values, threshold, edge)
         fraction = (threshold - values[index]) / difference
         push!(crossings, times[index] + fraction * (times[index + 1] - times[index]))
     end
-    crossings
+    return crossings
 end
 
-function jitterview(result::Amber.SimulationResult; signal, threshold=nothing,
-        edge=:rising, nominal_period=nothing)
-    result.analysis isa Union{Amber.Transient,Amber.TransientNoise} ||
+function jitterview(
+        result::Amber.SimulationResult; signal, threshold = nothing,
+        edge = :rising, nominal_period = nothing
+    )
+    result.analysis isa Union{Amber.Transient, Amber.TransientNoise} ||
         throw(ArgumentError("jitterview requires a transient result"))
     edge in (:rising, :falling) ||
         throw(ArgumentError("edge must be :rising or :falling"))
@@ -147,23 +149,30 @@ function jitterview(result::Amber.SimulationResult; signal, threshold=nothing,
     isempty(values) && throw(ArgumentError("jitter trace is empty"))
     level = threshold === nothing ? (minimum(values) + maximum(values)) / 2 : Float64(threshold)
     crossings = _threshold_crossings(result.axis, values, level, edge)
-    length(crossings) >= 3 || throw(ArgumentError(
-        "jitter analysis requires at least three threshold crossings"))
+    length(crossings) >= 3 || throw(
+        ArgumentError(
+            "jitter analysis requires at least three threshold crossings"
+        )
+    )
     periods = diff(crossings)
     nominal = nominal_period === nothing ? sort(periods)[cld(length(periods), 2)] :
         Float64(nominal_period)
     nominal > 0 || throw(ArgumentError("nominal_period must be positive"))
-    ideal = first(crossings) .+ (0:length(crossings)-1) .* nominal
+    ideal = first(crossings) .+ (0:(length(crossings) - 1)) .* nominal
     tie = crossings .- ideal
     period_jitter = periods .- nominal
     cycle_to_cycle = diff(periods)
-    JitterView(crossings, nominal, tie, period_jitter, cycle_to_cycle, level,
-        Symbol(edge), _signal_label(signal), _warnings(result.stats), _provenance(result))
+    return JitterView(
+        crossings, nominal, tie, period_jitter, cycle_to_cycle, level,
+        Symbol(edge), _signal_label(signal), _warnings(result.stats), _provenance(result)
+    )
 end
 
-function eyediagramview(result::Amber.SimulationResult; signal, period,
-        unit_intervals::Integer=2, offset=first(result.axis), mask=nothing)
-    result.analysis isa Union{Amber.Transient,Amber.TransientNoise} ||
+function eyediagramview(
+        result::Amber.SimulationResult; signal, period,
+        unit_intervals::Integer = 2, offset = first(result.axis), mask = nothing
+    )
+    result.analysis isa Union{Amber.Transient, Amber.TransientNoise} ||
         throw(ArgumentError("eyediagramview requires a transient result"))
     period = Float64(period)
     period > 0 || throw(ArgumentError("period must be positive"))
@@ -181,70 +190,96 @@ function eyediagramview(result::Amber.SimulationResult; signal, period,
         local_values = trace[indices]
         push!(phases, local_phase); push!(values, local_values)
         mask === nothing || foreach(eachindex(local_phase)) do point
-            mask(local_phase[point], local_values[point]) && push!(violations,
-                (time=times[indices[point]], phase=local_phase[point],
-                    value=local_values[point], cycle=index))
+            mask(local_phase[point], local_values[point]) && push!(
+                violations,
+                (
+                    time = times[indices[point]], phase = local_phase[point],
+                    value = local_values[point], cycle = index,
+                )
+            )
         end
     end
     warnings = _warnings(result.stats)
     isempty(phases) && push!(warnings, "record does not contain a complete eye trace")
-    EyeDiagramView(phases, values, period, Int(unit_intervals), _signal_label(signal),
-        violations, warnings, _provenance(result))
+    return EyeDiagramView(
+        phases, values, period, Int(unit_intervals), _signal_label(signal),
+        violations, warnings, _provenance(result)
+    )
 end
 
-function operatingpointview(result::Amber.SimulationResult; query="", kind=nothing)
+function operatingpointview(result::Amber.SimulationResult; query = "", kind = nothing)
     result.analysis isa Amber.OperatingPoint ||
         throw(ArgumentError("operatingpointview requires an operating-point result"))
     needle = query === nothing ? "" : lowercase(String(query))
     matches(name) = isempty(needle) || occursin(needle, lowercase(String(name)))
     node_rows = NamedTuple[]
-    for node in Amber.nets(result.compiled.design; limit=typemax(Int))
+    for node in Amber.nets(result.compiled.design; limit = typemax(Int))
         name = string(node.path)
         matches(name) || continue
         value = node.ground ? 0.0 : Float64(real(only(Amber.voltage(result, name))))
-        push!(node_rows, (name, voltage=value, ground=node.ground))
+        push!(node_rows, (name, voltage = value, ground = node.ground))
     end
     device_rows = NamedTuple[]
-    for device in Amber.devices(result.compiled.design; limit=typemax(Int))
+    for device in Amber.devices(result.compiled.design; limit = typemax(Int))
         kind === nothing || device.kind === Symbol(kind) || continue
         name = string(device.path)
         matches(name) || continue
-        current = try Float64(real(only(Amber.current(result, name)))) catch; nothing end
-        power = try Float64(real(only(Amber.power(result, name)))) catch; nothing end
-        region = try Symbol(string(Amber.region(result, name))) catch; nothing end
-        push!(device_rows, (name, kind=device.kind, current, power, region))
+        current = try
+            Float64(real(only(Amber.current(result, name))))
+        catch
+            nothing
+        end
+        power = try
+            Float64(real(only(Amber.power(result, name))))
+        catch
+            nothing
+        end
+        region = try
+            Symbol(string(Amber.region(result, name)))
+        catch
+            nothing
+        end
+        push!(device_rows, (name, kind = device.kind, current, power, region))
     end
     stats = result.stats
-    convergence = (converged=Bool(get(stats, :converged, false)),
-        iterations=get(stats, :iterations, nothing),
-        strategy=get(stats, :strategy, nothing),
-        continuation_steps=get(stats, :continuation_steps, nothing),
-        rejected_steps=get(stats, :rejected_continuation_steps, nothing),
-        failed_steps=copy(get(stats, :failed_continuation_steps, Int[])),
-        dominant_residual=get(stats, :dominant_residual, nothing),
-        history=copy(get(stats, :residual_history, Any[])),
-        history_available=haskey(stats, :residual_history),
-        temperature=get(stats, :temperature, nothing))
-    OperatingPointView(node_rows, device_rows, convergence, _warnings(stats),
-        _provenance(result))
+    convergence = (
+        converged = Bool(get(stats, :converged, false)),
+        iterations = get(stats, :iterations, nothing),
+        strategy = get(stats, :strategy, nothing),
+        continuation_steps = get(stats, :continuation_steps, nothing),
+        rejected_steps = get(stats, :rejected_continuation_steps, nothing),
+        failed_steps = copy(get(stats, :failed_continuation_steps, Int[])),
+        dominant_residual = get(stats, :dominant_residual, nothing),
+        history = copy(get(stats, :residual_history, Any[])),
+        history_available = haskey(stats, :residual_history),
+        temperature = get(stats, :temperature, nothing),
+    )
+    return OperatingPointView(
+        node_rows, device_rows, convergence, _warnings(stats),
+        _provenance(result)
+    )
 end
 
 function diagnosticgroups(result)
     report = Amber.validity_report(result)
     warnings = String.(get(report, :warnings, String[]))
     device_names = sort!(String.(collect(keys(get(report, :devices, Dict())))))
-    grouped = Dict{String,Vector{String}}("General" => String[])
+    grouped = Dict{String, Vector{String}}("General" => String[])
     for warning in warnings
         owner = findfirst(name -> startswith(warning, name * ":"), device_names)
         key = owner === nothing ? "General" : device_names[owner]
         push!(get!(grouped, key, String[]), warning)
     end
     filter!(pair -> !isempty(last(pair)), grouped)
-    (groups=grouped, devices=get(report, :devices, Dict()), warnings, report)
+    return (groups = grouped, devices = get(report, :devices, Dict()), warnings, report)
 end
 
 _warnings(stats) = String.(get(stats, :warnings, String[]))
-_provenance(result) = try Dict(Amber.provenance(result)) catch; Dict{Any,Any}() end
+_provenance(result) = try
+    Dict(Amber.provenance(result))
+catch
+    Dict{Any, Any}()
+end
 
 function _signal_metadata(signal)
     text = string(signal)
@@ -255,7 +290,7 @@ function _signal_metadata(signal)
     elseif occursin("charge", lowercase(text))
         return :charge, "C"
     end
-    :voltage, "V"
+    return :voltage, "V"
 end
 
 function _signal_label(signal)
@@ -264,33 +299,39 @@ function _signal_label(signal)
     target = getproperty(signal, :target)
     extra = getproperty(signal, :extra)
     prefix = kind === :voltage ? "V" : kind === :current ? "I" : uppercasefirst(String(kind))
-    extra === nothing ? "$(prefix)($(target))" : "$(prefix)($(target), $(extra))"
+    return extra === nothing ? "$(prefix)($(target))" : "$(prefix)($(target), $(extra))"
 end
 
-function traceview(result::Amber.SimulationResult, signal; label=nothing)
-    result.analysis isa Union{Amber.Transient,Amber.TransientNoise} ||
+function traceview(result::Amber.SimulationResult, signal; label = nothing)
+    result.analysis isa Union{Amber.Transient, Amber.TransientNoise} ||
         throw(ArgumentError("traceview requires a transient result"))
     values = collect(Amber.trace(result, signal))
     length(values) == length(result.axis) || throw(DimensionMismatch("trace and axis lengths differ"))
     quantity, unit = _signal_metadata(signal)
-    TraceView(result.axis, values, something(label, _signal_label(signal)), quantity, unit,
-        _warnings(result.stats), _provenance(result))
+    return TraceView(
+        result.axis, values, something(label, _signal_label(signal)), quantity, unit,
+        _warnings(result.stats), _provenance(result)
+    )
 end
 
 function frequencyview(result::Amber.SimulationResult; input, output)
     result.analysis isa Amber.SmallSignal ||
         throw(ArgumentError("frequencyview requires a small-signal result"))
     response = collect(Amber.transfer(result; input, output))
-    FrequencyView(Amber.frequencies(result), response, _signal_label(input), _signal_label(output),
-        _warnings(result.stats), _provenance(result))
+    return FrequencyView(
+        Amber.frequencies(result), response, _signal_label(input), _signal_label(output),
+        _warnings(result.stats), _provenance(result)
+    )
 end
 
 function spectrumview(result::Amber.SpectrumResult)
-    SpectrumView(result.frequencies, result.amplitude_rms, result.psd, result.window,
-        _warnings(result.stats), _provenance(result))
+    return SpectrumView(
+        result.frequencies, result.amplitude_rms, result.psd, result.window,
+        _warnings(result.stats), _provenance(result)
+    )
 end
 
-function spectrum_cursor(result::Amber.SpectrumResult, frequency::Real; fundamental=nothing)
+function spectrum_cursor(result::Amber.SpectrumResult, frequency::Real; fundamental = nothing)
     isempty(result.frequencies) && throw(ArgumentError("spectrum contains no bins"))
     index = argmin(abs.(result.frequencies .- frequency))
     classification = index == 1 && iszero(result.frequencies[index]) ? :dc : :spur
@@ -306,25 +347,33 @@ function spectrum_cursor(result::Amber.SpectrumResult, frequency::Real; fundamen
             classification = candidate == 1 ? :fundamental : :harmonic
         end
     end
-    SpectrumCursorReadout(index, result.frequencies[index], result.amplitude_rms[index],
-        rad2deg(angle(result.coefficients[index])), result.psd[index], classification, order)
+    return SpectrumCursorReadout(
+        index, result.frequencies[index], result.amplitude_rms[index],
+        rad2deg(angle(result.coefficients[index])), result.psd[index], classification, order
+    )
 end
 
 function spectrum_cursor(result::Amber.HarmonicResult, frequency::Real)
-    readout = spectrum_cursor(result.spectrum, frequency;
-        fundamental=result.fundamental.frequency)
+    readout = spectrum_cursor(
+        result.spectrum, frequency;
+        fundamental = result.fundamental.frequency
+    )
     known = vcat([result.fundamental], result.harmonics)
     component = findfirst(item -> item.bin == readout.index, known)
     component === nothing && return readout
     item = known[component]
-    SpectrumCursorReadout(readout.index, readout.frequency, readout.amplitude_rms,
+    return SpectrumCursorReadout(
+        readout.index, readout.frequency, readout.amplitude_rms,
         readout.phase_degrees, readout.psd, item.order == 1 ? :fundamental : :harmonic,
-        item.order)
+        item.order
+    )
 end
 
-function spectrogramview(result::Amber.SimulationResult; signal, window=:hann,
-        samples=min(256, length(result.axis)), overlap=0.5, nfft=nothing, detrend=:mean)
-    result.analysis isa Union{Amber.Transient,Amber.TransientNoise} ||
+function spectrogramview(
+        result::Amber.SimulationResult; signal, window = :hann,
+        samples = min(256, length(result.axis)), overlap = 0.5, nfft = nothing, detrend = :mean
+    )
+    result.analysis isa Union{Amber.Transient, Amber.TransientNoise} ||
         throw(ArgumentError("spectrogramview requires a transient result"))
     kind = Symbol(window)
     count = Int(samples)
@@ -332,31 +381,45 @@ function spectrogramview(result::Amber.SimulationResult; signal, window=:hann,
         throw(ArgumentError("samples must be between 4 and the transient sample count"))
     0 <= overlap < 1 || throw(ArgumentError("overlap must lie in [0, 1)"))
     step = max(1, round(Int, count * (1 - overlap)))
-    starts = collect(1:step:length(result.axis)-count+1)
+    starts = collect(1:step:(length(result.axis) - count + 1))
     isempty(starts) && throw(ArgumentError("transient is too short for the selected window"))
     transform_length = nfft === nothing ? count : Int(nfft)
     transform_length >= count || throw(ArgumentError("nfft must be at least samples"))
-    spectra = [Amber.spectrum(result; signal, window=kind,
-        interval=result.axis[start] => result.axis[start + count - 1],
-        nfft=transform_length, detrend) for start in starts]
+    spectra = [
+        Amber.spectrum(
+            result; signal, window = kind,
+            interval = result.axis[start] => result.axis[start + count - 1],
+            nfft = transform_length, detrend
+        ) for start in starts
+    ]
     reference = first(spectra).frequencies
-    all(spectrum -> length(spectrum.frequencies) == length(reference) &&
-        all(isapprox.(spectrum.frequencies, reference; rtol=1e-6, atol=0)), spectra) ||
+    all(
+        spectrum -> length(spectrum.frequencies) == length(reference) &&
+            all(isapprox.(spectrum.frequencies, reference; rtol = 1.0e-6, atol = 0)), spectra
+    ) ||
         throw(ArgumentError("spectrogram windows produced incompatible frequency grids"))
     times = [(result.axis[start] + result.axis[start + count - 1]) / 2 for start in starts]
     psd = reduce(hcat, getproperty.(spectra, :psd))
-    warnings = unique(vcat(_warnings(result.stats),
-        (String.(get(spectrum.stats, :warnings, String[])) for spectrum in spectra)...))
-    SpectrogramView(times, reference, psd, _signal_label(signal), kind, Float64(overlap),
-        warnings, _provenance(result))
+    warnings = unique(
+        vcat(
+            _warnings(result.stats),
+            (String.(get(spectrum.stats, :warnings, String[])) for spectrum in spectra)...
+        )
+    )
+    return SpectrogramView(
+        times, reference, psd, _signal_label(signal), kind, Float64(overlap),
+        warnings, _provenance(result)
+    )
 end
 
-function noiseview(result::Amber.NoiseResult; referred=:output)
+function noiseview(result::Amber.NoiseResult; referred = :output)
     referred in (:output, :input) || throw(ArgumentError("referred must be :output or :input"))
     density = referred === :output ? Amber.noise_density(result) : Amber.input_referred_noise_density(result)
     density === nothing && throw(ArgumentError("input-referred noise is unavailable for this result"))
-    NoiseView(result.frequencies, density, referred, "V/√Hz", _warnings(result.stats),
-        _provenance(result))
+    return NoiseView(
+        result.frequencies, density, referred, "V/√Hz", _warnings(result.stats),
+        _provenance(result)
+    )
 end
 
 function _band_variance(frequencies, psd, low, high)
@@ -372,20 +435,24 @@ function _band_variance(frequencies, psd, low, high)
     inside = findall(frequency -> low < frequency < high, frequencies)
     selected_frequencies = vcat(low, frequencies[inside], high)
     selected_psd = vcat(edge(low), psd[inside], edge(high))
-    sum((selected_psd[index] + selected_psd[index + 1]) *
-        (selected_frequencies[index + 1] - selected_frequencies[index]) / 2
-        for index in 1:length(selected_frequencies)-1)
+    return sum(
+        (selected_psd[index] + selected_psd[index + 1]) *
+            (selected_frequencies[index + 1] - selected_frequencies[index]) / 2
+            for index in 1:(length(selected_frequencies) - 1)
+    )
 end
 
-function noisecontributionview(result::Amber.NoiseResult; referred=:output,
-        band=first(result.frequencies) => last(result.frequencies), group=:source)
+function noisecontributionview(
+        result::Amber.NoiseResult; referred = :output,
+        band = first(result.frequencies) => last(result.frequencies), group = :source
+    )
     referred in (:output, :input) || throw(ArgumentError("referred must be :output or :input"))
     group in (:source, :component, :mechanism) ||
         throw(ArgumentError("group must be :source, :component, or :mechanism"))
     low, high = Float64(first(band)), Float64(last(band))
     first(result.frequencies) <= low < high <= last(result.frequencies) ||
         throw(ArgumentError("band must lie within the evaluated frequency range"))
-    totals = Dict{Symbol,Float64}()
+    totals = Dict{Symbol, Float64}()
     for contribution in result.contributions
         values = referred === :output ? contribution.output_psd : contribution.input_referred_psd
         values === nothing && continue
@@ -393,27 +460,33 @@ function noisecontributionview(result::Amber.NoiseResult; referred=:output,
         key = getproperty(contribution, group)
         totals[key] = get(totals, key, 0.0) + max(variance, 0.0)
     end
-    ranked = sort!(collect(totals); by=last, rev=true)
+    ranked = sort!(collect(totals); by = last, rev = true)
     total_psd = referred === :output ? Amber.noise_psd(result) : Amber.input_referred_noise_psd(result)
     total_psd === nothing && throw(ArgumentError("input-referred noise is unavailable for this result"))
     total = _band_variance(result.frequencies, total_psd, low, high)
-    NoiseContributionView(string.(first.(ranked)), last.(ranked), total, low => high,
-        referred, _warnings(result.stats), _provenance(result))
+    return NoiseContributionView(
+        string.(first.(ranked)), last.(ranked), total, low => high,
+        referred, _warnings(result.stats), _provenance(result)
+    )
 end
 
-function networkview(result::Amber.NetworkResult; parameter=:s, element=(2, 1))
+function networkview(result::Amber.NetworkResult; parameter = :s, element = (2, 1))
     matrix = Amber.network_parameters(result, Symbol(parameter))
     row, column = element
     checkbounds(matrix, row, column, :)
     labels = [something(port.name, Symbol("port", index)) |> string for (index, port) in enumerate(result.ports)]
-    NetworkView(result.frequencies, vec(matrix[row, column, :]), Symbol(parameter),
+    return NetworkView(
+        result.frequencies, vec(matrix[row, column, :]), Symbol(parameter),
         (row, column), labels, getproperty.(result.ports, :reference_impedance),
-        _warnings(result.stats), _provenance(result))
+        _warnings(result.stats), _provenance(result)
+    )
 end
 
-function ensembleview(result::Union{Amber.SweepResult,Amber.MonteCarloResult})
+function ensembleview(result::Union{Amber.SweepResult, Amber.MonteCarloResult})
     values = result isa Amber.SweepResult ? result.metrics : result.values
     parameters = result isa Amber.SweepResult ? result.parameter_values : result.parameters
-    EnsembleView(collect(eachindex(values)), collect(values), copy(result.converged),
-        copy(result.failures), collect(parameters), String[], _provenance(result))
+    return EnsembleView(
+        collect(eachindex(values)), collect(values), copy(result.converged),
+        copy(result.failures), collect(parameters), String[], _provenance(result)
+    )
 end

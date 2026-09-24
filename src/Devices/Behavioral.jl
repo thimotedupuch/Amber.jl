@@ -1,5 +1,5 @@
-opamp(p,n,o,vp,vn;model=BehavioralOpAmp(),kw...)=_component(:opamp,p,n,o,vp,vn;model,kw...)
-analog_switch(a,b,cp,cn;model=VoltageControlledSwitch(),kw...)=_component(:switch,a,b,cp,cn;model,kw...)
+opamp(p, n, o, vp, vn; model = BehavioralOpAmp(), kw...) = _component(:opamp, p, n, o, vp, vn; model, kw...)
+analog_switch(a, b, cp, cn; model = VoltageControlledSwitch(), kw...) = _component(:switch, a, b, cp, cn; model, kw...)
 
 """A nonlinear current source controlled by as many as four differential voltages.
 
@@ -13,13 +13,13 @@ experiments. Supplying the analytic gradient keeps Amber's Newton matrix
 consistent with the residual.
 """
 function behavioral_current_source(controls::Tuple, output_p, output_n; current, gradient, kw...)
-    isempty(kw)||throw(ArgumentError("behavioral sources received unsupported keyword(s): "*join(string.(keys(kw)),", ")))
+    isempty(kw)||throw(ArgumentError("behavioral sources received unsupported keyword(s): " * join(string.(keys(kw)), ", ")))
     length(controls) <= 4 || throw(ArgumentError("behavioral_current_source supports at most four differential controls"))
     all(control -> control isa Tuple && length(control) == 2, controls) ||
         throw(ArgumentError("controls must be `(positive, negative)` node pairs"))
     padded = ntuple(index -> index <= length(controls) ? controls[index] : (output_n, output_n), 4)
     terminals = (output_p, output_n, Iterators.flatten(padded)...)
-    _component(:behavioral_current_source, terminals...; current, gradient, control_count=length(controls), kw...)
+    return _component(:behavioral_current_source, terminals...; current, gradient, control_count = length(controls), kw...)
 end
 
 """A nonlinear voltage source controlled by as many as four differential voltages.
@@ -34,11 +34,11 @@ voltage constraint. Use a series resistor externally when finite output
 impedance is required.
 """
 function behavioral_voltage_source(controls::Tuple, output_p, output_n; voltage, gradient, kw...)
-    isempty(kw)||throw(ArgumentError("behavioral sources received unsupported keyword(s): "*join(string.(keys(kw)),", ")))
+    isempty(kw)||throw(ArgumentError("behavioral sources received unsupported keyword(s): " * join(string.(keys(kw)), ", ")))
     length(controls) <= 4 || throw(ArgumentError("behavioral_voltage_source supports at most four differential controls"))
     all(control -> control isa Tuple && length(control) == 2, controls) ||
         throw(ArgumentError("controls must be `(positive, negative)` node pairs"))
     padded = ntuple(index -> index <= length(controls) ? controls[index] : (output_n, output_n), 4)
     terminals = (output_p, output_n, Iterators.flatten(padded)...)
-    _component(:behavioral_voltage_source, terminals...; voltage, gradient, control_count=length(controls), kw...)
+    return _component(:behavioral_voltage_source, terminals...; voltage, gradient, control_count = length(controls), kw...)
 end

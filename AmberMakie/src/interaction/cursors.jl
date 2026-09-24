@@ -1,4 +1,4 @@
-mutable struct CursorState{A,B,I,R,Q,S}
+mutable struct CursorState{A, B, I, R, Q, S}
     a::A
     b::B
     interval::I
@@ -15,13 +15,17 @@ function CursorState(x::AbstractVector, y::AbstractVector)
     readout = Makie.Observable(cursor_readout(x, y, a[], b[]))
     selected = Makie.Observable(interval_readout(x, y, interval[]))
     subscriptions = Any[]
-    append!(subscriptions, Makie.onany(a, b) do avalue, bvalue
-        readout[] = cursor_readout(x, y, avalue, bvalue)
-    end)
-    push!(subscriptions, Makie.on(interval) do bounds
-        selected[] = interval_readout(x, y, bounds)
-    end)
-    CursorState(a, b, interval, readout, selected, subscriptions)
+    append!(
+        subscriptions, Makie.onany(a, b) do avalue, bvalue
+            readout[] = cursor_readout(x, y, avalue, bvalue)
+        end
+    )
+    push!(
+        subscriptions, Makie.on(interval) do bounds
+            selected[] = interval_readout(x, y, bounds)
+        end
+    )
+    return CursorState(a, b, interval, readout, selected, subscriptions)
 end
 
 setcursor!(state::CursorState, which::Symbol, value::Real) =
@@ -31,11 +35,15 @@ setcursor!(state::CursorState, which::Symbol, value::Real) =
 setinterval!(state::CursorState, interval::Pair) = (state.interval[] = float(first(interval)) => float(last(interval)))
 
 function _cursor_axis!(axis, state::CursorState, x::AbstractVector)
-    cursor_a = Makie.lift(state.a) do value; [nearest_sample(x, x, value).x] end
-    cursor_b = Makie.lift(state.b) do value; [nearest_sample(x, x, value).x] end
-    Makie.vlines!(axis, cursor_a; color=(_AMBER_COLORS.input, 0.8), linestyle=:dash)
-    Makie.vlines!(axis, cursor_b; color=(_AMBER_COLORS.output, 0.8), linestyle=:dot)
-    subscription = Makie.on(Makie.events(axis).mousebutton; priority=10) do event
+    cursor_a = Makie.lift(state.a) do value
+        [nearest_sample(x, x, value).x]
+    end
+    cursor_b = Makie.lift(state.b) do value
+        [nearest_sample(x, x, value).x]
+    end
+    Makie.vlines!(axis, cursor_a; color = (_AMBER_COLORS.input, 0.8), linestyle = :dash)
+    Makie.vlines!(axis, cursor_b; color = (_AMBER_COLORS.output, 0.8), linestyle = :dot)
+    subscription = Makie.on(Makie.events(axis).mousebutton; priority = 10) do event
         event.button == Makie.Mouse.left && event.action == Makie.Mouse.press || return Makie.Consume(false)
         Makie.is_mouseinside(axis.scene) || return Makie.Consume(false)
         target = Makie.mouseposition(axis)[1]
@@ -45,11 +53,11 @@ function _cursor_axis!(axis, state::CursorState, x::AbstractVector)
         Makie.Consume(true)
     end
     push!(state.subscriptions, subscription)
-    nothing
+    return nothing
 end
 
 function _close!(state::CursorState)
     foreach(Makie.off, state.subscriptions)
     empty!(state.subscriptions)
-    nothing
+    return nothing
 end

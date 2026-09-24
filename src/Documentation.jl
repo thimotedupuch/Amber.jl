@@ -1475,26 +1475,28 @@ The template alone is not a grounded top-level circuit. In `HelpCascade()`, use
 See [`@circuit`](@ref), [`with_parameters`](@ref).
 """ :(@subcircuit)
 
-const _documented_unit_families=(
-    (:Ω,"ohm"),(:V,"volt"),(:A,"ampere"),(:F,"farad"),(:H,"henry"),
-    (:C,"coulomb"),(:s,"second"),(:Hz,"hertz"),(:S,"siemens"),(:K,"kelvin"),
+const _documented_unit_families = (
+    (:Ω, "ohm"), (:V, "volt"), (:A, "ampere"), (:F, "farad"), (:H, "henry"),
+    (:C, "coulomb"), (:s, "second"), (:Hz, "hertz"), (:S, "siemens"), (:K, "kelvin"),
 )
-const _documented_prefixes=((:f,"femto"),(:p,"pico"),(:n,"nano"),(:μ,"micro"),
-    (:m,"milli"),(:k,"kilo"),(:M,"mega"),(:G,"giga"),(:T,"tera"))
-const _documented_units=Pair{Symbol,String}[]
-for (unit,description) in _documented_unit_families
-    push!(_documented_units,unit=>description)
-    for (prefix,prefix_description) in _documented_prefixes
-        push!(_documented_units,Symbol(prefix,unit)=>(prefix_description*description))
+const _documented_prefixes = (
+    (:f, "femto"), (:p, "pico"), (:n, "nano"), (:μ, "micro"),
+    (:m, "milli"), (:k, "kilo"), (:M, "mega"), (:G, "giga"), (:T, "tera"),
+)
+const _documented_units = Pair{Symbol, String}[]
+for (unit, description) in _documented_unit_families
+    push!(_documented_units, unit => description)
+    for (prefix, prefix_description) in _documented_prefixes
+        push!(_documented_units, Symbol(prefix, unit) => (prefix_description * description))
     end
 end
-push!(_documented_units,:m=>"metre")
-for (prefix,prefix_description) in _documented_prefixes
-    prefix===:m&&continue
-    push!(_documented_units,Symbol(prefix,:m)=>(prefix_description*"metre"))
+push!(_documented_units, :m => "metre")
+for (prefix, prefix_description) in _documented_prefixes
+    prefix === :m&&continue
+    push!(_documented_units, Symbol(prefix, :m) => (prefix_description * "metre"))
 end
-push!(_documented_units,:mm=>"millimetre")
-append!(_documented_units,[:dB=>"decibel amplitude conversion",:percent=>"percent scale factor",:°=>"degree-to-radian conversion"])
+push!(_documented_units, :mm => "millimetre")
+append!(_documented_units, [:dB => "decibel amplitude conversion", :percent => "percent scale factor", :° => "degree-to-radian conversion"])
 
 for (name, description) in _documented_units
     @eval @doc $("Numeric SI scale factor for one " * description * ".") $name
@@ -1514,14 +1516,14 @@ manual's Charge-based MOSFET page for equations, parameters and physical limits.
 """ ChargeBasedMOSFET
 
 for name in _RESISTOR_MATERIAL_NAMES
-    name===:ThinFilm && continue
+    name === :ThinFilm && continue
     @eval @doc $("$(name) resistor technology. Explicit excess_noise_coefficient, excess_current_exponent (2), excess_frequency_exponent (1), and excess_reference_frequency (1 Hz). Noise coefficient defaults to zero; temperature/voltage coefficients are unsupported. See design_specs/passive_model_catalog.md.") $(name)
 end
 for name in _PASSIVE_PACKAGE_NAMES
-    name===:SMD0603 && continue
+    name === :SMD0603 && continue
     @eval @doc $("$(name) passive package. Explicit resistor series_inductance/parallel_capacitance or capacitor esr/esl; all default to zero. SMD names use imperial size codes. No geometry-derived defaults. See design_specs/passive_model_catalog.md.") $(name)
 end
 for name in _CAPACITOR_DIELECTRIC_NAMES
-    name===:C0G && continue
+    name === :C0G && continue
     @eval @doc $("$(name) capacitor technology. Nonzero loss_tangent requires reference_frequency (Hz); elaborates to constant series R = tan(delta)/(2pi*f*C), added to ESR. Loss defaults to zero. No bias, temperature, aging, or polarity behavior. See design_specs/passive_model_catalog.md.") $(name)
 end

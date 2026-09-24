@@ -1,20 +1,22 @@
 using Amber
 using TOML
 
-@subcircuit CompilationCell(input, output, reference; R=1kΩ, C=1nF) begin
-    R1 = resistor(input, output; value=R)
-    C1 = capacitor(output, reference; value=C)
+@subcircuit CompilationCell(input, output, reference; R = 1kΩ, C = 1nF) begin
+    R1 = resistor(input, output; value = R)
+    C1 = capacitor(output, reference; value = C)
 end
 
 function compilation_design(cells::Integer)
     builder = CircuitBuilder(:CompilationLadder)
     reference = ground!(builder, :gnd)
     nodes = node_array!(builder, :x, 0:cells)
-    instances!(builder, CompilationCell, 1:cells;
-        name=index -> (:cell, index),
-        connections=index -> (input=nodes[index - 1], output=nodes[index], reference=reference),
-        parameters=_ -> (R=1kΩ, C=1nF))
-    finish(builder)
+    instances!(
+        builder, CompilationCell, 1:cells;
+        name = index -> (:cell, index),
+        connections = index -> (input = nodes[index - 1], output = nodes[index], reference = reference),
+        parameters = _ -> (R = 1kΩ, C = 1nF)
+    )
+    return finish(builder)
 end
 
 cells = parse(Int, get(ENV, "AMBER_BENCH_CELLS", "500000"))
@@ -40,4 +42,4 @@ result = Dict(
     "threads" => Threads.nthreads(),
 )
 
-TOML.print(stdout, result; sorted=true)
+TOML.print(stdout, result; sorted = true)

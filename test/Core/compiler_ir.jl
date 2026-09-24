@@ -1,31 +1,33 @@
-@subcircuit CompilerRCSection(input, output, reference; R=1kΩ, C=1nF) begin
-    R1 = resistor(input, output; value=R)
-    C1 = capacitor(output, reference; value=C)
+@subcircuit CompilerRCSection(input, output, reference; R = 1kΩ, C = 1nF) begin
+    R1 = resistor(input, output; value = R)
+    C1 = capacitor(output, reference; value = C)
 end
 
 @subcircuit CompilerControlledSection(reference, sense, current_output, voltage_output) begin
-    Sense = voltage_source(sense, reference; dc=1V)
-    Rsense = resistor(sense, reference; value=1kΩ)
-    F1 = current_controlled_current_source(Sense, current_output, reference; gain=2.0)
-    Rload = resistor(current_output, reference; value=1kΩ)
-    H1 = current_controlled_voltage_source(Sense, voltage_output, reference; transresistance=1kΩ)
+    Sense = voltage_source(sense, reference; dc = 1V)
+    Rsense = resistor(sense, reference; value = 1kΩ)
+    F1 = current_controlled_current_source(Sense, current_output, reference; gain = 2.0)
+    Rload = resistor(current_output, reference; value = 1kΩ)
+    H1 = current_controlled_voltage_source(Sense, voltage_output, reference; transresistance = 1kΩ)
 end
 
-function compiler_ladder(sections=8)
+function compiler_ladder(sections = 8)
     builder = CircuitBuilder(:CompilerLadder)
     reference = ground!(builder, :gnd)
     nodes = node_array!(builder, :x, 0:sections)
-    add!(builder, voltage_source(nodes[0], reference; dc=1V); name=:Source)
-    instances!(builder, CompilerRCSection, 1:sections;
-        name=index -> (:stage, index),
-        connections=index -> (input=nodes[index - 1], output=nodes[index], reference=reference),
-        parameters=index -> (R=index * 1kΩ, C=1nF))
-    finish(builder)
+    add!(builder, voltage_source(nodes[0], reference; dc = 1V); name = :Source)
+    instances!(
+        builder, CompilerRCSection, 1:sections;
+        name = index -> (:stage, index),
+        connections = index -> (input = nodes[index - 1], output = nodes[index], reference = reference),
+        parameters = index -> (R = index * 1kΩ, C = 1nF)
+    )
+    return finish(builder)
 end
 
 function assembly_allocations(workspace, compiled, state_values, previous)
-    residual_jacobian!(workspace, compiled, state_values, previous, 1μs, 1e5)
-    @allocated residual_jacobian!(workspace, compiled, state_values, previous, 1μs, 1e5)
+    residual_jacobian!(workspace, compiled, state_values, previous, 1μs, 1.0e5)
+    return @allocated residual_jacobian!(workspace, compiled, state_values, previous, 1μs, 1.0e5)
 end
 
 @testset "streamed hierarchy compiler" begin
@@ -58,34 +60,34 @@ end
     @test updated_resistors.p === resistor_batch.p
     @test updated_resistors.conductance[1:3] == fill(1 / 10kΩ, 3)
     @test updated.parameters.fingerprint != compiled.parameters.fingerprint
-    @test !hasproperty(compiled,:circuit)
-    @test !hasproperty(updated,:circuit)
-    @test count(==(NodeVoltageUnknown),compiled.hierarchical_topology.layout.kinds) == 9
-    @test count(==(BranchCurrentUnknown),compiled.hierarchical_topology.layout.kinds) == 1
-    @test count(==(KCLCurrentEquation),compiled.hierarchical_topology.equations.kinds) == 9
-    @test count(==(VoltageConstraintEquation),compiled.hierarchical_topology.equations.kinds) == 1
+    @test !hasproperty(compiled, :circuit)
+    @test !hasproperty(updated, :circuit)
+    @test count(==(NodeVoltageUnknown), compiled.hierarchical_topology.layout.kinds) == 9
+    @test count(==(BranchCurrentUnknown), compiled.hierarchical_topology.layout.kinds) == 1
+    @test count(==(KCLCurrentEquation), compiled.hierarchical_topology.equations.kinds) == 9
+    @test count(==(VoltageConstraintEquation), compiled.hierarchical_topology.equations.kinds) == 1
     @test compile(updated) === updated
     @test_throws TopologyParameterError with_parameters(compiled, "stage[1].R1.package" => SMD0603())
     @test_throws KeyError with_parameters(compiled, "stage[99].R1.value" => 2kΩ)
     @test_throws ParameterUpdateError with_parameters(compiled, "stage[1].R1.value" => 1 + 2im)
 
-    model=Level1MOSFET()
-    changed_model=with_model_parameter(model,:threshold_voltage,1.25)
-    @test model_parameters(changed_model).threshold_voltage==1.25
-    @test model.threshold_voltage!=changed_model.threshold_voltage
+    model = Level1MOSFET()
+    changed_model = with_model_parameter(model, :threshold_voltage, 1.25)
+    @test model_parameters(changed_model).threshold_voltage == 1.25
+    @test model.threshold_voltage != changed_model.threshold_voltage
 
     workspace = SimulationWorkspace(compiled)
-    state_values = collect(range(0.1, 1.0; length=compiled.n))
+    state_values = collect(range(0.1, 1.0; length = compiled.n))
     previous = state_values .- 0.01
-    batch_residual, batch_jacobian = residual_jacobian!(workspace, compiled, state_values, previous, 1μs, 1e5)
-    reference_residual, reference_jacobian = Amber.residual_jacobian(compiled, state_values, previous, 1μs, 1e5)
-    @test batch_residual ≈ reference_residual atol=1e-18 rtol=1e-14
-    @test Matrix(batch_jacobian) ≈ Matrix(reference_jacobian) atol=1e-15 rtol=4eps(Float64)
+    batch_residual, batch_jacobian = residual_jacobian!(workspace, compiled, state_values, previous, 1μs, 1.0e5)
+    reference_residual, reference_jacobian = Amber.residual_jacobian(compiled, state_values, previous, 1μs, 1.0e5)
+    @test batch_residual ≈ reference_residual atol = 1.0e-18 rtol = 1.0e-14
+    @test Matrix(batch_jacobian) ≈ Matrix(reference_jacobian) atol = 1.0e-15 rtol = 4eps(Float64)
     @test assembly_allocations(workspace, compiled, state_values, previous) == 0
 
-    Amber._newton(compiled, state_values, previous, 1μs, 1e5; workspace)
+    Amber._newton(compiled, state_values, previous, 1μs, 1.0e5; workspace)
     original_factorizations = workspace.numeric_factorizations
-    Amber._newton(updated, state_values, previous, 1μs, 1e5; workspace)
+    Amber._newton(updated, state_values, previous, 1μs, 1.0e5; workspace)
     @test workspace.numeric_factorizations > original_factorizations
 end
 
@@ -95,7 +97,7 @@ end
     sense = node!(builder, :sense)
     current_output = node!(builder, :current_output)
     voltage_output = node!(builder, :voltage_output)
-    instance!(builder, CompilerControlledSection, reference, sense, current_output, voltage_output; instance_name=:block)
+    instance!(builder, CompilerControlledSection, reference, sense, current_output, voltage_output; instance_name = :block)
     compiled = compile(finish(builder))
     pattern = compiled.hierarchical_topology.pattern
     @test pattern.colptr == compiled.jacobian_pattern.colptr
@@ -110,20 +112,20 @@ end
 
 
 @testset "linear RLGC workspace assembly" begin
-    compiled = compile(RLGCLine(sections=3))
+    compiled = compile(RLGCLine(sections = 3))
     workspace = SimulationWorkspace(compiled)
-    state_values = collect(range(-0.2, 0.3; length=compiled.n))
-    previous = state_values .- 1e-3
-    batch_residual, batch_jacobian = residual_jacobian!(workspace, compiled, state_values, previous, 2ns, 1e9)
-    reference_residual, reference_jacobian = Amber.residual_jacobian(compiled, state_values, previous, 2ns, 1e9)
-    @test batch_residual ≈ reference_residual atol=1e-12 rtol=1e-13
-    @test Matrix(batch_jacobian) ≈ Matrix(reference_jacobian) atol=1e-15 rtol=4eps(Float64)
+    state_values = collect(range(-0.2, 0.3; length = compiled.n))
+    previous = state_values .- 1.0e-3
+    batch_residual, batch_jacobian = residual_jacobian!(workspace, compiled, state_values, previous, 2ns, 1.0e9)
+    reference_residual, reference_jacobian = Amber.residual_jacobian(compiled, state_values, previous, 2ns, 1.0e9)
+    @test batch_residual ≈ reference_residual atol = 1.0e-12 rtol = 1.0e-13
+    @test Matrix(batch_jacobian) ≈ Matrix(reference_jacobian) atol = 1.0e-15 rtol = 4eps(Float64)
     @test assembly_allocations(workspace, compiled, state_values, previous) == 0
 
     initial_factorizations = workspace.numeric_factorizations
-    Amber._newton(compiled, state_values, previous, 2ns, 1e9; workspace)
+    Amber._newton(compiled, state_values, previous, 2ns, 1.0e9; workspace)
     first_factorizations = workspace.numeric_factorizations
-    Amber._newton(compiled, state_values, previous, 3ns, 1e9; workspace)
+    Amber._newton(compiled, state_values, previous, 3ns, 1.0e9; workspace)
     @test first_factorizations > initial_factorizations
     @test workspace.numeric_factorizations == first_factorizations
 
@@ -136,33 +138,37 @@ end
 
     workspace = SimulationWorkspace(compiled)
     state_values = copy(hierarchical.values[:, 1])
-    batch_residual, batch_jacobian = residual_jacobian!(workspace, compiled,
-        state_values, state_values, 0.0, 0.0; mode=:dc)
-    reference_residual, reference_jacobian = Amber.residual_jacobian(compiled,
-        state_values, state_values, 0.0, 0.0; mode=:dc)
-    @test batch_residual ≈ reference_residual atol=1e-18 rtol=1e-14
-    @test Matrix(batch_jacobian) ≈ Matrix(reference_jacobian) atol=1e-15 rtol=4eps(Float64)
+    batch_residual, batch_jacobian = residual_jacobian!(
+        workspace, compiled,
+        state_values, state_values, 0.0, 0.0; mode = :dc
+    )
+    reference_residual, reference_jacobian = Amber.residual_jacobian(
+        compiled,
+        state_values, state_values, 0.0, 0.0; mode = :dc
+    )
+    @test batch_residual ≈ reference_residual atol = 1.0e-18 rtol = 1.0e-14
+    @test Matrix(batch_jacobian) ≈ Matrix(reference_jacobian) atol = 1.0e-15 rtol = 4eps(Float64)
     @test assembly_allocations(workspace, compiled, state_values, state_values) == 0
 
-    hierarchy_transient = transient(LowPass(), 0s => 50μs; saveat=10μs)
+    hierarchy_transient = transient(LowPass(), 0s => 50μs; saveat = 10μs)
     @test hierarchy_transient.stats[:converged]
 end
 
 @testset "hierarchy-native analysis metadata" begin
-    design=LowPass()
-    compiled=compile(design)
+    design = LowPass()
+    compiled = compile(design)
     @test compiled isa CompiledCircuit
-    @test !hasproperty(compiled,:circuit)
+    @test !hasproperty(compiled, :circuit)
     @test compiled.topology isa CompiledTopology
 
-    ac=small_signal(compiled,[1kHz];source="V1")
-    @test length(voltage(ac,:vout))==1
-    network=port_response(compiled,[1kHz];ports=Port(:vin,:gnd))
-    @test size(impedance(network))==(1,1,1)
-    model=linearize(compiled;inputs="V1",outputs=voltage(:vout))
-    @test model.inputs==["V1"]
-    @test size(model.B,2)==1
-    metadata=provenance(operating_point(compiled))
-    @test metadata[:design_fingerprint]==design.structural_fingerprint
-    @test metadata[:parameter_fingerprint]==compiled.parameters.fingerprint
+    ac = small_signal(compiled, [1kHz]; source = "V1")
+    @test length(voltage(ac, :vout)) == 1
+    network = port_response(compiled, [1kHz]; ports = Port(:vin, :gnd))
+    @test size(impedance(network)) == (1, 1, 1)
+    model = linearize(compiled; inputs = "V1", outputs = voltage(:vout))
+    @test model.inputs == ["V1"]
+    @test size(model.B, 2) == 1
+    metadata = provenance(operating_point(compiled))
+    @test metadata[:design_fingerprint] == design.structural_fingerprint
+    @test metadata[:parameter_fingerprint] == compiled.parameters.fingerprint
 end
