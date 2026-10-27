@@ -589,11 +589,15 @@ Construct a current observable, or return a vector in amperes when given a
 result. For two-terminal devices positive current flows from the first terminal
 to the second; a voltage source feeding a load normally has negative current.
 Results are complex in small-signal analysis and length one at DC.
+Behavioral current sources evaluate their constitutive law at each saved sample;
+small-signal currents use its gradient at the DC operating point. Independent
+current sources return zero AC current when another source is selected.
 
 For BJTs, the default is collector current; request `:base` or `:emitter` as the
 third argument. For MOSFETs, the default is drain current; `:gate`, `:source`,
 and `:bulk` select other terminals. Use hierarchy-qualified device names when
-needed. Composite models may expose internal primitives: inspect `devices`.
+needed. Named current observations are also accepted. Composite models may
+expose internal primitives: inspect `devices`.
 
 ```julia
 idelivered = -only(current(op, :Source))

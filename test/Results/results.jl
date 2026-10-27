@@ -131,3 +131,78 @@ end
     @test occursin("noise warning", sprint(println, summary))
     @test occursin("Hz", sprint(println, summary))
 end
+
+@testset "source current and power readout" begin
+    @circuit SourceReadout() begin
+        gnd = ground(); input = node(); output = node(); controlled = node()
+        V = voltage_source(input, gnd; dc = 2.0, ac = 0.5, waveform = t -> 2 + t)
+        B = behavioral_current_source(
+            ((input, gnd),), output, gnd;
+            current = (v, t) -> v[1]^2 + t,
+            gradient = (v, t) -> (2v[1], 0.0, 0.0, 0.0)
+        )
+        I = current_source(output, gnd; dc = 0.1, ac = 0.2)
+        R = resistor(output, gnd; value = 2.0)
+        G = transconductance(input, gnd, controlled, gnd; gm = 0.25)
+        resistor(controlled, gnd; value = 3.0)
+        observe(current(B); name = :source_current)
+    end
+    circuit = SourceReadout()
+    op = operating_point(circuit)
+    @test current(op, :B) ≈ [4.0]
+    @test current(op, :source_current) == current(op, :B)
+    @test observation(op, :source_current) == current(op, :B)
+    @test power(op, :B) ≈ voltage(op, :output) .* current(op, :B)
+    @test power(op, :G) ≈ voltage(op, :controlled) .* current(op, :G)
+    @test current(op, :B) + current(op, :I) + current(op, :R) ≈ [0.0] atol = 1e-12
+    tr = transient(circuit, 0.0 => 0.01; max_step = 0.001)
+    @test current(tr, :B) ≈ voltage(tr, :input).^2 + tr.axis
+    @test current(tr, :B) + current(tr, :I) + current(tr, :R) ≈ zeros(length(tr.axis)) atol = 1e-10
+    ac = small_signal(circuit, [10.0, 100.0]; source = :V)
+    @test current(ac, :B) ≈ 4 .* voltage(ac, :input)
+    @test current(ac, :I) == zeros(ComplexF64, 2)
+    @test current(ac, :B) + current(ac, :R) ≈ zeros(ComplexF64, 2) atol = 1e-12
+    selected = small_signal(circuit, [10.0]; source = "I")
+    @test current(selected, :I) ≈ [0.2 + 0im]
+    @test current(selected, :B) ≈ [0.0 + 0im]
+    @test only(result_table(op; signals = (source_A = current(:B),))).source_A ≈ 4.0
+
+    @circuit ControlledVoltagePower() begin
+        gnd = ground(); input = node(); output = node()
+        voltage_source(input, gnd; dc = 2.0)
+        E = voltage_controlled_voltage_source(input, gnd, output, gnd; gain = 3.0)
+        resistor(output, gnd; value = 4.0)
+    end
+    controlled = operating_point(ControlledVoltagePower())
+    @test power(controlled, :E) ≈ [-9.0]
+end
+
+@subcircuit BehavioralReadoutBlock(p, n) begin
+    B = behavioral_current_source(
+        ((p, n), (n, p)), p, n;
+        current = (v, t) -> v[1]^2 + 3v[2] + 1,
+        gradient = (v, t) -> (2v[1], 3.0, 0.0, 0.0)
+    )
+    observe(current(B); name = :measured)
+end
+
+@testset "hierarchical behavioral current readout" begin
+    @circuit BehavioralReadoutHierarchy() begin
+        gnd = ground(); input = node()
+        V = voltage_source(input, gnd; dc = 2.0, ac = 0.5)
+        Block = BehavioralReadoutBlock(input, gnd)
+        Bconstant = behavioral_current_source(
+            (), input, gnd; current = (v, t) -> 0.25,
+            gradient = (v, t) -> (0.0, 0.0, 0.0, 0.0)
+        )
+    end
+    circuit = BehavioralReadoutHierarchy()
+    op = operating_point(circuit)
+    @test current(op, "Block.B") ≈ [-1.0]
+    @test current(op, "Block.measured") ≈ [-1.0]
+    @test current(op, :Bconstant) ≈ [0.25]
+    ac = small_signal(circuit, [10.0, 100.0])
+    @test current(ac, "Block.B") ≈ fill(0.5 + 0im, 2)
+    @test current(ac, :Bconstant) ≈ zeros(ComplexF64, 2)
+    @test current(ac, "Block.B") + current(ac, :Bconstant) + current(ac, :V) ≈ zeros(ComplexF64, 2) atol = 1e-12
+end

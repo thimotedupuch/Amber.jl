@@ -157,7 +157,13 @@ function voltage(r::SimulationResult, name::Union{Symbol, String})
 end
 voltage(r::SimulationResult, a::Union{Symbol, String}, b::Union{Symbol, String}) = voltage(r, a) - voltage(r, b)
 function current(r::SimulationResult, name::Union{Symbol, String}, branch = nothing)
-    located = _hierarchical_device(r.compiled, name); located === nothing&&throw(_lookup_error(:device, name, _device_names(r.compiled)))
+    located = _hierarchical_device(r.compiled, name)
+    if located === nothing
+        observable = _named_observable(r, name)
+        observable === nothing&&throw(_lookup_error(:device, name, _device_names(r.compiled)))
+        observable.kind === :current||throw(ArgumentError("named observation $(name) is not a current"))
+        return current(r, _observable_name(observable.target), branch === nothing ? observable.extra : branch)
+    end
     batch, device = located
     kind = _batch_kind(batch)
     parameters = batch.parameters[device]
@@ -171,10 +177,25 @@ function current(r::SimulationResult, name::Union{Symbol, String}, branch = noth
     kind === :capacitor&&return parameters.value .* _storage_derivative(r, va - vb) .+
         (hasproperty(parameters, :leakage_resistance) ? (va - vb) ./ parameters.leakage_resistance : zero(va))
     if kind === :current_source
-        r.analysis isa SmallSignal&&return fill(ComplexF64(get(parameters, :ac, 0.0)), length(r.axis))
+        if r.analysis isa SmallSignal
+            selected = r.analysis.source
+            amplitude = selected === nothing || String(selected) == String(name) ? get(parameters, :ac, 0.0) : 0.0
+            return fill(ComplexF64(amplitude), length(r.axis))
+        end
         r.analysis isa OperatingPoint&&return [Float64(get(parameters, :dc, 0.0))]
         waveform = get(parameters, :waveform, nothing)
         return waveform === nothing ? fill(Float64(get(parameters, :dc, 0.0)), length(r.axis)) : waveform.(r.axis)
+    elseif kind === :behavioral_current_source
+        controls = ntuple(index -> terminal(2index + 1) - terminal(2index + 2), 4)
+        if r.analysis isa SmallSignal
+            bias = r.stats[:operating_point]
+            voltages = ntuple(index ->
+                _workspace_value(bias, _batch_terminal(batch, 2index + 1, device)) -
+                _workspace_value(bias, _batch_terminal(batch, 2index + 2, device)), 4)
+            gradient = parameters.gradient(voltages, 0.0)
+            return sum(gradient[index] .* controls[index] for index in 1:4)
+        end
+        return [parameters.current(ntuple(index -> controls[index][k], 4), r.axis[k]) for k in eachindex(r.axis)]
     elseif kind === :diode
         model = parameters.model; voltage_values = va - vb; temperature = get(r.stats, :temperature, 300.0)
         if r.analysis isa SmallSignal
@@ -277,6 +298,8 @@ function power(r::SimulationResult, name::Union{Symbol, String})
         return (terminal(1) - terminal(3)) .* current(r, name, :drain) .+
             (terminal(2) - terminal(3)) .* current(r, name, :gate) .+
             (terminal(4) - terminal(3)) .* current(r, name, :bulk)
+    elseif kind in (:vccs, :vcvs)
+        return (terminal(3) - terminal(4)) .* current(r, name)
     end
     return (terminal(1) - terminal(2)) .* current(r, name)
 end
