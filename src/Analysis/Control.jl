@@ -67,27 +67,44 @@ function _linear_output_selector(cc, observable::Observable)
             selector[Int(batch.state_unknowns[device][state_index])] = 1.0; return selector
         elseif batch isa PrimitiveBatch&&batch.branch_unknowns[device] != 0
             selector[Int(batch.branch_unknowns[device])] = 1.0; return selector
+        elseif _batch_kind(batch) === :current_source
+            return selector
         elseif _batch_kind(batch) in (:resistor, :conductance)
             conductance = _batch_kind(batch) === :resistor ? batch.conductance[device] : batch.parameters[device].value
             positive = Int(_batch_terminal(batch, 1, device)); negative = Int(_batch_terminal(batch, 2, device))
             positive > 0&&(selector[positive] += conductance); negative > 0&&(selector[negative] -= conductance)
             return selector
         end
-        throw(ArgumentError("descriptor outputs currently require voltage, state, branch-current, resistor-current, or conductance-current observables"))
+        throw(ArgumentError("descriptor outputs currently require voltage, state, branch-current, independent-source-current, resistor-current, or conductance-current observables"))
     end
     throw(ArgumentError("unsupported linear output observable $(observable.kind)"))
 end
 
+function _linear_output_direct(cc, observable::Observable, input)
+    observable.kind === :current || return 0.0
+    String(observable.target) == String(input) || return 0.0
+    batch, _ = _hierarchical_device(cc, observable.target)
+    return _batch_kind(batch) === :current_source ? 1.0 : 0.0
+end
+
 function linearize(c; inputs, outputs, bias = nothing, temperature = 300.0, kw...)
+    isfinite(temperature) && temperature > 0||throw(ArgumentError("temperature must be finite and positive"))
     cc = compile(c)
-    point = bias === nothing ? _require_converged(operating_point(cc; temperature, kw...), "linearization operating point").values[:, 1] : bias isa SimulationResult ? bias.values[:, 1] : Float64.(bias)
+    if bias isa SimulationResult
+        bias.compiled.fingerprint == cc.fingerprint||throw(ArgumentError("supplied linearization bias belongs to a different compiled circuit"))
+    end
+    point = bias === nothing ? _require_converged(operating_point(cc; temperature, kw...), "linearization operating point").values[:, 1] : bias isa SimulationResult ? _require_converged(bias, "linearization bias").values[:, 1] : Float64.(bias)
     length(point) == cc.n||throw(DimensionMismatch("bias point does not match the compiled circuit"))
+    all(isfinite, point)||throw(ArgumentError("bias point must contain finite values"))
     G, E = _static_dynamic_jacobians(cc, point; mode = :dc, temperature)
     input_names = inputs isa Union{Symbol, String} ? String[String(inputs)] : String.(inputs)
     output_observables = outputs isa Union{Observable, Symbol, String} ? Observable[_as_observable(outputs)] : Observable[_as_observable(output) for output in outputs]
     B = hcat((_unit_source_excitation(cc, name) for name in input_names)...)
     output_matrix = vcat((transpose(_linear_output_selector(cc, observable)) for observable in output_observables)...)
     D = zeros(Float64, length(output_observables), length(input_names))
+    for (row, observable) in enumerate(output_observables), (column, name) in enumerate(input_names)
+        D[row, column] = _linear_output_direct(cc, observable, name)
+    end
     stats = Dict{Symbol, Any}(:temperature => Float64(temperature), :warnings => String[])
     return LinearizedModel(Matrix(E), -Matrix(G), Matrix(B), Matrix(output_matrix), D, input_names, output_observables, Float64.(point), _snapshot_compiled(cc), stats)
 end
@@ -133,8 +150,12 @@ end
 function _interpolate_response(response::LinearFrequencyResponse, frequency; input = 1, output = 1)
     fs = response.frequencies; values = _siso_values(response; input, output); index = searchsortedfirst(fs, frequency)
     index <= 1&&return first(values); index > length(fs)&&return last(values)
-    fraction = (log(frequency) - log(fs[index - 1])) / (log(fs[index]) - log(fs[index - 1]))
-    magnitude = exp(log(abs(values[index - 1])) + fraction * (log(abs(values[index])) - log(abs(values[index - 1]))))
+    fs[index] == frequency && return values[index]
+    fraction = fs[index - 1] > 0 ? log(frequency / fs[index - 1]) / log(fs[index] / fs[index - 1]) :
+        (frequency - fs[index - 1]) / (fs[index] - fs[index - 1])
+    left, right = abs(values[index - 1]), abs(values[index])
+    magnitude = iszero(left) || iszero(right) ? (1 - fraction) * left + fraction * right :
+        exp(log(left) + fraction * (log(right) - log(left)))
     phases = phase(values; unwrap = true)
     return magnitude * cis(phases[index - 1] + fraction * (phases[index] - phases[index - 1]))
 end
@@ -142,7 +163,24 @@ end
 function stability_margins(response::LinearFrequencyResponse; input = 1, output = 1)
     gain_crossing = gain_crossovers(response; input, output); phase_crossing = phase_crossovers(response; input, output)
     gc = isempty(gain_crossing) ? NaN : first(gain_crossing); pc = isempty(phase_crossing) ? NaN : first(phase_crossing)
-    pm = isnan(gc) ? Inf : 180 + rad2deg(angle(_interpolate_response(response, gc; input, output)))
+    pm = if isnan(gc)
+        Inf
+    else
+        phases = phase(_siso_values(response; input, output); unwrap = true)
+        fs = response.frequencies
+        upper = searchsortedfirst(fs, gc)
+        interpolated_phase = if upper <= 1
+            first(phases)
+        elseif upper > length(fs)
+            last(phases)
+        else
+            lower = upper - 1
+            fraction = fs[lower] > 0 ? log(gc / fs[lower]) / log(fs[upper] / fs[lower]) :
+                (gc - fs[lower]) / (fs[upper] - fs[lower])
+            phases[lower] + fraction * (phases[upper] - phases[lower])
+        end
+        180 + rad2deg(interpolated_phase)
+    end
     gm = isnan(pc) ? Inf : -db20(_interpolate_response(response, pc; input, output))
     return StabilityMargins(gm, pm, gc, pc)
 end
@@ -152,15 +190,21 @@ sensitivity(loop_gain_values) = inv.(1 .+ loop_gain_values)
 complementary_sensitivity(loop_gain_values) = loop_gain_values ./ (1 .+ loop_gain_values)
 
 function _time_response(model::LinearizedModel, interval::Pair; saveat, input_index = 1, impulse = false)
-    start, stop = Float64(first(interval)), Float64(last(interval)); stop > start||throw(ArgumentError("response interval must be increasing"))
-    step = Float64(saveat); step > 0||throw(ArgumentError("saveat must be positive")); times = collect(start:step:stop)
+    start, stop = Float64(first(interval)), Float64(last(interval)); isfinite(start) && isfinite(stop) && stop > start||throw(ArgumentError("response interval must be finite and increasing"))
+    step = Float64(saveat); isfinite(step) && step > 0||throw(ArgumentError("saveat must be finite and positive")); times = collect(start:step:stop)
+    last(times) < stop && push!(times, stop)
+    step = times[2] - times[1]
     states = zeros(Float64, size(model.A, 1), length(times)); values = zeros(Float64, length(model.outputs), length(model.inputs), length(times))
-    system = model.E / step - model.A; forcing = model.B[:, input_index]
+    forcing = model.B[:, input_index]
     if impulse
         states[:, 1] = (model.E - step * model.A) \ forcing
         values[:, input_index, 1] = model.output_matrix * states[:, 1]
+    else
+        values[:, input_index, 1] = model.D[:, input_index]
     end
     for index in 2:length(times)
+        step = times[index] - times[index - 1]
+        system = model.E / step - model.A
         rhs = model.E / step * states[:, index - 1] + (impulse ? zero(forcing) : forcing)
         states[:, index] = system \ rhs; values[:, input_index, index] = model.output_matrix * states[:, index] + (impulse ? zero(model.D[:, input_index]) : model.D[:, input_index])
     end
@@ -179,10 +223,14 @@ function settling_time(result::TimeResponse; input = 1, output = 1, tolerance = 
     last_outside = findlast(value -> abs(value - final) > bound, values)
     return last_outside === nothing ? first(result.axis) : last_outside == length(values) ? Inf : result.axis[last_outside + 1]
 end
-peak_time(result::TimeResponse; input = 1, output = 1) = result.axis[argmax(abs.(_time_trace(result; input, output) .- last(_time_trace(result; input, output))))]
+peak_time(result::TimeResponse; input = 1, output = 1) = result.axis[argmax(abs.(_time_trace(result; input, output) .- first(_time_trace(result; input, output))))]
 steady_state_error(result::TimeResponse; input = 1, output = 1, target = 1.0) = target - last(_time_trace(result; input, output))
 
 function root_locus(model::LinearizedModel, gains; input = 1, output = 1)
     size(model.D) == (length(model.outputs), length(model.inputs))||throw(ArgumentError("invalid feedthrough matrix"))
-    return [filter(isfinite, eigvals(model.A - gain * model.B[:, input:input] * model.output_matrix[output:output, :], model.E)) for gain in gains]
+    return [begin
+        denominator = 1 + gain * model.D[output, input]
+        iszero(denominator)&&throw(ArgumentError("feedback gain makes the direct feedthrough loop singular"))
+        filter(isfinite, eigvals(model.A - (gain / denominator) * model.B[:, input:input] * model.output_matrix[output:output, :], model.E))
+    end for gain in gains]
 end

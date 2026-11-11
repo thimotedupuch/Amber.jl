@@ -72,17 +72,21 @@ function (w::Pulse)(t)
 end
 
 function _validate_waveform(w::Pulse)
+    all(name -> isfinite(getfield(w, name)), fieldnames(Pulse))||throw(AnalysisValidationError("pulse parameters must be finite"))
     isfinite(w.frequency)&&w.frequency > 0||throw(AnalysisValidationError("pulse frequency must be finite and positive"))
     0 <= w.duty_cycle <= 1||throw(AnalysisValidationError("pulse duty cycle must lie in [0, 1]"))
     w.rise >= 0&&w.fall >= 0||throw(AnalysisValidationError("pulse rise and fall times must be non-negative"))
-    w.rise + w.fall <= inv(w.frequency)||throw(AnalysisValidationError("pulse rise and fall times exceed its period"))
+    w.rise <= w.duty_cycle / w.frequency||throw(AnalysisValidationError("pulse rise time exceeds its on interval"))
+    w.duty_cycle + w.fall * w.frequency <= 1||throw(AnalysisValidationError("pulse fall time exceeds its off interval"))
     return w
 end
 function _validate_waveform(w::Step)
+    all(name -> isfinite(getfield(w, name)), fieldnames(Step))||throw(AnalysisValidationError("step parameters must be finite"))
     isfinite(w.at)&&isfinite(w.rise)&&w.rise >= 0||throw(AnalysisValidationError("step time and rise time must be finite, with non-negative rise"))
     return w
 end
 function _validate_waveform(w::Sine)
+    all(name -> isfinite(getfield(w, name)), fieldnames(Sine))||throw(AnalysisValidationError("sine parameters must be finite"))
     isfinite(w.frequency)&&w.frequency >= 0||throw(AnalysisValidationError("sine frequency must be finite and non-negative"))
     return w
 end

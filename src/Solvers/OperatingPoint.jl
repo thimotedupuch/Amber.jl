@@ -123,7 +123,7 @@ function operating_point(
     _finalize_stats!(stats)
     if !converged
         final_derivative = workspace === nothing ? zero(z) : (fill!(workspace.derivative, 0.0); workspace.derivative)
-        final_residual = _solver_residual(cc, workspace, z, final_derivative, 0.0; mode = :dc)
+        final_residual = _solver_residual(cc, workspace, z, final_derivative, 0.0; mode = :dc, temperature)
         stats[:dominant_residual] = (row = argmax(abs.(final_residual)), norm = norm(final_residual, Inf))
     end
     return SimulationResult(cc, OperatingPoint(solver = solver, temperature = Float64(temperature)), [0.0], reshape(z, :, 1), stats)

@@ -53,3 +53,12 @@ end
     biased = with_parameters(compile(LowPass()), "V1.dc" => 1.0)
     @test_throws ConvergenceError small_signal(biased, 10Hz => 1kHz; maxiters = 1)
 end
+
+@testset "frequency interval validation" begin
+    @test_throws Amber.AnalysisValidationError SmallSignal(-1.0 => 10.0; scale = :linear)
+    @test_throws Amber.AnalysisValidationError Amber._small_signal_frequencies(-1.0 => 10.0; points = 10, scale = :linear)
+    @test_throws Amber.AnalysisValidationError SmallSignal(1.0 => 10.0; points = 1)
+    @test_throws Amber.AnalysisValidationError SmallSignal(1.0 => 10.0; points = 2.5)
+    @test SmallSignal(0.0 => 0.0; points = 1, scale = :linear).frequencies == [0.0]
+    @test SmallSignal(0.0 => 10.0; points = 3, scale = :linear).frequencies == [0.0, 5.0, 10.0]
+end

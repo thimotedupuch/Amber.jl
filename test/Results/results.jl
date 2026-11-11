@@ -206,3 +206,56 @@ end
     @test current(ac, :Bconstant) ≈ zeros(ComplexF64, 2)
     @test current(ac, "Block.B") + current(ac, :Bconstant) + current(ac, :V) ≈ zeros(ComplexF64, 2) atol = 1e-12
 end
+
+@testset "bipolar small signal terminal currents" begin
+    @circuit BipolarCurrentReadout() begin
+        gnd = ground(); c = node(); b = node()
+        VC = voltage_source(c, gnd; dc = 2V)
+        VB = voltage_source(b, gnd; dc = 0.65V, ac = 1V)
+        Q = npn(c, b, gnd; model = GummelPoonBJT(cbe_zero_bias = 2pF, cbc_zero_bias = 1pF))
+    end
+    result = small_signal(BipolarCurrentReadout(), [1kHz, 1MHz]; source = :VB)
+    @test_throws ArgumentError current(result, :Q, :invalid)
+    @test current(result, :Q) ≈ -current(result, :VC)
+    @test current(result, :Q, :base) ≈ -current(result, :VB)
+    @test current(result, :Q) + current(result, :Q, :base) + current(result, :Q, :emitter) ≈ zeros(2)
+end
+
+@testset "switch small signal current readout" begin
+    @circuit SwitchCurrentReadout() begin
+        gnd = ground(); output = node(); control = node()
+        VO = voltage_source(output, gnd; dc = 1V, ac = 1V)
+        VC = voltage_source(control, gnd; dc = 0.5V, ac = 1V)
+        S = analog_switch(output, gnd, control, gnd; model = SmoothSwitch())
+    end
+    for source in (:VO, :VC)
+        result = small_signal(SwitchCurrentReadout(), [1kHz, 10kHz]; source)
+        @test current(result, :S) ≈ -current(result, :VO)
+    end
+end
+
+@testset "diode small signal charge readout" begin
+    model = JunctionDiode(junction_capacitance = 2pF)
+    @circuit DiodeChargeReadout() begin
+        gnd = ground(); output = node()
+        V1 = voltage_source(output, gnd; dc = -1V, ac = 1V)
+        D = diode(output, gnd; model)
+    end
+    result = small_signal(DiodeChargeReadout(), [1kHz, 10kHz]; source = :V1)
+    expected = differential_capacitance(model, -1V)
+    @test charge(result, :D) ≈ expected .* voltage(result, :output)
+end
+
+@testset "table axis and node name collisions" begin
+    @circuit TableAxisCollision() begin
+        gnd = ground(); point = node(); point_axis = node()
+        V1 = voltage_source(point, gnd; dc = 2V)
+        V2 = voltage_source(point_axis, gnd; dc = 3V)
+    end
+    result = operating_point(TableAxisCollision())
+    row = only(result_table(result))
+    @test first(keys(row)) == :point_axis_axis
+    @test row.point == 2V
+    @test row.point_axis == 3V
+    @test row.point_axis_axis == only(result.axis)
+end

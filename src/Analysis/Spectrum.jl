@@ -60,6 +60,8 @@ function _uniform_signal(result::SimulationResult, signal, interval)
     indices = interval === nothing ? collect(eachindex(result.axis)) : findall(time -> first(interval) <= time <= last(interval), result.axis)
     length(indices) >= 4||throw(ArgumentError("selected spectrum interval must contain at least four samples"))
     times = result.axis[indices]; values = Float64.(real.(_signal(result, signal)[indices])); steps = diff(times)
+    all(isfinite, values)||throw(ArgumentError("spectrum signal samples must be finite"))
+    all(isfinite, times) && all(>(0), steps)||throw(ArgumentError("transient timestamps must be finite and strictly increasing"))
     step = median(steps); step > 0||throw(ArgumentError("transient timestamps must be strictly increasing"))
     jitter = maximum(abs.(steps .- step)) / step
     if jitter <= sqrt(eps(Float64))
@@ -101,9 +103,11 @@ end
 
 crest_factor(result::SpectrumResult) = result.signal_rms == 0 ? NaN : result.signal_peak / result.signal_rms
 function band_power(result::SpectrumResult, band::Pair)
-    indices = findall(f -> first(band) <= f <= last(band), result.frequencies); length(indices) >= 2||throw(ArgumentError("band contains fewer than two spectrum bins"))
-    f = result.frequencies[indices]; p = result.psd[indices]
-    return sum((p[index] + p[index + 1]) * (f[index + 1] - f[index]) / 2 for index in 1:(length(f) - 1))
+    first(band) <= last(band)||throw(ArgumentError("spectrum band must be increasing"))
+    indices = findall(f -> first(band) <= f <= last(band), result.frequencies)
+    isempty(indices)&&throw(ArgumentError("band contains no spectrum bins"))
+    bin_width = result.sample_rate / result.stats[:nfft]
+    return sum(result.psd[indices]) * bin_width
 end
 
 function _quadratic_peak(values, index)
@@ -116,7 +120,12 @@ end
 
 function harmonic_analysis(result::SimulationResult; signal, fundamental = :auto, harmonics = 10, window = :hann, interval = nothing, nfft = nothing)
     spectral = spectrum(result; signal, window, interval, nfft)
-    amplitudes = spectral.amplitude_rms; bin_width = spectral.sample_rate / (2 * (length(spectral.frequencies) - 1))
+    amplitudes = spectral.amplitude_rms; bin_width = spectral.sample_rate / spectral.stats[:nfft]
+    harmonics isa Integer && harmonics >= 1||throw(ArgumentError("harmonics must be a positive integer"))
+    if fundamental !== :auto
+        frequency = Float64(fundamental)
+        isfinite(frequency) && 0 < frequency <= last(spectral.frequencies)||throw(ArgumentError("fundamental must lie in the positive evaluated frequency range"))
+    end
     fundamental_index = fundamental === :auto ? argmax(@view amplitudes[2:end]) + 1 : clamp(round(Int, Float64(fundamental) / bin_width) + 1, 2, length(amplitudes))
     offset, amplitude = _quadratic_peak(amplitudes, fundamental_index); fundamental_frequency = spectral.frequencies[fundamental_index] + offset * bin_width
     base = HarmonicComponent(1, fundamental_frequency, amplitude, angle(spectral.coefficients[fundamental_index]), fundamental_index)
@@ -126,16 +135,31 @@ function harmonic_analysis(result::SimulationResult; signal, fundamental = :auto
         index = clamp(round(Int, frequency / bin_width) + 1, 2, length(amplitudes)); local_offset, local_amplitude = _quadratic_peak(amplitudes, index)
         push!(components, HarmonicComponent(order, spectral.frequencies[index] + local_offset * bin_width, local_amplitude, angle(spectral.coefficients[index]), index))
     end
-    harmonic_power = sum(component.amplitude_rms^2 for component in components); fundamental_power = base.amplitude_rms^2
-    total_ac_power = sum(abs2, @view amplitudes[2:end]); distortion_noise = max(total_ac_power - fundamental_power, 0.0)
+    # Integrate each window main lobe in PSD units: amplitude-corrected FFT
+    # bins do not add to signal power for tapered or zero-padded records.
+    lobe_width = spectral.window === :rectangular ? 1 :
+        spectral.window in (:hann, :hamming) ? 2 :
+        spectral.window === :blackman_harris ? 4 : 5
+    radius = max(0, ceil(Int, lobe_width * spectral.stats[:nfft] / spectral.stats[:samples]) - 1)
+    bins(index) = max(2, index - radius):min(length(amplitudes), index + radius)
+    fundamental_bins = Set(bins(fundamental_index))
+    harmonic_bins = Set{Int}()
+    for component in components
+        union!(harmonic_bins, bins(component.bin))
+    end
+    setdiff!(harmonic_bins, fundamental_bins)
+    fundamental_power = sum(spectral.psd[index] for index in fundamental_bins) * bin_width
+    harmonic_power = sum((spectral.psd[index] for index in harmonic_bins); init = 0.0) * bin_width
+    distortion_noise = sum((spectral.psd[index] for index in 2:length(amplitudes) if index ∉ fundamental_bins); init = 0.0) * bin_width
     noise_power = max(distortion_noise - harmonic_power, 0.0)
-    ratio_db(numerator, denominator) = denominator == 0 ? Inf : 10log10(numerator / denominator)
-    thd_value = base.amplitude_rms == 0 ? NaN : sqrt(harmonic_power) / base.amplitude_rms
-    thdn_value = base.amplitude_rms == 0 ? NaN : sqrt(distortion_noise) / base.amplitude_rms
+    ratio_db(numerator, denominator) = denominator == 0 ? (numerator == 0 ? NaN : Inf) : 10log10(numerator / denominator)
+    thd_value = base.amplitude_rms == 0 ? NaN : sqrt(harmonic_power / fundamental_power)
+    thdn_value = base.amplitude_rms == 0 ? NaN : sqrt(distortion_noise / fundamental_power)
     snr_value = ratio_db(fundamental_power, noise_power); sinad_value = ratio_db(fundamental_power, distortion_noise)
-    excluded = Set(vcat(1, fundamental_index, [component.bin for component in components])); spur = maximum((amplitudes[index] for index in eachindex(amplitudes) if !(index in excluded)); init = 0.0)
-    sfdr_value = spur == 0 ? Inf : 20log10(base.amplitude_rms / spur); enob_value = (sinad_value - 1.76) / 6.02
-    cycles = fundamental_frequency * (last(result.axis) - first(result.axis)); warnings = copy(spectral.stats[:warnings]); cycles < 4&&push!(warnings, "the selected record contains fewer than four fundamental cycles")
+    excluded = union(Set((1,)), fundamental_bins); spur = maximum((amplitudes[index] for index in eachindex(amplitudes) if !(index in excluded)); init = 0.0)
+    sfdr_value = spur == 0 ? (base.amplitude_rms == 0 ? NaN : Inf) : 20log10(base.amplitude_rms / spur); enob_value = (sinad_value - 1.76) / 6.02
+    selected_indices = interval === nothing ? eachindex(result.axis) : findall(time -> first(interval) <= time <= last(interval), result.axis)
+    cycles = fundamental_frequency * (result.axis[last(selected_indices)] - result.axis[first(selected_indices)]); warnings = copy(spectral.stats[:warnings]); cycles < 4&&push!(warnings, "the selected record contains fewer than four fundamental cycles")
     stats = Dict{Symbol, Any}(:warnings => warnings, :fundamental_cycles => cycles)
     return HarmonicResult(spectral, base, components, thd_value, thdn_value, snr_value, sinad_value, sfdr_value, enob_value, stats)
 end

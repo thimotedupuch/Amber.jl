@@ -167,6 +167,11 @@ function current(r::SimulationResult, name::Union{Symbol, String}, branch = noth
     batch, device = located
     kind = _batch_kind(batch)
     parameters = batch.parameters[device]
+    if kind === :npn
+        branch in (nothing, :collector, :base, :emitter)||throw(ArgumentError("BJT current branch must be :collector, :base, or :emitter"))
+    elseif kind in (:nmos, :pmos)
+        branch in (nothing, :drain, :gate, :source, :bulk)||throw(ArgumentError("MOSFET current branch must be :drain, :gate, :source, or :bulk"))
+    end
     if batch isa PrimitiveBatch && batch.branch_unknowns[device] != 0
         return _unknown_trace(r, batch.branch_unknowns[device])
     end
@@ -211,9 +216,32 @@ function current(r::SimulationResult, name::Union{Symbol, String}, branch = noth
         return conductive .+ _storage_derivative(r, charges)
     elseif kind === :npn
         vc = terminal(1); vbias = terminal(2); ve = terminal(3); model = parameters.model
-        vt = _thermal_voltage(get(r.stats, :temperature, 300.0)); If = model.saturation_current .* expm1.(clamp.((vbias .- ve) ./ vt, -80, 40)); Ir = model.saturation_current .* expm1.(clamp.((vbias .- vc) ./ vt, -80, 40))
+        vt = _thermal_voltage(get(r.stats, :temperature, 300.0))
         αf = model.forward_beta / (model.forward_beta + 1); αr = model.reverse_beta / (model.reverse_beta + 1)
-        collector = αf .* If .* (1 .+ (vc .- ve) ./ model.early_voltage) .- Ir; base = (1 - αf) .* If .+ (1 - αr) .* Ir
+        if r.analysis isa SmallSignal
+            bias = r.stats[:operating_point]
+            c, b, e = ntuple(index -> _workspace_value(bias, _batch_terminal(batch, index, device)), 3)
+            forward, forward_slope = _limited_exponential((b - e) / vt)
+            _, reverse_slope = _limited_exponential((b - c) / vt)
+            If = model.saturation_current * forward
+            gf = model.saturation_current * forward_slope / vt
+            gr = model.saturation_current * reverse_slope / vt
+            early = 1 + (c - e) / model.early_voltage
+            collector = (αf * If / model.early_voltage + gr) .* vc .+
+                (αf * gf * early - gr) .* vbias .+
+                αf * (-gf * early - If / model.early_voltage) .* ve
+            base = -(1 - αr) * gr .* vc .+
+                ((1 - αf) * gf + (1 - αr) * gr) .* vbias .- (1 - αf) * gf .* ve
+        else
+            If = model.saturation_current .* first.(_limited_exponential.((vbias .- ve) ./ vt))
+            Ir = model.saturation_current .* first.(_limited_exponential.((vbias .- vc) ./ vt))
+            collector = αf .* If .* (1 .+ (vc .- ve) ./ model.early_voltage) .- Ir
+            base = (1 - αf) .* If .+ (1 - αr) .* Ir
+        end
+        ibe = model.cbe_zero_bias .* _storage_derivative(r, vbias - ve)
+        ibc = model.cbc_zero_bias .* _storage_derivative(r, vbias - vc)
+        collector .-= ibc
+        base .+= ibe .+ ibc
         branch === :base&&return base
         branch === :emitter&&return .-collector .- base
         return collector
@@ -223,7 +251,15 @@ function current(r::SimulationResult, name::Union{Symbol, String}, branch = noth
             index = branch === :gate ? 2 : branch === :source ? 3 : branch === :bulk ? 4 : 1
             return _charge_mos_current_trace(r, batch, device, index)
         end
-        channel = map((d, g, s, b) -> _mosfet_channel(model, kind, real(d), real(g), real(s), real(b))[1], vd, vg, vs, bulk)
+        temperature = get(r.stats, :temperature, 300.0)
+        channel = if r.analysis isa SmallSignal
+            bias = r.stats[:operating_point]
+            point = ntuple(index -> _workspace_value(bias, _batch_terminal(batch, index, device)), 4)
+            _, gradient = _mosfet_channel(model, kind, point...; temperature)
+            gradient[1] .* vd .+ gradient[2] .* vg .+ gradient[3] .* vs .+ gradient[4] .* bulk
+        else
+            map((d, g, s, b) -> _mosfet_channel(model, kind, real(d), real(g), real(s), real(b); temperature)[1], vd, vg, vs, bulk)
+        end
         igs = model.gate_source_capacitance .* _derivative(r, vg .- vs)
         igd = model.gate_drain_capacitance .* _derivative(r, vg .- vd)
         igb = model.gate_bulk_capacitance .* _derivative(r, vg .- bulk)
@@ -233,6 +269,14 @@ function current(r::SimulationResult, name::Union{Symbol, String}, branch = noth
         return channel .- igd
     elseif kind === :switch
         control = terminal(3) - terminal(4)
+        if r.analysis isa SmallSignal
+            bias = r.stats[:operating_point]
+            point = ntuple(index -> _workspace_value(bias, _batch_terminal(batch, index, device)), 4)
+            control_bias = point[3] - point[4]
+            conductance = _switch_conductance(parameters.model, control_bias)
+            slope = _switch_conductance_derivative(parameters.model, control_bias) * (point[1] - point[2])
+            return conductance .* (va - vb) .+ slope .* control
+        end
         return (va - vb) .* _switch_conductance.(Ref(parameters.model), real.(control))
     elseif kind === :vccs
         return parameters.gm .* (terminal(1) - terminal(2))
@@ -309,6 +353,14 @@ function charge(r::SimulationResult, name::Union{Symbol, String})
     batch, device = located; kind = _batch_kind(batch)
     voltage_values = _unknown_trace(r, _batch_terminal(batch, 1, device)) - _unknown_trace(r, _batch_terminal(batch, 2, device))
     kind === :capacitor&&return batch.parameters[device].value .* voltage_values
+    if kind === :diode && r.analysis isa SmallSignal
+        bias = r.stats[:operating_point]
+        voltage_bias = _workspace_value(bias, _batch_terminal(batch, 1, device)) -
+            _workspace_value(bias, _batch_terminal(batch, 2, device))
+        capacitance = differential_capacitance(batch.parameters[device].model, voltage_bias;
+            temperature = get(r.stats, :temperature, 300.0))
+        return capacitance .* voltage_values
+    end
     kind === :diode&&return map(
         value -> charge(
             batch.parameters[device].model, real(value);

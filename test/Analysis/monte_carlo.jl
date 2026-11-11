@@ -29,6 +29,22 @@ using Statistics
     @test sample_values(restored) == sample_values(process_run)
     @test sample_parameters(restored) == sample_parameters(process_run)
     @test restored.seeds == process_run.seeds
+    ordered = monte_carlo(LowPass(); samples = 2, metric = result -> (z = typemax(Int128), a = big(1) << 200))
+    restored_ordered = deserialize_monte_carlo(serialize_monte_carlo(ordered))
+    @test sample_values(restored_ordered) == sample_values(ordered)
+    @test keys(first(successful(restored_ordered))) == (:z, :a)
+    for field in ("converged", "seeds")
+        malformed = Amber.TOML.parse(serialized)
+        pop!(malformed[field])
+        io = IOBuffer(); Amber.TOML.print(io, malformed)
+        @test_throws CircuitSerializationError deserialize_monte_carlo(String(take!(io)))
+    end
+    malformed_parameters = Amber.TOML.parse(serialized)
+    draws = Amber._decode_value(malformed_parameters["parameters"], Dict(), Dict())
+    pop!(draws)
+    malformed_parameters["parameters"] = Amber._encode_value(draws)
+    io = IOBuffer(); Amber.TOML.print(io, malformed_parameters)
+    @test_throws CircuitSerializationError deserialize_monte_carlo(String(take!(io)))
     obsolete = replace(serialized, "schema_version = 2" => "schema_version = 1"; count = 1)
     @test_throws CircuitSerializationError deserialize_monte_carlo(obsolete)
     correlated = CorrelatedVariation([Symbol("R1.value"), Symbol("C1.value")], [10kΩ, 10nF], [100.0^2 0.0;0.0 (1nF)^2])
@@ -65,4 +81,18 @@ end
     @test all(result.converged)
     @test all(draw -> all(haskey(draw, path) for path in (Symbol("Q1.saturation_current"), Symbol("Q2.saturation_current"), Symbol("Q1.forward_beta"), Symbol("Q2.forward_beta"))), sample_parameters(result))
     @test length(unique(sample_values(result))) > 1
+end
+
+@testset "correlation covariance symmetry" begin
+    @test_throws ArgumentError CorrelatedVariation([:a, :b], [0.0, 0.0], [1.0 0.2; 0.8 1.0])
+    correlated = CorrelatedVariation([:a, :b], [0.0, 0.0], [1.0 0.2; 0.2 1.0])
+    @test correlated.factor * correlated.factor' ≈ correlated.covariance
+end
+
+@testset "singular correlated covariance" begin
+    for covariance in ([1.0 1.0; 1.0 1.0], zeros(2, 2), [1.0 0.0; 0.0 0.0])
+        variation = CorrelatedVariation([:a, :b], [0.0, 0.0], covariance)
+        @test variation.factor * variation.factor' ≈ covariance
+    end
+    @test_throws ArgumentError CorrelatedVariation([:a, :b], [0.0, 0.0], [1.0 2.0; 2.0 1.0])
 end

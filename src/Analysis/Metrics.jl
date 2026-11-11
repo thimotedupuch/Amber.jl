@@ -33,8 +33,9 @@ struct SamplingMetrics
 end
 function sampling_metrics(result::SimulationResult; input, held, clock)
     vin = real.(_signal(result, input)); vhold = real.(_signal(result, held)); clk = real.(_signal(result, clock)); t = result.axis
-    threshold = (minimum(clk) + maximum(clk)) / 2; rises = findall(i -> clk[i - 1] < threshold <= clk[i], 2:length(clk)); falls = findall(i -> clk[i - 1] >= threshold > clk[i], 2:length(clk))
-    acquisition = isempty(rises)||isempty(falls) ? NaN : t[first(falls)] - t[first(rises)]
+    threshold = (minimum(clk) + maximum(clk)) / 2; rises = [i for i in 2:length(clk) if clk[i - 1] < threshold <= clk[i]]; falls = [i for i in 2:length(clk) if clk[i - 1] >= threshold > clk[i]]
+    acquisition_end = isempty(rises) ? nothing : findfirst(falling -> falling > first(rises), falls)
+    acquisition = acquisition_end === nothing ? NaN : t[falls[acquisition_end]] - t[first(rises)]
     droops = Float64[]
     for falling in falls
         next_rise = findfirst(rising -> rising > falling, rises)
@@ -42,14 +43,15 @@ function sampling_metrics(result::SimulationResult; input, held, clock)
         ending > falling&&push!(droops, abs(vhold[ending] - vhold[falling]))
     end
     droop = isempty(droops) ? NaN : maximum(droops)
-    edge = isempty(falls) ? 1 : first(falls); aperture = abs(vhold[edge] - vin[edge])
-    injection = edge > 1 ? abs(vhold[edge] - vhold[edge - 1]) : 0.0
+    edge = isempty(falls) ? nothing : first(falls)
+    aperture = edge === nothing ? NaN : abs(vhold[edge] - vin[edge])
+    injection = edge === nothing ? NaN : abs(vhold[edge] - vhold[edge - 1])
     return SamplingMetrics(acquisition, droop, aperture, injection)
 end
 
 function _first_crossing(t, y, level)
     for i in 2:length(y)
-        if (y[i - 1] - level) * (y[i] - level) <= 0&&y[i] != y[i - 1]
+        if ((y[i - 1] <= level <= y[i]) || (y[i] <= level <= y[i - 1])) && y[i] != y[i - 1]
             f = (level - y[i - 1]) / (y[i] - y[i - 1]); return t[i - 1] + f * (t[i] - t[i - 1])
         end
     end

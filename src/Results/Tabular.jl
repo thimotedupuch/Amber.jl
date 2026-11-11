@@ -3,7 +3,9 @@
 
 Return an allocation-owning vector of named tuples in plain Julia values. The
 first column is `time`, `frequency`, or `point` (operating point); remaining
-columns default to root node voltages. To select and label columns, pass a named
+columns default to root node voltages. If a root node uses the axis name, the
+axis column receives repeated `_axis` suffixes until its name is unique.
+To select and label columns, pass a named
 tuple of observables or named observations. Values use SI units; include units
 in your chosen column labels when exporting.
 
@@ -25,6 +27,9 @@ function result_table(result::SimulationResult; signals = nothing)
     ]
     columns = Any[result.axis]
     if signals === nothing
+        while String(axis_name) in nodes
+            axis_name = Symbol(axis_name, "_axis")
+        end
         names = Tuple(vcat(axis_name, Symbol.(nodes)))
         append!(columns, [voltage(result, node) for node in nodes])
     else

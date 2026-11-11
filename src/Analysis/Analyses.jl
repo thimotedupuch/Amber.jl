@@ -189,9 +189,12 @@ end
 function _validate_frequency_range(range, points, scale)
     low, high = Float64(first(range)), Float64(last(range))
     isfinite(low)&&isfinite(high)&&high >= low||throw(AnalysisValidationError("frequency range must be finite and increasing"))
+    low >= 0||throw(AnalysisValidationError("frequencies must be non-negative"))
     scale in (:log, :linear)||throw(AnalysisValidationError("frequency scale must be :log or :linear"))
     scale === :log&&low <= 0&&throw(AnalysisValidationError("logarithmic frequencies must be positive"))
-    return points >= 1||throw(AnalysisValidationError("frequency point count must be positive"))
+    points isa Integer && points >= 1||throw(AnalysisValidationError("frequency point count must be a positive integer"))
+    low == high || points >= 2||throw(AnalysisValidationError("a nonzero frequency interval requires at least two points"))
+    return nothing
 end
 
 function _validate_frequency_grid(frequencies::AbstractVector)

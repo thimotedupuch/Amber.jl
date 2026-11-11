@@ -163,3 +163,14 @@ end
     biased = with_parameters(compile(circuit), "V1.dc" => 1.0)
     @test_throws ConvergenceError noise(biased, 10Hz => 1kHz; output = voltage(:vout), maxiters = 1)
 end
+
+@testset "ideal source current noise feedthrough" begin
+    @circuit IdealCurrentNoise() begin
+        gnd = ground(); output = node()
+        I1 = current_source(output, gnd; dc = 1mA)
+        R = resistor(output, gnd; value = 1kΩ)
+    end
+    result = noise(IdealCurrentNoise(), [1kHz, 10kHz]; output = current(:I1), input = :I1)
+    @test noise_psd(result) == [0.0, 0.0]
+    @test input_referred_noise_psd(result) == [0.0, 0.0]
+end

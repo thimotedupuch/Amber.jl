@@ -50,3 +50,72 @@
     @test occursin("Unknown net `vuot`", sprint(showerror, lookup_error))
     @test occursin("Did you mean `vout`?", sprint(showerror, lookup_error))
 end
+
+@testset "high impedance control nodes remain floating" begin
+    @circuit FloatingSwitchControl() begin
+        gnd = ground(); output = node(); control = node()
+        R = resistor(output, gnd; value = 1kΩ)
+        S = analog_switch(output, gnd, control, gnd)
+    end
+    diagnostics = check(FloatingSwitchControl())
+    @test any(d -> d.severity === :error && occursin("control", d.message) && occursin("DC path", d.message), diagnostics)
+end
+
+@testset "MOS bulk junction DC connectivity" begin
+    @circuit BulkJunctionPath() begin
+        gnd = ground(); drain = node(); bulk = node()
+        VD = voltage_source(drain, gnd; dc = 1V)
+        M = nmos(drain, gnd, gnd, bulk; model = ChargeBasedMOSFET(drain_area = 1e-12))
+    end
+    @test !any(d -> occursin("no finite DC path", d.message), check(BulkJunctionPath()))
+end
+
+@testset "MOS and behavioral high impedance controls" begin
+    @circuit FloatingMOSGate() begin
+        gnd = ground(); output = node(); control = node()
+        R = resistor(output, gnd; value = 1kΩ)
+        M = nmos(output, control, gnd, gnd)
+    end
+    @circuit FloatingBehavioralControl() begin
+        gnd = ground(); output = node(); control = node()
+        R = resistor(output, gnd; value = 1kΩ)
+        B = behavioral_voltage_source(((control, gnd),), output, gnd;
+            voltage = (v, t) -> v[1], gradient = (v, t) -> (1.0, 0.0, 0.0, 0.0))
+    end
+    for circuit in (FloatingMOSGate(), FloatingBehavioralControl())
+        @test any(d -> d.severity === :error && occursin("control", d.message) && occursin("DC path", d.message), check(circuit))
+    end
+end
+
+@testset "self controlled transconductance DC path" begin
+    @circuit TransconductanceShunt() begin
+        gnd = ground(); output = node()
+        I1 = current_source(output, gnd; dc = 1mA)
+        G1 = transconductance(output, gnd, output, gnd; gm = 1mA / V)
+    end
+    @test !any(d -> d.severity === :error, check(TransconductanceShunt()))
+    @test only(voltage(operating_point(TransconductanceShunt()), :output)) ≈ -1V
+end
+
+@testset "controlled current feedback anchors DC voltages" begin
+    @circuit CrossedTransconductances() begin
+        gnd = ground(); a = node(); b = node()
+        I1 = current_source(a, gnd; dc = 1mA)
+        I2 = current_source(b, gnd; dc = 2mA)
+        G1 = transconductance(b, gnd, a, gnd; gm = 1mA / V)
+        G2 = transconductance(a, gnd, b, gnd; gm = 1mA / V)
+    end
+    @test !any(d -> d.severity === :error, check(CrossedTransconductances()))
+    point = operating_point(CrossedTransconductances())
+    @test only(voltage(point, :a)) ≈ -2V
+    @test only(voltage(point, :b)) ≈ -1V
+end
+
+@testset "controlled current output can remain floating" begin
+    @circuit FloatingControlledOutput() begin
+        gnd = ground(); output = node()
+        I1 = current_source(output, gnd; dc = 1mA)
+        G1 = transconductance(gnd, gnd, output, gnd; gm = 1mA / V)
+    end
+    @test any(d -> d.severity === :error && occursin("DC path", d.message), check(FloatingControlledOutput()))
+end

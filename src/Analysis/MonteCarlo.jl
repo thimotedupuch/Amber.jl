@@ -42,7 +42,16 @@ struct CorrelatedVariation
         normalized_paths = Symbol.(paths); normalized_means = Float64.(means); matrix = Matrix{Float64}(covariance)
         length(normalized_paths) == length(normalized_means) == size(matrix, 1) == size(matrix, 2)||throw(ArgumentError("correlated variation dimensions must agree"))
         all(isfinite, normalized_means)&&all(isfinite, matrix)||throw(ArgumentError("correlated variation values must be finite"))
-        factor = Matrix(cholesky(Symmetric(matrix)).L)
+        issymmetric(matrix)||throw(ArgumentError("correlated variation covariance must be symmetric"))
+        decomposition = cholesky(Symmetric(matrix); check = false)
+        factor = if issuccess(decomposition)
+            Matrix(decomposition.L)
+        else
+            spectral = eigen(Symmetric(matrix))
+            tolerance = length(normalized_paths) * eps(Float64) * maximum(abs, spectral.values; init = 0.0)
+            minimum(spectral.values; init = 0.0) >= -tolerance||throw(ArgumentError("correlated variation covariance must be positive semidefinite"))
+            spectral.vectors * Diagonal(sqrt.(max.(spectral.values, 0.0)))
+        end
         return new(normalized_paths, normalized_means, matrix, factor)
     end
 end
@@ -434,10 +443,14 @@ function deserialize_monte_carlo(text::AbstractString; max_bytes = 64 * 1024 * 1
     get(snapshot, "schema_version", nothing) == 2||throw(CircuitSerializationError("unsupported Monte Carlo schema version"))
     converged = BitVector(snapshot["converged"]); length(converged) <= max_samples||throw(CircuitSerializationError("serialized Monte Carlo result exceeds the sample limit"))
     decoded_values = _decode_value(snapshot["values"], Dict(), Dict()); raw_values = Any[decoded_values...]
+    sample_count = length(converged)
+    length(raw_values) == sample_count||throw(CircuitSerializationError("Monte Carlo values and convergence flags must have equal lengths"))
+    length(snapshot["seeds"]) == sample_count||throw(CircuitSerializationError("Monte Carlo seeds and convergence flags must have equal lengths"))
     successful_values = Any[raw_values[index] for index in eachindex(raw_values) if converged[index]]
     value_type = isempty(successful_values) ? Any : all(value -> typeof(value) === typeof(first(successful_values)), successful_values) ? typeof(first(successful_values)) : Any
     values = Vector{Union{Nothing, value_type}}(raw_values)
     raw_parameters = _decode_value(snapshot["parameters"], Dict(), Dict())
+    length(raw_parameters) == sample_count||throw(CircuitSerializationError("Monte Carlo parameter draws and convergence flags must have equal lengths"))
     parameters = [Dict{Symbol, Float64}(Symbol(path) => Float64(value) for (path, value) in pairs(draw)) for draw in raw_parameters]
     seeds = parse.(UInt64, snapshot["seeds"])
     failures = [MonteCarloFailure(Int(item["sample"]), parse(UInt64, item["seed"]), Symbol(item["exception_type"]), String(item["message"])) for item in snapshot["failures"]]

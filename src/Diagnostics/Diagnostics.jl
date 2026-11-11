@@ -126,8 +126,22 @@ function _check_and_compile(design::CircuitDesign)
     terminal(batch, index, device) = Int32(_batch_terminal(batch, index, device))
     for batch in parameters.batches, device in eachindex(batch.locators)
         kind = _batch_kind(batch); contract = device_contract(kind)
-        if contract.dc_path
-            indices = kind === :vcvs ? (3, 4) : kind === :opamp ? (3, 4, 5) : Tuple(1:contract.terminals)
+        self_controlled_gm = kind === :vccs && !iszero(batch.parameters[device].gm) &&
+            ((terminal(batch, 1, device), terminal(batch, 2, device)) ==
+                (terminal(batch, 3, device), terminal(batch, 4, device)) ||
+             (terminal(batch, 1, device), terminal(batch, 2, device)) ==
+                (terminal(batch, 4, device), terminal(batch, 3, device)))
+        if contract.dc_path || self_controlled_gm
+            indices = kind === :vcvs ? (3, 4) : kind === :opamp ? (3, 4, 5) :
+                kind in (:switch, :behavioral_voltage_source) ? (1, 2) :
+                kind in (:nmos, :pmos) ? (1, 3) : Tuple(1:contract.terminals)
+            if kind in (:nmos, :pmos)
+                model = batch.parameters[device].model
+                if model isa ChargeBasedMOSFET && model.junction_saturation_current_density > 0 &&
+                        (model.drain_area > 0 || model.source_area > 0)
+                    indices = (1, 3, 4)
+                end
+            end
             nets = unique(terminal(batch, index, device) for index in indices)
             for first_net in nets,second_net in nets
                 first_net == second_net||push!(adjacency[Int(first_net) + 1], second_net)
@@ -151,7 +165,16 @@ function _check_and_compile(design::CircuitDesign)
             push!(reachable, neighbor); push!(queue, neighbor)
         end
     end
-    if length(reachable) - 1 < net_count
+    floating_by_connectivity = length(reachable) - 1 < net_count
+    if floating_by_connectivity && all(_linear_batch, parameters.batches) &&
+            any(batch -> _batch_kind(batch) in (:vccs, :cccs), parameters.batches)
+        # Controlled currents can anchor voltages through feedback without a
+        # passive path. Check the actual linear DC equations in that case.
+        candidate = CompiledCircuit(design, topology, parameters, "diagnostic")
+        conductance, _ = _static_dynamic_jacobians(candidate, zeros(candidate.n); mode = :dc, temperature = 300.0)
+        floating_by_connectivity = !issuccess(lu(conductance; check = false))
+    end
+    if floating_by_connectivity
         labels = _net_labels(design, topology)
         floating = sort!(String[first(get(labels, net, ["net #$(net)"])) for net in Int32(1):Int32(net_count) if net ∉ reachable])
         shown = join(first(floating, min(8, length(floating))), ", ")

@@ -9,13 +9,21 @@ function _frequency_derivative(frequencies, values)
     derivative[1] = (values[2] - values[1]) / (frequencies[2] - frequencies[1])
     derivative[end] = (values[end] - values[end - 1]) / (frequencies[end] - frequencies[end - 1])
     for index in 2:(length(values) - 1)
-        derivative[index] = (values[index + 1] - values[index - 1]) / (frequencies[index + 1] - frequencies[index - 1])
+        left = frequencies[index] - frequencies[index - 1]
+        right = frequencies[index + 1] - frequencies[index]
+        derivative[index] = -right / (left * (left + right)) * values[index - 1] +
+            (right - left) / (left * right) * values[index] +
+            left / (right * (left + right)) * values[index + 1]
     end
     return derivative
 end
 
 group_delay(frequencies::AbstractVector, response::AbstractVector) = -_frequency_derivative(2π .* Float64.(frequencies), phase(response; unwrap = true))
-phase_delay(frequencies::AbstractVector, response::AbstractVector) = [iszero(frequency) ? NaN : -angle(value) / (2π * frequency) for (frequency, value) in zip(frequencies, response)]
+function phase_delay(frequencies::AbstractVector, response::AbstractVector)
+    length(frequencies) == length(response)||throw(DimensionMismatch("frequency and response vectors must have equal lengths"))
+    phases = phase(response; unwrap = true)
+    return [iszero(frequency) ? NaN : -value / (2π * frequency) for (frequency, value) in zip(frequencies, phases)]
+end
 group_delay(result::SimulationResult; input, output) = group_delay(frequencies(result), transfer(result; input, output))
 phase_delay(result::SimulationResult; input, output) = phase_delay(frequencies(result), transfer(result; input, output))
 
@@ -26,8 +34,10 @@ function crossings(frequencies::AbstractVector, values::AbstractVector; level = 
         a, b = values[index - 1] - level, values[index] - level
         if iszero(a)
             push!(found, Float64(frequencies[index - 1]))
-        elseif a * b < 0
-            fraction = -a / (b - a); f1, f2 = Float64(frequencies[index - 1]), Float64(frequencies[index])
+        elseif (a < 0 < b) || (b < 0 < a)
+            magnitude = max(abs(a), abs(b))
+            scaled_a, scaled_b = a / magnitude, b / magnitude
+            fraction = -scaled_a / (scaled_b - scaled_a); f1, f2 = Float64(frequencies[index - 1]), Float64(frequencies[index])
             frequency = f1 > 0&&f2 > 0 ? exp(log(f1) + fraction * (log(f2) - log(f1))) : f1 + fraction * (f2 - f1)
             push!(found, frequency)
         end
@@ -36,7 +46,29 @@ function crossings(frequencies::AbstractVector, values::AbstractVector; level = 
     return unique(found)
 end
 
-cutoff_frequencies(frequencies, response; reference = first(abs.(response)), level_db = -3.0) = crossings(frequencies, db20(response); level = db20(reference) + level_db)
+function _magnitude_crossings(frequencies, response, threshold_db)
+    isfinite(threshold_db)||throw(ArgumentError("cutoff threshold must be finite; use a positive finite reference magnitude"))
+    length(frequencies) == length(response)||throw(DimensionMismatch("frequency and response vectors must have equal lengths"))
+    magnitudes = abs.(response)
+    if all(>(0), magnitudes)
+        return crossings(frequencies, db20(response); level = threshold_db)
+    end
+    threshold = 10.0^(threshold_db / 20)
+    found = Float64[]
+    for index in 2:length(response)
+        left, right = magnitudes[index - 1], magnitudes[index]
+        local_values = if iszero(left) || iszero(right)
+            [left, right]
+        else
+            db20([left, right])
+        end
+        level = iszero(left) || iszero(right) ? threshold : threshold_db
+        append!(found, crossings(frequencies[(index - 1):index], local_values; level))
+    end
+    return unique(found)
+end
+
+cutoff_frequencies(frequencies, response; reference = first(abs.(response)), level_db = -3.0) = _magnitude_crossings(frequencies, response, db20(reference) + level_db)
 cutoff_frequencies(result::SimulationResult; input, output, kw...) = cutoff_frequencies(frequencies(result), transfer(result; input, output); kw...)
 
 struct FrequencyBand
@@ -45,12 +77,31 @@ struct FrequencyBand
 end
 
 function passbands(frequencies, response; reference = maximum(abs.(response)), level_db = -3.0)
-    values = db20(response); threshold = db20(reference) + level_db; edges = crossings(frequencies, values; level = threshold)
-    boundaries = vcat(Float64(first(frequencies)), edges, Float64(last(frequencies))); bands = FrequencyBand[]
+    length(frequencies) == length(response)||throw(DimensionMismatch("frequency and response vectors must have equal lengths"))
+    length(frequencies) >= 2||throw(ArgumentError("at least two frequency points are required"))
+    all(isfinite, frequencies) && all(diff(frequencies) .> 0)||throw(ArgumentError("frequencies must be finite and strictly increasing"))
+    values = db20(response); threshold = db20(reference) + level_db; edges = _magnitude_crossings(frequencies, response, threshold)
+    boundaries = unique(vcat(Float64(first(frequencies)), edges, Float64(last(frequencies)))); bands = FrequencyBand[]
     for index in 1:(length(boundaries) - 1)
         middle = boundaries[index] == 0 ? (boundaries[index] + boundaries[index + 1]) / 2 : sqrt(boundaries[index] * boundaries[index + 1])
-        sample = clamp(searchsortedfirst(frequencies, middle), 1, length(values))
-        values[sample] >= threshold&&push!(bands, FrequencyBand(boundaries[index], boundaries[index + 1]))
+        upper = clamp(searchsortedfirst(frequencies, middle), 2, length(values))
+        lower = upper - 1
+        f1, f2 = frequencies[lower], frequencies[upper]
+        fraction = f1 > 0 && f2 > 0 ? log(middle / f1) / log(f2 / f1) : (middle - f1) / (f2 - f1)
+        value = if iszero(abs(response[lower])) || iszero(abs(response[upper]))
+            db20((1 - fraction) * abs(response[lower]) + fraction * abs(response[upper]))
+        else
+            values[lower] == values[upper] ? values[lower] :
+                (1 - fraction) * values[lower] + fraction * values[upper]
+        end
+        if value >= threshold
+            low, high = boundaries[index], boundaries[index + 1]
+            if !isempty(bands) && last(bands).high == low
+                bands[end] = FrequencyBand(last(bands).low, high)
+            else
+                push!(bands, FrequencyBand(low, high))
+            end
+        end
     end
     return bands
 end

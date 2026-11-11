@@ -10,13 +10,18 @@ using LinearAlgebra: norm
     @circuit BiasedNMOS() begin
         gnd = ground(); drain = node(); gate = node()
         VD = voltage_source(drain, gnd; dc = 3V)
-        VG = voltage_source(gate, gnd; dc = 2.5V)
+        VG = voltage_source(gate, gnd; dc = 2.5V, ac = 1V)
         M1 = nmos(drain, gate, gnd, gnd; model)
     end
     nresult = operating_point(BiasedNMOS())
     expected = 0.5model.transconductance * (2.5V - model.threshold_voltage)^2 * (1 + model.channel_length_modulation * 3V)
     @test current(nresult, :M1)[1] ≈ expected rtol = 2.0e-10
+    @test_throws ArgumentError current(nresult, :M1, :invalid)
     @test region(nresult, :M1) == Saturation
+    ac_result = small_signal(BiasedNMOS(), [1kHz, 1MHz]; source = :VG)
+    @test current(ac_result, :M1) ≈ -current(ac_result, :VD)
+    @test current(ac_result, :M1, :gate) ≈ -current(ac_result, :VG)
+
     @test available_observables(only(devices(BiasedNMOS(); kind = :nmos))) == (:voltage, :current, :power)
 
     @circuit BiasedPMOS() begin

@@ -41,3 +41,18 @@
     @test Amber._switch_conductance_derivative(smooth, 1V) > 0
     @test EventSwitch(threshold = 2V).threshold == 2V
 end
+
+@testset "waveform finite parameters and pulse timing" begin
+    for waveform in (Sine(amplitude = NaN), Sine(phase = Inf), Step(high = Inf),
+            Pulse(delay = NaN), Pulse(high = Inf),
+            Pulse(frequency = 1.0, duty_cycle = 0.1, rise = 0.2),
+            Pulse(frequency = 1.0, duty_cycle = 0.9, fall = 0.2))
+        @test_throws Amber.AnalysisValidationError Amber._validate_waveform(waveform)
+    end
+    pulse = Pulse(frequency = 1.0, duty_cycle = 0.4, rise = 0.1, fall = 0.2)
+    @test Amber._validate_waveform(pulse) === pulse
+    @test pulse(0.05) ≈ 0.5
+    @test pulse(0.5) ≈ 0.5
+    boundary = Pulse(frequency = 1.0, duty_cycle = 0.9, fall = 0.1)
+    @test Amber._validate_waveform(boundary) === boundary
+end

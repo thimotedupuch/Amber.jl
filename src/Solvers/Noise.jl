@@ -504,7 +504,7 @@ function noise(
                 system, ComplexF64.(excitation),
                 "noise gain matrix is singular at $(frequency) Hz"
             )
-            gains[frequency_index] = abs(dot(selector, response))
+            gains[frequency_index] = abs(dot(selector, response) + _linear_output_direct(cc, output_observable, input))
         end
     end
     warnings = String[]

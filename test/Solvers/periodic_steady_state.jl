@@ -2,6 +2,7 @@
     @circuit DrivenRC() begin
         gnd = ground(); input = node(); output = node()
         V1 = voltage_source(input, gnd; dc = 0V, ac = 1V, waveform = Sine(amplitude = 1V, frequency = 1kHz))
+        Iprobe = current_source(output, gnd; dc = 0A)
         R1 = resistor(input, output; value = 1kΩ)
         C1 = capacitor(output, gnd; value = 100nF)
     end
@@ -16,6 +17,10 @@
     )
     stationary_result = noise(DrivenRC(), [100Hz, 200Hz]; output = voltage(:output))
     @test noise_psd(periodic_result) ≈ noise_psd(stationary_result) rtol = 1.0e-4
+    direct = periodic_noise(result, [100Hz]; output = current(:Iprobe), input = :Iprobe, sidebands = -1:1)
+    @test noise_psd(direct) == [0.0]
+    @test input_referred_noise_psd(direct) == [0.0]
+
     @test_throws AnalysisValidationError phase_noise(
         result, [100Hz];
         output = voltage(:output)

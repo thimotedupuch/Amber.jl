@@ -913,7 +913,7 @@ excitation may produce `NaN` or `Inf`; inspect the analysis warnings first.
 @doc """Convert an amplitude-like value or array to decibels using `20log10(abs(x))`.""" db20
 @doc """Convert a power-like value or array to decibels using `10log10(abs(x))`.""" db10
 @doc """Compute group delay from an unwrapped complex frequency response.""" group_delay
-@doc """Compute phase delay from a complex frequency response.""" phase_delay
+@doc """Compute phase delay from the unwrapped phase of a complex frequency response. The zero-frequency value is NaN. Sample densely enough to resolve phase changes between adjacent frequencies.""" phase_delay
 @doc """Find interpolated level crossings on a frequency grid.""" crossings
 @doc """
     cutoff_frequencies(result; input, output, reference=..., level_db=-3.0)
@@ -924,7 +924,9 @@ Return a vector of Hz crossings of `db20(reference) + level_db`. The default
 reference is the magnitude of the first sampled response, not its maximum or a
 separately computed DC gain. All crossings in the sampled band are returned;
 there may be none or several. Crossings interpolate between neighboring samples,
-in log frequency when both endpoints are positive.
+in log frequency when both endpoints are positive. Magnitudes interpolate in
+decibels except at transmission zeros, where linear amplitude interpolation is
+used. Supply a positive finite reference magnitude.
 
 ```julia
 corners = cutoff_frequencies(ac; input=voltage(:vin), output=voltage(:out))
@@ -970,7 +972,7 @@ budget = integrated_noise(n, 20Hz => 20kHz; contributions=true)
 @doc """A measured harmonic with order, frequency, RMS amplitude, phase, and bin.""" HarmonicComponent
 @doc """Fundamental, harmonic table, and standard distortion metrics.""" HarmonicResult
 @doc """Compute a calibrated spectrum from a transient result.""" spectrum
-@doc """Measure a fundamental, harmonics, distortion, noise, and dynamic range.""" harmonic_analysis
+@doc """Measure a fundamental, harmonics, distortion, noise, and dynamic range. Powers are integrated over window main lobes; residual spectral leakage outside those lobes contributes to noise and distortion. Use sufficient record length to resolve adjacent harmonics. Dynamic-range ratios are NaN for an identically zero signal.""" harmonic_analysis
 @doc """Return total harmonic distortion.""" thd
 @doc """Return total harmonic distortion plus noise.""" thdn
 @doc """Return signal-to-noise ratio in decibels.""" snr
@@ -978,7 +980,7 @@ budget = integrated_noise(n, 20Hz => 20kHz; contributions=true)
 @doc """Return spurious-free dynamic range in decibels.""" sfdr
 @doc """Estimate effective number of bits from SINAD.""" enob
 @doc """Return waveform peak divided by RMS value.""" crest_factor
-@doc """Integrate a spectrum PSD over a frequency band.""" band_power
+@doc """Sum the power of FFT bins whose center frequencies lie in the inclusive frequency band. Each PSD bin is weighted by the FFT frequency spacing.""" band_power
 
 @doc """Native descriptor-system linearization of an Amber circuit.""" LinearizedModel
 @doc """MIMO frequency response of a native descriptor model.""" LinearFrequencyResponse
@@ -1128,7 +1130,7 @@ This constructs a metric first and then applies it. It does not interpolate
 unsaved extrema. Use a settled window and sufficiently fine output sampling
 for ripple or overshoot measurements.
 """ peak_to_peak
-@doc """Compute acquisition and hold errors for sampled waveforms.""" sampling_metrics
+@doc """Compute acquisition and hold errors for sampled waveforms. Acquisition uses the first complete rising-to-falling clock interval. Aperture and charge-injection errors use the first falling edge and are NaN when no falling edge is present.""" sampling_metrics
 @doc """Measure excursion beyond a specified final or reference value.""" overshoot
 @doc """
     noise_psd(result::NoiseResult)
@@ -1429,9 +1431,9 @@ limitations, which are separate from numerical failure.
 
 @doc """Return the deterministic, serializable snapshot representation of a circuit.""" circuit_snapshot
 @doc """Serialize a supported circuit to versioned TOML text.""" serialize_circuit
-@doc """Deserialize versioned TOML text into a circuit.""" deserialize_circuit
+@doc """Deserialize versioned TOML text into a circuit. Limits can be set with max_bytes, max_nodes, max_components, and max_depth. The node limit includes root nodes and internal nodes of each instantiated subcircuit; connected ports are counted once.""" deserialize_circuit
 @doc """Save a supported circuit to a TOML file.""" save_circuit
-@doc """Load a circuit from an Amber TOML file.""" load_circuit
+@doc """Load a circuit from an Amber TOML file. Keyword arguments are forwarded to deserialize_circuit, including reconstruction limits.""" load_circuit
 @doc """Serialize a `MonteCarloResult` to versioned TOML text.""" serialize_monte_carlo
 @doc """Deserialize a `MonteCarloResult` from versioned TOML text.""" deserialize_monte_carlo
 @doc """Save a `MonteCarloResult` to a TOML file.""" save_monte_carlo

@@ -382,7 +382,8 @@ function periodic_noise(
                 "periodic-noise lifted gain system is singular at $(offset) Hz"
             )
             output_rows = ((output_block - 1) * length(selector) + 1):(output_block * length(selector))
-            gains[offset_index] = abs(dot(selector, @view response[output_rows]))
+            gains[offset_index] = abs(dot(selector, @view response[output_rows]) +
+                (output_harmonic == 0 ? _linear_output_direct(pss.orbit.compiled, output_observable, input) : 0.0))
         end
     end
     input_psd = nothing

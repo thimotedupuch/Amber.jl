@@ -28,7 +28,7 @@ _encode_value(value::Tuple) = Dict("type" => "tuple", "items" => [_encode_value(
 _encode_value(value::AbstractVector) = Dict("type" => "vector", "items" => [_encode_value(item) for item in value])
 _encode_value(value::NamedTuple) = Dict(
     "type" => "named_tuple", "entries" => [
-        Dict("key" => String(key), "value" => _encode_value(item)) for (key, item) in sort!(collect(pairs(value)); by = x -> String(first(x)))
+        Dict("key" => String(key), "value" => _encode_value(item)) for (key, item) in pairs(value)
     ]
 )
 _encode_value(value::AbstractDict) = Dict(
@@ -53,7 +53,14 @@ function _decode_value(encoded, nodes, components, depth::Int = 0, max_depth::In
     if kind == "integer"
         value = encoded["value"]
         value isa Integer&&return value
-        return get(encoded, "unsigned", false) ? parse(UInt64, value) : parse(Int64, value)
+        candidates = get(encoded, "unsigned", false) ? (UInt64, UInt128) : (Int64, Int128)
+        for integer_type in candidates
+            parsed = tryparse(integer_type, value)
+            parsed === nothing || return parsed
+        end
+        parsed = parse(BigInt, value)
+        get(encoded, "unsigned", false) && parsed < 0 && throw(ArgumentError("unsigned integer cannot be negative"))
+        return parsed
     end
     kind == "symbol" && return Symbol(encoded["value"])
     if kind == "tuple"
@@ -104,7 +111,7 @@ function deserialize_circuit(text::AbstractString; max_bytes::Integer = 16 * 102
     end
 end
 
-load_circuit(path::AbstractString) = deserialize_circuit(read(path, String))
+load_circuit(path::AbstractString; kw...) = deserialize_circuit(read(path, String); kw...)
 
 _hex128(value::UInt128) = string(value; base = 16, pad = 32)
 _parse128(value::AbstractString) = parse(UInt128, value; base = 16)
@@ -250,10 +257,13 @@ end
 
 function _restore_body(snapshot, names::_NameBuilder, owner::UInt64, generation::UInt32, max_depth)
     net_names = [_segment_restore(item, names, max_depth) for item in snapshot["nets"]]
+    ground_net = Int32(snapshot["ground_net"])
+    0 <= ground_net <= length(net_names)||throw(CircuitSerializationError("reference net index is out of bounds"))
     terminal_data = Int32[]
     primitives = Any[]
     for primitive_snapshot in snapshot["primitives"]
         terminals = Int32.(primitive_snapshot["terminals"])
+        all(index -> 1 <= index <= length(net_names), terminals)||throw(CircuitSerializationError("primitive refers to an unknown net"))
         start = Int32(length(terminal_data) + 1); append!(terminal_data, terminals)
         stop = start + Int32(length(terminals) - 1)
         parameters = _hierarchy_decode(primitive_snapshot["parameters"], max_depth)
@@ -268,7 +278,7 @@ function _restore_body(snapshot, names::_NameBuilder, owner::UInt64, generation:
         value = observation["kind"] == "raw" ? target : Observable(Symbol(observation["kind"]), target, extra)
         push!(observations, (name = isempty(observation["name"]) ? nothing : observation["name"], value = value))
     end
-    return TemplateIR(net_names, Int32(snapshot["ground_net"]), terminal_data, primitives, observations)
+    return TemplateIR(net_names, ground_net, terminal_data, primitives, observations)
 end
 
 function _restore_template(snapshot, max_depth)
@@ -293,10 +303,16 @@ function _deserialize_design(snapshot; max_nodes, max_components, max_depth)
     length(root_body.net_names) <= max_nodes || throw(CircuitSerializationError("serialized design exceeds the node limit"))
     records = InstanceRecord[]; connections = Int32[]; parameters = Any[]; path_nodes = _PathNode[]
     primitive_count = length(root_body.primitives)
+    node_count = length(root_body.net_names)
     for instance in snapshot["instances"]
         template_id = TemplateId(instance["template"])
         1 <= Int(template_id) <= length(templates) || throw(CircuitSerializationError("instance refers to an unknown template"))
-        connection_start = UInt32(length(connections) + 1); instance_connections = Int32.(instance["connections"]); append!(connections, instance_connections)
+        template = templates[Int(template_id)]
+        length(instance["connections"]) == length(template.ports)||throw(CircuitSerializationError("instance connection count does not match its template"))
+        length(instance["parameters"]) == length(template.parameters)||throw(CircuitSerializationError("instance parameter count does not match its template"))
+        connection_start = UInt32(length(connections) + 1); instance_connections = Int32.(instance["connections"])
+        all(index -> 1 <= index <= length(root_body.net_names), instance_connections)||throw(CircuitSerializationError("instance refers to an unknown net"))
+        append!(connections, instance_connections)
         parameter_start = UInt32(length(parameters) + 1); instance_parameters = [_hierarchy_decode(item, max_depth) for item in instance["parameters"]]; append!(parameters, instance_parameters)
         segment = _segment_restore(instance["name"], names, max_depth)
         parent = InstanceId(instance["parent"])
@@ -311,7 +327,9 @@ function _deserialize_design(snapshot; max_nodes, max_components, max_depth)
                 PartitionHint(instance["partition_hint"]), PathId(length(path_nodes))
             )
         )
-        primitive_count += length(templates[Int(template_id)].body.primitives)
+        primitive_count += length(template.body.primitives)
+        node_count += length(template.body.net_names) - length(template.ports)
+        node_count <= max_nodes || throw(CircuitSerializationError("serialized design exceeds the node limit"))
     end
     primitive_count <= max_components || throw(CircuitSerializationError("serialized design exceeds the component limit"))
     metadata = Dict{String, Any}(_hierarchy_decode(snapshot["metadata"], max_depth))
