@@ -72,3 +72,21 @@ end
     @test adaptive.stats[:rejected_continuation_steps] > 0
     @test voltage(adaptive, :diode_bias)[1] ≈ voltage(result, :diode_bias)[1] atol = 1.0e-7
 end
+
+@testset "failed operating point residual uses analysis temperature" begin
+    @circuit ReverseTemperatureFailure() begin
+        gnd = ground(); output = node()
+        I1 = current_source(output, gnd; dc = 1.5mA)
+        R = resistor(output, gnd; value = 1e12)
+        D = diode(output, gnd; model = JunctionDiode(saturation_current = 1mA))
+    end
+    result = operating_point(ReverseTemperatureFailure(); temperature = 350.0,
+        maxiters = 4, continuation_maxdepth = 0)
+    @test !result.stats[:converged]
+    z = result.values[:, 1]
+    hot = Amber.residual(result.compiled, z, zero(z), 0.0; mode = :dc, temperature = 350.0)
+    cold = Amber.residual(result.compiled, z, zero(z), 0.0; mode = :dc, temperature = 300.0)
+    expected = maximum(abs, hot)
+    @test result.stats[:dominant_residual].norm ≈ expected
+    @test !isapprox(maximum(abs, cold), expected; rtol = 1e-3)
+end
