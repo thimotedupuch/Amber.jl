@@ -20,6 +20,8 @@ for op in (:+, :-, :*, :/)
 end
 Base.:-(a::ConstitutiveExpr) = EquationLiteral(-1) * a
 Base.exp(a::ConstitutiveExpr) = _equation_call(Val(:exp), a)
+Base.log1p(a::ConstitutiveExpr) = _equation_call(Val(:log1p), a)
+Base.:^(a::ConstitutiveExpr, b::Real) = _equation_call(Val(:power), a, EquationLiteral(b))
 # Lazy branch: the unselected expression may be undefined at this input.
 _equation_positive(test, positive, otherwise) = _equation_call(Val(:positive), test, positive, otherwise)
 
@@ -35,6 +37,8 @@ function _equation_value(x::EquationCall{Op}, inputs) where Op
     Op === :* && return *(values...)
     Op === :/ && return /(values...)
     Op === :exp && return exp(only(values))
+    Op === :log1p && return log1p(only(values))
+    Op === :power && return values[1]^values[2]
     error("unsupported equation operation $Op")
 end
 
@@ -61,6 +65,12 @@ function _equation_derivative(x::EquationCall{Op}, variable::Val) where Op
     end
     da = _equation_derivative(a[1], variable)
     Op === :exp && return _equation_product(exp(a[1]), da)
+    Op === :log1p && return _equation_zero(da) ? da : da / (1 + a[1])
+    if Op === :power
+        exponent = a[2].value
+        (iszero(exponent) || _equation_zero(da)) && return EquationLiteral(0)
+        return _equation_product(EquationLiteral(exponent), _equation_product(a[1]^(exponent-1), da))
+    end
     db = _equation_derivative(a[2], variable)
     Op === :+ && return _equation_sum(da, db)
     Op === :- && return _equation_sum(da, _equation_product(EquationLiteral(-1), db))
@@ -119,4 +129,35 @@ function _diode_conduction_ir(model::JunctionDiode)
         conduction -= _equation_positive(argument, model.breakdown_current * limited(argument), EquationLiteral(0))
     end
     return ConstitutiveLaw(conduction, EquationLiteral(0))
+end
+
+
+"""Complete local diode current/charge law, using the production continuation rules.
+
+Model options are construction-time literals; voltage, temperature and saturation
+current are runtime inputs. No production assembly kernel is replaced.
+"""
+function _diode_constitutive_ir(model::JunctionDiode)
+    conduction = _diode_conduction_ir(model).current
+    v = EquationInput{:voltage}(); temperature = EquationInput{:temperature}()
+    saturation = EquationInput{:saturation_current}()
+    vt = (1.380649e-23 / 1.602176634e-19 * model.ideality) * temperature
+    argument = v / vt
+    forward = _equation_positive(argument - 80,
+        exp(80.0) * (1 + argument - 80) - 1,
+        _equation_positive(-80 - argument, EquationLiteral(exp(-80.0)-1), exp(argument)-1))
+    diffusion = model.transit_time * saturation * forward
+    capacitance = model.junction_capacitance
+    if iszero(capacitance)
+        return ConstitutiveLaw(conduction, diffusion)
+    end
+    potential = model.junction_potential; grading = model.grading_coefficient
+    transition = 0.9potential
+    function depletion(x)
+        abs(1-grading) < 1e-12 ? -capacitance * potential * log1p(-x/potential) :
+            capacitance * potential / (1-grading) * (1-(1-x/potential)^(1-grading))
+    end
+    continuation = depletion(transition) + capacitance * (1-transition/potential)^(-grading) * (v-transition)
+    stored = _equation_positive(v-transition, continuation, depletion(v)) + diffusion
+    return ConstitutiveLaw(conduction, stored)
 end
