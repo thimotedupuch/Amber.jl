@@ -76,7 +76,8 @@ function _newton(
         cc, z0, previous, t, α; reltol = 1.0e-7, abstol = 1.0e-10, maxiters = 60,
         mode = :time, source_scale = 1.0, gmin = 0.0, temperature = 300.0, forcing = nothing, workspace = nothing,
         line_search_minimum = 1 / 256, voltage_abstol = max(abstol, 1.0e-9), state_abstol = abstol,
-        linear_solver = SuiteSparseLU(), history = nothing, storage_history = nothing
+        linear_solver = SuiteSparseLU(), history = nothing, storage_history = nothing,
+        linear_plan = nothing, linear_solve_history = nothing
     )
     t = _si_value(t, Unitful.s)
     α = _si_value(α, inv(Unitful.s))
@@ -118,16 +119,23 @@ function _newton(
             @inbounds @simd for index in eachindex(rhs)
                 rhs[index] = inverse_row_norms[index] * r[index]
             end
-            reuse_numeric = linear_hierarchy && factorization !== nothing &&
-                workspace.factorization_key == factorization_key
-            if !reuse_numeric
-                factorization = factorization === nothing ? _new_factorization(system, linear_solver) :
-                    lu!(factorization, system; reuse_symbolic = true)
-                workspace.factorization = factorization
-                workspace.factorization_key = factorization_key
-                workspace.numeric_factorizations += 1
+            if linear_plan === nothing
+                reuse_numeric = linear_hierarchy && factorization !== nothing &&
+                    workspace.factorization_key == factorization_key
+                if !reuse_numeric
+                    factorization = factorization === nothing ? _new_factorization(system, linear_solver) :
+                        lu!(factorization, system; reuse_symbolic = true)
+                    workspace.factorization = factorization
+                    workspace.factorization_key = factorization_key
+                    workspace.numeric_factorizations += 1
+                end
+                ldiv!(workspace.update, factorization, rhs)
+            else
+                planned = structural_solve(linear_plan, system, rhs; linear_solver)
+                copyto!(workspace.update, planned.solution)
+                workspace.numeric_factorizations += planned.stats.factorizations
+                linear_solve_history === nothing || push!(linear_solve_history, planned.stats)
             end
-            ldiv!(workspace.update, factorization, rhs)
             @inbounds @simd for index in eachindex(workspace.update)
                 workspace.update[index] = -variable_scales[index] * workspace.update[index]
             end

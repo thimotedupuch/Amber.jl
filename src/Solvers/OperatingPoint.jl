@@ -62,7 +62,8 @@ end
 
 function operating_point(
         c; temperature = 300.0, solver = SolverOptions(), continuation_maxdepth = nothing,
-        reltol = nothing, abstol = nothing, maxiters = nothing, workspace = nothing, kw...
+        reltol = nothing, abstol = nothing, maxiters = nothing, workspace = nothing,
+        linear_plan = nothing, kw...
     )
     temperature = _si_value(temperature, Unitful.K)
     isfinite(temperature)&&temperature > 0||throw(AnalysisValidationError("temperature must be finite and positive"))
@@ -77,6 +78,7 @@ function operating_point(
     cc = compile(c); workspace === nothing && (workspace = SimulationWorkspace(cc))
     z = zeros(cc.n); total_iterations = 0; converged = false
     convergence_history = NamedTuple[]
+    linear_solve_history = linear_plan === nothing ? nothing : NamedTuple[]
     failed_continuation_steps = Int[]; rejected_continuation_steps = 0
     fallback_trigger = nothing; strategy = :source_gmin
     continuation = ((0.02, 1.0e-6), (0.1, 1.0e-7), (0.3, 1.0e-8), (0.6, 1.0e-10), (1.0, 0.0))
@@ -87,7 +89,7 @@ function operating_point(
             cc, z, accepted, target, temperature, 0, continuation_maxdepth;
             workspace, reltol, abstol, maxiters, voltage_abstol, state_abstol,
             line_search_minimum = solver.line_search_minimum, linear_solver = solver.linear_solver,
-            history = convergence_history, kw...
+            history = convergence_history, linear_plan, linear_solve_history, kw...
         )
         total_iterations += iterations; rejected_continuation_steps += rejections
         if ok
@@ -98,7 +100,7 @@ function operating_point(
                 _pseudo_transient_operating_point(
                 cc, temperature; workspace, reltol, abstol, maxiters,
                 voltage_abstol, state_abstol, line_search_minimum = solver.line_search_minimum,
-                linear_solver = solver.linear_solver, history = convergence_history, kw...
+                linear_solver = solver.linear_solver, history = convergence_history, linear_plan, linear_solve_history, kw...
             )
             total_iterations += fallback_iterations
             if fallback_ok
@@ -117,6 +119,7 @@ function operating_point(
         :fallback_trigger => fallback_trigger, :temperature => Float64(temperature),
         :residual_history => convergence_history
     )
+    linear_plan === nothing || (stats[:linear_solve_history] = linear_solve_history)
     stats[:warnings] = !isempty(failed_continuation_steps) ?
         ["source/gmin continuation and pseudo-transient fallback both failed"] :
         strategy === :pseudo_transient ?

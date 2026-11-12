@@ -1354,3 +1354,19 @@ Implemented scope and next steps are recorded in
 [device models](design_specs/device_model_progress.md),
 [transient engine](design_specs/transient_engine_progress.md), and
 [analysis workbenches](design_specs/analysis_workbench_progress.md).
+
+
+An experimental structural solve plan can execute the dependency ordering:
+
+```julia
+compiled = compile(circuit)
+plan = structural_solve_plan(compiled; mode=:dc)
+result = operating_point(compiled; linear_plan=plan)
+result.stats[:linear_solve_history]  # strategy, fallback reasons, backward errors
+```
+
+This opts into block linear solves inside the existing Newton algorithm. Actual
+matrix compatibility is checked at execution, with global fallback. The default
+solver retains factorization reuse; the experimental executor currently extracts
+blocks on each call. See the [regression study](design_specs/structural_solve_regression_study.md)
+for measurements and limitations.

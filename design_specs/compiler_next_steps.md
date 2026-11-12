@@ -10,7 +10,10 @@ parallel compiler agents or production backend replacement are planned.
 2. Fine-grained dependency analysis — experimental per-expression input sets,
    dependency roles and invalidation queries implemented; 22 assertions pass.
    Production cache integration remains pending.
-3. Executable structural solve plans — pending.
+3. Executable structural solve plans — implemented as an opt-in block linear
+   executor and operating-point strategy; numerical compatibility checks and
+   global fallback protect changed matrices. Block-local nonlinear iteration and
+   factorization reuse remain future work.
 4. Equation elimination and observable reconstruction — pending.
 5. DAE structure and consistent initialization — pending.
 6. Template symbolic compilation reuse — pending.
@@ -78,3 +81,47 @@ regressions, including temperature/mode changes. This is not yet accomplished.
 Latest validation: 351 combined IR/dependency assertions and 139 existing
 compiler/device-reference assertions pass. The full package suite was not rerun
 for this isolated experimental increment.
+
+
+## Item 3: executable structural plans
+
+`structural_solve_plan(circuit; mode=:dc)` turns equation matching and SCC order
+into explicit equation and unknown permutations with block boundaries. Time
+plans include storage incidence. `structural_solve(plan, matrix, rhs)` solves
+blocks in dependency order, propagates solved contributions downstream, and
+returns original-order unknowns plus numerical diagnostics. A coupled single
+block bypasses permutation/extraction and uses the global configured LU policy.
+
+Every execution checks the actual nonzero matrix, including parameter changes
+and regularization absent from structural incidence. Incompatible matrices,
+singular blocks, and unacceptable numerical backward errors trigger global
+fallback; `fallback=:error` supports strict investigation. Global singularities
+still propagate. Backward error measures residual quality, not forward error or
+conditioning. Exact singular blocks cannot be repaired by a global solve of a
+truly block-triangular matrix; fallback does not promise to cure singularity.
+
+`operating_point(circuit; linear_plan=plan)` opts Newton's linear systems into
+this strategy and records `stats[:linear_solve_history]`. Existing Newton damping,
+continuation and convergence criteria remain in place. The default path retains
+its symbolic/numeric factorization reuse. The experimental block executor does
+not yet reuse factors, perform block-local nonlinear iterations, eliminate
+unknowns, or change result/observable identities. Standalone execution supports
+one vector RHS; numerical qualification targets Float64/ComplexF64 matrices
+as used by the existing LU backend. Wider scalar types remain unsupported.
+
+Validation includes randomly permuted triangular systems, coupled blocks,
+complex coefficients, integer RHS promotion, parameter changes, storage-inclusive
+Jacobians, singularity, incompatible regularization, numerical fallback, and
+linear/nonlinear operating-point equivalence. Full-suite results are recorded
+in the accompanying [regression study](structural_solve_regression_study.md).
+
+The [benchmark driver](../benchmark/structural_solve_plan.jl) measures native
+sparse solves separately from Amber's configured LU policy. It includes
+validation/permutation/error-check components and end-to-end operating points.
+The prototype's overhead and algorithm-selection differences are studied rather
+than interpreted as a reason to replace the default backend.
+
+Item 3 validation checkpoint: 60 targeted structural-plan assertions and the
+full package suite (3,212/3,212) pass after the overflow fix. The independent
+review found no further correctness issues. Benchmark data and limitations are
+retained in the regression study; the strategy remains opt-in.

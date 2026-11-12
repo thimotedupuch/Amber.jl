@@ -29,6 +29,7 @@ export SimulationWorkspace, residual!, jacobian!, residual_jacobian!
 export invertermetrics, switchingmetrics
 export storage_jacobian!
 export StructuralAnalysis, structural_analysis
+export StructuralSolvePlan, structural_solve_plan, structural_solve
 export AbstractLinearSolver, SuiteSparseLU, SolverOptions, IntegrationOptions
 export ConvergenceError
 export CircuitValidationError, AnalysisValidationError, CircuitLookupError, LinearSolveError
@@ -128,6 +129,7 @@ include("Analysis/Analyses.jl")
 include("Results/Results.jl")
 include("Results/Tabular.jl")
 include("Solvers/Nonlinear.jl")
+include("Core/StructuralSolvePlan.jl")
 include("Solvers/OperatingPoint.jl")
 include("Solvers/Transient.jl")
 include("Solvers/TransientCheckpoint.jl")

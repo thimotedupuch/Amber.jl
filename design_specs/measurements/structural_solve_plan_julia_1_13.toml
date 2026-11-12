@@ -1,0 +1,418 @@
+cpu = "raptorlake"
+julia_version = "1.13.1"
+threads = 1
+
+[[cases]]
+backward_error = 0.0
+blocks = 1
+first_solve_compile_seconds = 0.002882972
+first_solve_seconds = 0.003034125
+kind = "feedforward"
+plan_seconds = 5.757e-6
+unknowns = 1
+
+    [cases.error_check]
+    bytes = 128
+    seconds = 5.9e-8
+
+    [cases.native_global]
+    bytes = 288
+    seconds = 8.7e-8
+
+    [cases.permutation]
+    bytes = 240
+    seconds = 7.9e-8
+
+    [cases.policy_global]
+    bytes = 4560
+    seconds = 3.557e-6
+
+    [cases.structural]
+    bytes = 5440
+    seconds = 3.89e-6
+
+    [cases.validation]
+    bytes = 0
+    seconds = 2.6e-8
+[[cases]]
+backward_error = 0.0
+blocks = 16
+first_solve_compile_seconds = 0.0
+first_solve_seconds = 2.0089e-5
+kind = "feedforward"
+plan_seconds = 1.1761e-5
+unknowns = 16
+
+    [cases.error_check]
+    bytes = 576
+    seconds = 1.78e-7
+
+    [cases.native_global]
+    bytes = 192
+    seconds = 2.2e-7
+
+    [cases.permutation]
+    bytes = 960
+    seconds = 3.61e-7
+
+    [cases.policy_global]
+    bytes = 13552
+    seconds = 4.202e-6
+
+    [cases.structural]
+    bytes = 4000
+    seconds = 2.577e-6
+
+    [cases.validation]
+    bytes = 0
+    seconds = 7.4e-8
+[[cases]]
+backward_error = 0.0
+blocks = 64
+first_solve_compile_seconds = 0.0
+first_solve_seconds = 9.006e-6
+kind = "feedforward"
+plan_seconds = 1.5953e-5
+unknowns = 64
+
+    [cases.error_check]
+    bytes = 1728
+    seconds = 4.27e-7
+
+    [cases.native_global]
+    bytes = 576
+    seconds = 5.18e-7
+
+    [cases.permutation]
+    bytes = 3360
+    seconds = 2.41e-6
+
+    [cases.policy_global]
+    bytes = 41488
+    seconds = 8.447e-6
+
+    [cases.structural]
+    bytes = 12256
+    seconds = 5.67e-6
+
+    [cases.validation]
+    bytes = 0
+    seconds = 2.18e-7
+[[cases]]
+backward_error = 0.0
+blocks = 128
+first_solve_compile_seconds = 0.0
+first_solve_seconds = 1.3768e-5
+kind = "feedforward"
+plan_seconds = 2.5632e-5
+unknowns = 128
+
+    [cases.error_check]
+    bytes = 3360
+    seconds = 6.69e-7
+
+    [cases.native_global]
+    bytes = 1120
+    seconds = 9.79e-7
+
+    [cases.permutation]
+    bytes = 6448
+    seconds = 7.185e-6
+
+    [cases.policy_global]
+    bytes = 77200
+    seconds = 1.4474e-5
+
+    [cases.structural]
+    bytes = 23328
+    seconds = 1.2584e-5
+
+    [cases.validation]
+    bytes = 0
+    seconds = 3.97e-7
+[[cases]]
+backward_error = 0.0
+blocks = 1
+first_solve_compile_seconds = 0.0
+first_solve_seconds = 9.607e-6
+kind = "symmetric_coupled"
+plan_seconds = 2.178e-6
+unknowns = 1
+
+    [cases.error_check]
+    bytes = 128
+    seconds = 6.2e-8
+
+    [cases.native_global]
+    bytes = 288
+    seconds = 8.6e-8
+
+    [cases.permutation]
+    bytes = 240
+    seconds = 8.1e-8
+
+    [cases.policy_global]
+    bytes = 4576
+    seconds = 2.591e-6
+
+    [cases.structural]
+    bytes = 6224
+    seconds = 3.817e-6
+
+    [cases.validation]
+    bytes = 0
+    seconds = 2.6e-8
+[[cases]]
+backward_error = 1.2490009623049758e-16
+blocks = 1
+first_solve_compile_seconds = 0.0
+first_solve_seconds = 5.2707e-5
+kind = "symmetric_coupled"
+plan_seconds = 5.091e-6
+unknowns = 16
+
+    [cases.error_check]
+    bytes = 576
+    seconds = 1.86e-7
+
+    [cases.native_global]
+    bytes = 8024
+    seconds = 7.326e-6
+
+    [cases.permutation]
+    bytes = 1216
+    seconds = 4.19e-7
+
+    [cases.policy_global]
+    bytes = 33216
+    seconds = 9.952e-6
+
+    [cases.structural]
+    bytes = 35968
+    seconds = 1.1463e-5
+
+    [cases.validation]
+    bytes = 0
+    seconds = 8.4e-8
+[[cases]]
+backward_error = 8.326672684688674e-17
+blocks = 1
+first_solve_compile_seconds = 0.0
+first_solve_seconds = 4.1391e-5
+kind = "symmetric_coupled"
+plan_seconds = 1.3891e-5
+unknowns = 64
+
+    [cases.error_check]
+    bytes = 1728
+    seconds = 4.9e-7
+
+    [cases.native_global]
+    bytes = 27992
+    seconds = 1.5e-5
+
+    [cases.permutation]
+    bytes = 4448
+    seconds = 2.69e-6
+
+    [cases.policy_global]
+    bytes = 85280
+    seconds = 2.8255e-5
+
+    [cases.structural]
+    bytes = 93584
+    seconds = 3.1446e-5
+
+    [cases.validation]
+    bytes = 0
+    seconds = 2.86e-7
+[[cases]]
+backward_error = 8.326672684688674e-17
+blocks = 1
+first_solve_compile_seconds = 0.0
+first_solve_seconds = 7.0547e-5
+kind = "symmetric_coupled"
+plan_seconds = 1.9465e-5
+unknowns = 128
+
+    [cases.error_check]
+    bytes = 3360
+    seconds = 8.06e-7
+
+    [cases.native_global]
+    bytes = 54680
+    seconds = 2.6508e-5
+
+    [cases.permutation]
+    bytes = 8496
+    seconds = 7.782e-6
+
+    [cases.policy_global]
+    bytes = 152848
+    seconds = 5.3975e-5
+
+    [cases.structural]
+    bytes = 168432
+    seconds = 5.8828e-5
+
+    [cases.validation]
+    bytes = 0
+    seconds = 5.37e-7
+[[cases]]
+backward_error = 0.0
+blocks = 1
+first_solve_compile_seconds = 0.0
+first_solve_seconds = 1.3309e-5
+kind = "nonsymmetric_coupled"
+plan_seconds = 6.035e-6
+unknowns = 1
+
+    [cases.error_check]
+    bytes = 128
+    seconds = 6.1e-8
+
+    [cases.native_global]
+    bytes = 288
+    seconds = 8.9e-8
+
+    [cases.permutation]
+    bytes = 240
+    seconds = 8.2e-8
+
+    [cases.policy_global]
+    bytes = 4560
+    seconds = 2.392e-6
+
+    [cases.structural]
+    bytes = 5440
+    seconds = 3.5e-6
+
+    [cases.validation]
+    bytes = 0
+    seconds = 2.7e-8
+[[cases]]
+backward_error = 1.3322676369015878e-16
+blocks = 1
+first_solve_compile_seconds = 0.0
+first_solve_seconds = 1.6801e-5
+kind = "nonsymmetric_coupled"
+plan_seconds = 5.647e-6
+unknowns = 16
+
+    [cases.error_check]
+    bytes = 576
+    seconds = 1.85e-7
+
+    [cases.native_global]
+    bytes = 33408
+    seconds = 9.227e-6
+
+    [cases.permutation]
+    bytes = 1216
+    seconds = 4.18e-7
+
+    [cases.policy_global]
+    bytes = 33264
+    seconds = 9.15e-6
+
+    [cases.structural]
+    bytes = 35968
+    seconds = 1.0643e-5
+
+    [cases.validation]
+    bytes = 0
+    seconds = 9.0e-8
+[[cases]]
+backward_error = 8.881784197001253e-17
+blocks = 1
+first_solve_compile_seconds = 0.0
+first_solve_seconds = 3.5404e-5
+kind = "nonsymmetric_coupled"
+plan_seconds = 9.65e-6
+unknowns = 64
+
+    [cases.error_check]
+    bytes = 1728
+    seconds = 4.88e-7
+
+    [cases.native_global]
+    bytes = 85824
+    seconds = 2.8228e-5
+
+    [cases.permutation]
+    bytes = 4448
+    seconds = 2.703e-6
+
+    [cases.policy_global]
+    bytes = 85280
+    seconds = 2.8048e-5
+
+    [cases.structural]
+    bytes = 93584
+    seconds = 3.083e-5
+
+    [cases.validation]
+    bytes = 0
+    seconds = 2.87e-7
+[[cases]]
+backward_error = 8.881784197001253e-17
+blocks = 1
+first_solve_compile_seconds = 0.0
+first_solve_seconds = 7.4603e-5
+kind = "nonsymmetric_coupled"
+plan_seconds = 1.7762e-5
+unknowns = 128
+
+    [cases.error_check]
+    bytes = 3360
+    seconds = 8.36e-7
+
+    [cases.native_global]
+    bytes = 153904
+    seconds = 5.3531e-5
+
+    [cases.permutation]
+    bytes = 8496
+    seconds = 7.977e-6
+
+    [cases.policy_global]
+    bytes = 152816
+    seconds = 5.4188e-5
+
+    [cases.structural]
+    bytes = 168448
+    seconds = 5.7546e-5
+
+    [cases.validation]
+    bytes = 0
+    seconds = 5.37e-7
+[[operating_points]]
+fallback_solves = 0
+global_iterations = 10
+maximum_backward_error = 4.178602032364458e-17
+nonlinear = false
+stages = 16
+structural_iterations = 10
+
+    [operating_points.global]
+    bytes = 160888
+    seconds = 3.7048e-5
+
+    [operating_points.structural]
+    bytes = 82752
+    seconds = 3.963e-5
+[[operating_points]]
+fallback_solves = 0
+global_iterations = 25
+maximum_backward_error = 4.468124500115911e-17
+nonlinear = true
+stages = 16
+structural_iterations = 25
+
+    [operating_points.global]
+    bytes = 663736
+    seconds = 0.000135344
+
+    [operating_points.structural]
+    bytes = 174480
+    seconds = 0.000117843
