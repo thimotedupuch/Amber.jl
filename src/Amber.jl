@@ -9,6 +9,10 @@ using SHA
 using Statistics
 using TOML
 
+export TemperaturePolicy, device_temperature, CompactModelCallback, compact_model_point
+export save_checkpoint, resume_transient, DistributedLine, line_abcd
+export MeasurementSpec, MeasurementAssessment, assess
+export QuasiStaticDistortion, quasistatic_distortion, distortion_harmonics, distortion_intermodulation
 export CompiledTopology, CompiledCircuit, SimulationResult
 export AbstractCircuitDefinition, CircuitBuilder, CircuitDesign, SubcircuitTemplate
 export NameId, NameSegment, InstancePath, NetPath, DevicePath, parsepath
@@ -101,6 +105,8 @@ export °
 include("Core/Units.jl")
 include("Core/Ports.jl")
 include("Devices/Models.jl")
+include("Devices/Temperature.jl")
+include("Devices/CompactModels.jl")
 include("Core/Hierarchy.jl")
 include("Core/Serialization.jl")
 include("Devices/Ideal.jl")
@@ -122,6 +128,7 @@ include("Results/Tabular.jl")
 include("Solvers/Nonlinear.jl")
 include("Solvers/OperatingPoint.jl")
 include("Solvers/Transient.jl")
+include("Solvers/TransientCheckpoint.jl")
 include("Solvers/PeriodicSteadyState.jl")
 include("Solvers/SmallSignal.jl")
 include("Solvers/Network.jl")
@@ -134,6 +141,9 @@ include("Solvers/PhaseNoise.jl")
 include("Analysis/Sweeps.jl")
 include("Analysis/MonteCarlo.jl")
 include("Analysis/Metrics.jl")
+include("Analysis/Specifications.jl")
+include("Analysis/QuasiStaticDistortion.jl")
+include("Analysis/DistributedLine.jl")
 include("Analysis/FrequencyMetrics.jl")
 include("Analysis/Spectrum.jl")
 include("Results/Display.jl")

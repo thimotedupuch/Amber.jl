@@ -236,3 +236,11 @@ examples; [`demo/cmos_studies.jl`](demo/cmos_studies.jl) renders the circuit stu
 Run them in an environment containing Amber, AmberMakie, and CairoMakie. Set
 `AMBERMAKIE_DEMO_OUTPUT` to choose an output directory. CairoMakie is a test/demo
 backend dependency; the package itself remains backend-neutral.
+
+## Convergence histories
+
+`convergenceplot(fig[1, 1], result)` displays recorded Newton residuals and
+linked damping/source-continuation histories. `convergenceview(result)` exposes
+the original rows, update norms and gmin values for programmatic inspection.
+Results without a Newton history are labeled explicitly. These views inspect
+stored diagnostics and do not rerun the simulation.

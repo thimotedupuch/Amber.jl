@@ -97,8 +97,8 @@ end
     @test_throws ArgumentError ThinFilm(temperature_coefficient = 1.0e-5)
     @test_throws ArgumentError ThinFilm(voltage_coefficient = 1.0e-5)
     @test_throws ArgumentError C0G(loss_tangent = 1.0e-4)
-    @test_throws ArgumentError BehavioralOpAmp(slew_rate = 1.0e6)
-    @test_throws ArgumentError BehavioralOpAmp(output_current_limit = 0.01)
+    @test BehavioralOpAmp(slew_rate = 1.0e6).slew_rate == 1.0e6
+    @test BehavioralOpAmp(output_current_limit = 0.01).output_current_limit == 0.01
     @test_throws ArgumentError BehavioralOpAmp(saturation_recovery = 1.0e-6)
 end
 

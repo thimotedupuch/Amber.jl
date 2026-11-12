@@ -254,7 +254,7 @@ function _validate_transient(interval; saveat = nothing, max_step = nothing, met
     isfinite(t0)&&isfinite(t1)&&t1 > t0||throw(AnalysisValidationError("transient interval must be finite and increasing"))
     saveat === nothing||(isfinite(saveat)&&saveat > 0)||throw(AnalysisValidationError("saveat must be finite and positive"))
     max_step === nothing||(isfinite(max_step)&&max_step > 0)||throw(AnalysisValidationError("max_step must be finite and positive"))
-    method in (:bdf1, :bdf2)||throw(AnalysisValidationError("method must be :bdf1 or :bdf2"))
+    method in (:bdf1, :bdf2, :trapezoidal)||throw(AnalysisValidationError("method must be :bdf1, :bdf2, or :trapezoidal"))
     event_mode in (nothing, :exact)||throw(AnalysisValidationError("event_mode must be nothing or :exact"))
     isfinite(reltol)&&reltol > 0||throw(AnalysisValidationError("reltol must be finite and positive"))
     isfinite(abstol)&&abstol > 0||throw(AnalysisValidationError("abstol must be finite and positive"))

@@ -407,21 +407,26 @@ function _assemble_batch!(workspace, batch::PrimitiveBatch{Val{:opamp}}, state, 
         low = _workspace_value(state, q[5]); high = _workspace_value(state, q[4]); limited = clamp(state[Int(internal)], low, high)
         pole = 2π * model.gain_bandwidth / max(model.dc_gain, 1)
         _workspace_add!(residual, q[3], output_current)
-        residual[Int(branch)] += _workspace_value(state, q[3]) - limited - model.output_resistance * output_current
-        residual[Int(internal)] += derivative[Int(internal)] - pole * (target - state[Int(internal)])
+        drop = _workspace_value(state, q[3]) - limited
+        bound = isinf(model.output_current_limit) ? Inf : model.output_resistance * model.output_current_limit
+        output_slope = abs(drop) < bound ? 1.0 : 0.0
+        drive = pole * (target - state[Int(internal)])
+        drive_slope = abs(drive) < model.slew_rate ? 1.0 : 0.0
+        residual[Int(branch)] += clamp(drop, -bound, bound) - model.output_resistance * output_current
+        residual[Int(internal)] += derivative[Int(internal)] - clamp(drive, -model.slew_rate, model.slew_rate)
         _workspace_stamp!(nzval, batch.jacobian_slots[1, device], one(output_current))
-        _workspace_stamp!(nzval, batch.jacobian_slots[2, device], one(output_current))
+        _workspace_stamp!(nzval, batch.jacobian_slots[2, device], output_slope)
         _workspace_stamp!(nzval, batch.jacobian_slots[3, device], -model.output_resistance)
         if state[Int(internal)] < low
-            _workspace_stamp!(nzval, batch.jacobian_slots[6, device], -one(output_current))
+            _workspace_stamp!(nzval, batch.jacobian_slots[6, device], -output_slope)
         elseif state[Int(internal)] > high
-            _workspace_stamp!(nzval, batch.jacobian_slots[5, device], -one(output_current))
+            _workspace_stamp!(nzval, batch.jacobian_slots[5, device], -output_slope)
         else
-            _workspace_stamp!(nzval, batch.jacobian_slots[4, device], -one(output_current))
+            _workspace_stamp!(nzval, batch.jacobian_slots[4, device], -output_slope)
         end
-        _workspace_stamp!(nzval, batch.jacobian_slots[7, device], α + pole)
-        _workspace_stamp!(nzval, batch.jacobian_slots[8, device], -pole * model.dc_gain)
-        _workspace_stamp!(nzval, batch.jacobian_slots[9, device], pole * model.dc_gain)
+        _workspace_stamp!(nzval, batch.jacobian_slots[7, device], α + pole * drive_slope)
+        _workspace_stamp!(nzval, batch.jacobian_slots[8, device], -pole * model.dc_gain * drive_slope)
+        _workspace_stamp!(nzval, batch.jacobian_slots[9, device], pole * model.dc_gain * drive_slope)
     end
     return nothing
 end

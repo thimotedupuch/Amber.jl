@@ -545,6 +545,11 @@ for optional noise coefficients; defaults are not foundry parameters.
 
 Behavioral op-amp model. Gain is a linear V/V ratio, bandwidth is in Hz,
 slew rate in V/s, output resistance in ohms, current limit in A, and offset in V.
+The dominant-pole state derivative is hard-limited by `slew_rate`; output
+current is hard-limited symmetrically by `output_current_limit`. These piecewise
+models use consistent one-sided Jacobians away from their knees. Small-signal
+noise linearization at a limiting knee is not qualified. Nonzero saturation
+recovery remains unsupported.
 Defaults include zero input bias current, input capacitance, saturation recovery,
 and noise densities; they do not describe a particular real part.
 

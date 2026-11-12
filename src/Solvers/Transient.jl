@@ -163,7 +163,7 @@ function _transient(
         c, p::Pair; saveat = nothing, max_step = nothing, method = :bdf2, adaptive = nothing,
         reltol = nothing, abstol = nothing, maxiters = nothing, initial = nothing, event_mode = nothing,
         temperature = 300.0, solver = SolverOptions(), integration = IntegrationOptions(),
-        failure_policy = :return_partial, overrides = nothing
+        failure_policy = :return_partial, overrides = nothing, recorder = nothing
     )
     p = _si_value(first(p), Unitful.s) => _si_value(last(p), Unitful.s)
     saveat = _si_value(saveat, Unitful.s)
@@ -193,10 +193,12 @@ function _transient(
     grid = _merge_time_grid(grid, dt; preferred = union(output_targets, Set([t1])))
     boundary_index = 1
     z = _initial_transient_state(cc, initial; temperature, workspace, solver)
+    recorder === nothing || recorder(t0, copy(z))
     times = Float64[t0]; states = [copy(z)]; orders = Int[0]
     save_sparse = saveat !== nothing
     saved_states = [copy(z)]; saved_indices = Int[1]
     total_iterations = 0; rejected = 0; attempts = 0; restart = true
+    accepted_step_sizes = Float64[]; error_estimates = Float64[]; rejected_step_sizes = Float64[]
     failed_steps = Int[]; failed_residuals = Any[]; event_times = Float64[]
     failure_reason = nothing
     function step(previous, time, h, qhistory; guess = previous, alpha = inv(h))
@@ -261,7 +263,14 @@ function _transient(
             qhistory = _bdf_storage_history(cc, previous, states[end - 1], ratio, h, alpha; temperature, workspace)
             order = 2
         end
-        if full === nothing||use_bdf2
+        use_trapezoidal = method === :trapezoidal&&!restart&&!event
+        if use_trapezoidal
+            alpha = 2 / h
+            static_previous = copy(_step_residual!(workspace, cc, previous, qprevious, time, 0.0; temperature))
+            qhistory = qprevious - static_previous / alpha
+            order = 2
+        end
+        if full === nothing||use_bdf2||use_trapezoidal
             candidate, it, good = step(previous, endpoint, h, qhistory; alpha); total_iterations += it
         else
             candidate = full; good = full_good
@@ -269,7 +278,7 @@ function _transient(
         good &= full_good
         error = 0.0
         if use_adaptive&&good
-            if use_bdf2
+            if use_bdf2||use_trapezoidal
                 if full === nothing
                     full, it, full_good = step(previous, endpoint, h, qprevious); total_iterations += it
                 end
@@ -288,7 +297,7 @@ function _transient(
             end
         end
         if !good||!isfinite(error)||error > 1
-            rejected += 1
+            rejected += 1; push!(rejected_step_sizes, h)
             if use_adaptive&&h > minimum_step
                 dt = max(minimum_step, h * 0.5); continue
             end
@@ -309,8 +318,10 @@ function _transient(
                 end
             end
         end
+        push!(accepted_step_sizes, h); push!(error_estimates, error)
         event&&push!(event_times, endpoint)
-        z = candidate; push!(times, endpoint); push!(states, copy(z)); push!(orders, order)
+        z = candidate; recorder === nothing || recorder(endpoint, copy(z))
+        push!(times, endpoint); push!(states, copy(z)); push!(orders, order)
         if save_sparse
             if endpoint in output_targets
                 push!(saved_states, copy(z)); push!(saved_indices, length(times))
@@ -333,9 +344,11 @@ function _transient(
         :converged => failure_reason === nothing, :iterations => total_iterations,
         :failed_steps => failed_steps, :failed_residuals => failed_residuals, :bdf_orders => orders,
         :event_times => event_times, :rejected_steps => rejected, :temperature => Float64(temperature),
+        :accepted_step_sizes => accepted_step_sizes, :error_estimates => error_estimates,
+        :rejected_step_sizes => rejected_step_sizes, :integration_method => method,
         :warnings => failure_reason === nothing ? String[] : [failure_reason]
     )
-    if use_adaptive || (save_sparse && length(saved_indices) != length(times))
+    if method === :trapezoidal || use_adaptive || (save_sparse && length(saved_indices) != length(times))
         # Saved samples need not share the integration stencil, and BE step
         # doubling also contains an unsaved midpoint. Trace derivatives must
         # therefore use the saved time axis rather than a fictitious BDF grid.

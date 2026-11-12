@@ -328,7 +328,13 @@ end
 function _validate_model_parameters(model::BehavioralOpAmp)
     _finite_nonnegative_parameter(:input_capacitance, model.input_capacitance)
     isfinite(model.input_bias_current)||throw(ArgumentError("input_bias_current must be finite"))
-    return _unsupported_model_effects(model, (; slew_rate = Inf, output_current_limit = Inf, saturation_recovery = 0.0))
+    for name in (:slew_rate, :output_current_limit)
+        value = getproperty(model, name)
+        value > 0 && !isnan(value)||throw(ArgumentError("$name must be positive"))
+    end
+    isfinite(model.output_resistance) && model.output_resistance >= 0 || throw(ArgumentError("output_resistance must be finite and nonnegative"))
+    isfinite(model.output_current_limit) && model.output_resistance == 0 && throw(ArgumentError("finite output_current_limit requires positive output_resistance"))
+    return _unsupported_model_effects(model, (; saturation_recovery = 0.0))
 end
 function _validate_model_parameters(model::Union{VoltageControlledSwitch, EventSwitch, SmoothSwitch})
     _finite_nonnegative_parameter(:clock_feedthrough, model.clock_feedthrough)

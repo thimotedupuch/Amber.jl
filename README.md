@@ -1263,8 +1263,8 @@ Amber is intentionally transparent about what it does not yet model:
   non-quasi-static effects; its noise model omits junction shot noise.
 - Temperature dependence is partial; there is no electrothermal or self-heating
   solution.
-- Behavioral op-amp parameters are richer than the currently enforced device
-  equations; verify slew/current-limit behavior needed by a particular study.
+- Behavioral op-amps enforce slew and symmetric output-current limits;
+  saturation recovery and noise behavior at hard limit knees remain unqualified.
 - Stochastic transient noise uses a fixed grid. Power-law noise requires finite
   frequency limits.
 - Periodic and phase-noise accuracy depends on PSS convergence, orbit sampling,
@@ -1327,3 +1327,30 @@ snapshot checks, and the on-disk example gallery. Benchmarks live in
 [`benchmark/`](benchmark/).
 
 Amber is licensed under the [MIT License](LICENSE).
+
+## Experimental modeling and analysis extensions
+
+The latest development increments add `TemperaturePolicy` / `device_temperature`
+for explicit temperature resolution, and `CompactModelCallback` /
+`compact_model_point` for validated current/charge characterization callbacks.
+These helpers do not yet provide per-instance thermal physics or external-model
+circuit stamping.
+
+Transient simulation accepts `method=:trapezoidal` and a
+`recorder=(time, state)->...` callback receiving copied SI solver states at accepted
+steps. `save_checkpoint(path, result)` and `resume_transient(circuit, path, stop)`
+provide portable endpoint restart with matching topology and parameters; resume
+restarts integration at first order rather than preserving multistep history.
+`DistributedLine` / `line_abcd` characterize exact uniform RLGC two-ports in the
+frequency domain; they are not yet transient circuit devices.
+
+`MeasurementSpec` / `assess` retain named measurement outcomes and limits.
+`quasistatic_distortion`, `distortion_harmonics`, and
+`distortion_intermodulation` estimate weak memoryless nonlinearities from sampled
+DC transfer curves; they do not solve dynamic nonlinear distortion.
+AmberMakie's `convergenceplot` displays recorded Newton diagnostics.
+
+Implemented scope and next steps are recorded in
+[device models](design_specs/device_model_progress.md),
+[transient engine](design_specs/transient_engine_progress.md), and
+[analysis workbenches](design_specs/analysis_workbench_progress.md).

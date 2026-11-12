@@ -582,3 +582,5 @@ end
 include("cmos_and_regressions.jl")
 
 include("cmos_studies.jl")
+
+include("convergence.jl")
