@@ -1370,3 +1370,20 @@ matrix compatibility is checked at execution, with global fallback. The default
 solver retains factorization reuse; the experimental executor currently extracts
 blocks on each call. See the [regression study](design_specs/structural_solve_regression_study.md)
 for measurements and limitations.
+
+
+For circuits with linear compiled device contracts, an experimental direct DC
+path can eliminate affine equations and reconstruct the original observables:
+
+```julia
+result = reduced_operating_point(compiled)
+voltage(result, :output)
+current(result, :Supply)
+result.stats[:reduction]  # eliminated/retained counts and residual checks
+```
+
+The low-level `reduce_linear_system(A)` plan supports repeated right-hand sides
+through `solve_reduced(plan, b)`. Rebuild the plan when `A` changes. Both normwise
+and componentwise error checks protect reconstruction; nonlinear and dynamic
+transformations are outside this initial implementation. See the
+[regression study](design_specs/linear_reduction_regression_study.md).

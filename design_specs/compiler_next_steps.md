@@ -2,7 +2,7 @@
 
 Work follows the twelve-item compiler investigation in order. Each item receives
 its own implementation and validation checkpoint before the next begins. No
-parallel compiler agents or production backend replacement are planned.
+parallel compiler implementations or default backend replacement are planned.
 
 1. Constitutive-equation IR — experimental typed expression tree and symbolic
    derivatives and complete diode current/charge implemented; 329 targeted assertions pass. Existing handwritten batch
@@ -14,7 +14,9 @@ parallel compiler agents or production backend replacement are planned.
    executor and operating-point strategy; numerical compatibility checks and
    global fallback protect changed matrices. Block-local nonlinear iteration and
    factorization reuse remain future work.
-4. Equation elimination and observable reconstruction — pending.
+4. Equation elimination and observable reconstruction — initial numerical affine
+   reduction implemented with reversible substitutions and a linear-only DC
+   entry point. General symbolic/DAE transformations remain pending.
 5. DAE structure and consistent initialization — pending.
 6. Template symbolic compilation reuse — pending.
 7. Bounded specialization and diversity benchmarks — pending.
@@ -125,3 +127,36 @@ Item 3 validation checkpoint: 60 targeted structural-plan assertions and the
 full package suite (3,212/3,212) pass after the overflow fix. The independent
 review found no further correctness issues. Benchmark data and limitations are
 retained in the regression study; the strategy remains opt-in.
+
+
+## Item 4: reversible affine reduction
+
+`reduce_linear_system(A)` snapshots a numerical linear operator and eliminates
+singleton/two-term equations, with per-step fill bounds, relative pivot screening,
+and stronger-pivot preference at equal fill cost. Sparse column incidence tracks
+affected rows. `reduction_rhs`, `reconstruct_solution`, and `solve_reduced`
+preserve original equation/unknown identities and support repeated RHS values;
+changing matrix coefficients requires rebuilding the plan.
+
+`reduced_operating_point(circuit)` is an opt-in, linear-contract-only direct DC
+entry point. It returns a normal result against the original compiled circuit,
+so node voltages, source currents, component powers, and reporting use their
+original definitions. Nonlinear models are rejected. Default solver and compiled
+circuit layouts are unchanged.
+
+Review found that a global normwise residual can hide errors in weak equations.
+Acceptance now checks both normwise and componentwise backward error. The latter
+uses per-row binary exponent scaling to avoid overflow and underflow. RHS
+substitution overflow triggers global fallback before LU. Nonfinite matrix
+updates stop plan construction without modifying the remaining operator.
+
+This is a numerical operator transformation, not yet symbolic constitutive-IR
+elimination. It does not transform storage laws, DAE constraints, AC feedthrough,
+noise injections, or derivatives of reconstructed observables. Construction still
+rescans candidate equations after each elimination; persistent candidate queues
+and factorization reuse remain future work. See the
+[regression study](linear_reduction_regression_study.md) for evidence and costs.
+
+Item 4 validation checkpoint: 115 new assertions and 166 existing operating-point/
+result/report/display assertions pass. Numerical regressions and performance
+costs are recorded in the study. This remains an opt-in numerical transformation.

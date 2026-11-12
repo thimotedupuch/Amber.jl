@@ -30,6 +30,8 @@ export invertermetrics, switchingmetrics
 export storage_jacobian!
 export StructuralAnalysis, structural_analysis
 export StructuralSolvePlan, structural_solve_plan, structural_solve
+export LinearReduction, reduce_linear_system, reduction_rhs, reconstruct_solution, solve_reduced
+export reduced_operating_point
 export AbstractLinearSolver, SuiteSparseLU, SolverOptions, IntegrationOptions
 export ConvergenceError
 export CircuitValidationError, AnalysisValidationError, CircuitLookupError, LinearSolveError
@@ -131,6 +133,7 @@ include("Results/Tabular.jl")
 include("Solvers/Nonlinear.jl")
 include("Core/StructuralSolvePlan.jl")
 include("Solvers/OperatingPoint.jl")
+include("Core/LinearReduction.jl")
 include("Solvers/Transient.jl")
 include("Solvers/TransientCheckpoint.jl")
 include("Solvers/PeriodicSteadyState.jl")
