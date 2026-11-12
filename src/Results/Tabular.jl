@@ -1,13 +1,12 @@
 """
     result_table(result; signals=nothing)
 
-Return an allocation-owning vector of named tuples in plain Julia values. The
+Return an allocation-owning vector of named tuples with Unitful physical values. The
 first column is `time`, `frequency`, or `point` (operating point); remaining
 columns default to root node voltages. If a root node uses the axis name, the
 axis column receives repeated `_axis` suffixes until its name is unique.
 To select and label columns, pass a named
-tuple of observables or named observations. Values use SI units; include units
-in your chosen column labels when exporting.
+tuple of observables or named observations. Physical values carry SI units. Use `ustrip` when exporting numeric columns.
 
 ```julia
 rows = result_table(result; signals=(output_V=voltage(:out),
@@ -25,7 +24,8 @@ function result_table(result::SimulationResult; signals = nothing)
         _render_segment((_name(design.names, segment.base), segment.index))
             for (index, segment) in enumerate(design.root_ir.net_names) if index != design.root_ir.ground_net
     ]
-    columns = Any[result.axis]
+    axis = result.analysis isa SmallSignal ? result.axis .* Unitful.Hz : result.analysis isa Union{Transient, TransientNoise} ? result.axis .* Unitful.s : result.axis
+    columns = Any[axis]
     if signals === nothing
         while String(axis_name) in nodes
             axis_name = Symbol(axis_name, "_axis")

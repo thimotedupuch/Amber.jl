@@ -622,6 +622,7 @@ function workbench(result::Amber.NoiseResult; referred = :output, view = :auto)
     frequencies = result.frequencies
     psd = referred === :output ? Amber.noise_psd(result) : Amber.input_referred_noise_psd(result)
     psd === nothing && throw(ArgumentError("input-referred noise is unavailable for this result"))
+    psd = _plot_values(psd)
     density = sqrt.(max.(psd, 0.0))
     figure = Makie.Figure(size = (1200, 760))
     density_handle = noiseplot(figure[1:3, 1], result; referred)

@@ -1,10 +1,10 @@
 @testset "noise" begin
     result = noise(LowPass(), 10Hz => 100kHz; output = voltage(:vout), input = :V1, points = 12)
     @test length(noise_density(result)) == 12
-    @test all(>(0), noise_density(result))
+    @test all(value -> value > zero(value), noise_density(result))
     @test all(isfinite, input_referred_noise_density(result))
-    @test integrated_noise(result, 10Hz => 100kHz) > 0
-    @test sum((contribution.output_psd for contribution in result.contributions)) ≈
+    @test integrated_noise(result, 10Hz => 100kHz) > 0V
+    @test sum((contribution.output_psd for contribution in result.contributions)) .* (V^2 / Hz) ≈
         noise_psd(result)
 end
 
@@ -20,7 +20,7 @@ end
         NoiseIdentity(), [10Hz, 1kHz, 10kHz];
         output = voltage(:output), temperature
     )
-    @test noise_psd(result) ≈ fill(4 * 1.380649e-23 * temperature * resistance, 3)
+    @test noise_psd(result) ≈ fill(4 * 1.380649e-23u"J/K" * (temperature * K) * resistance, 3)
     @test only(noise_contributions(result; component = :R1)).mechanism === :thermal
     variance = integrated_noise(result, 10Hz => 10kHz; quantity = :variance)
     @test variance ≈ noise_psd(result)[1] * (10kHz - 10Hz)
@@ -50,7 +50,7 @@ end
         R1 = resistor(output, gnd; value = resistance)
     end
     norton = noise(NortonIdentity(), [1kHz]; output = current(:R1), temperature)
-    @test noise_psd(norton)[1] ≈ 4 * 1.380649e-23 * temperature / resistance
+    @test noise_psd(norton)[1] ≈ 4 * 1.380649e-23u"J/K" * (temperature * K) / resistance
 
     capacitance = 10nF
     @circuit RCNoiseIdentity() begin
@@ -64,7 +64,7 @@ end
         output = voltage(:output), temperature, points = 301
     )
     rc_variance = integrated_noise(rc_noise, 1.0e-3Hz => 1.0e12Hz; quantity = :variance)
-    @test rc_variance ≈ 1.380649e-23 * temperature / capacitance rtol = 0.02
+    @test rc_variance ≈ 1.380649e-23u"J/K" * (temperature * K) / capacitance rtol = 0.02
 
     @circuit ExcessNoise() begin
         gnd = ground()
@@ -171,6 +171,6 @@ end
         R = resistor(output, gnd; value = 1kΩ)
     end
     result = noise(IdealCurrentNoise(), [1kHz, 10kHz]; output = current(:I1), input = :I1)
-    @test noise_psd(result) == [0.0, 0.0]
-    @test input_referred_noise_psd(result) == [0.0, 0.0]
+    @test all(iszero, noise_psd(result))
+    @test all(iszero, input_referred_noise_psd(result))
 end

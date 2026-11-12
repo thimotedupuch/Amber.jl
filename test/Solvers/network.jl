@@ -8,7 +8,7 @@
     @test vec(admittance(result)) ≈ fill(inv(2kΩ), 2)
     @test size(network_parameters(result, :s)) == (1, 1, 2)
     changed = renormalize(result, 75Ω)
-    @test only(changed.ports).reference_impedance == 75Ω
+    @test only(changed.ports).reference_impedance == 75.0
     @test impedance(changed) == impedance(result)
 
     @circuit TwoPortNetwork() begin

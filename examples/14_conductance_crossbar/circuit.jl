@@ -7,7 +7,7 @@ function ConductanceCrossbar(;
     )
     rows, columns = size(conductances)
     length(inputs) == columns||throw(ArgumentError("one input voltage is required per crossbar column"))
-    all(>=(0), conductances)||throw(ArgumentError("physical conductances must be nonnegative"))
+    all(x -> x >= zero(x), conductances)||throw(ArgumentError("physical conductances must be nonnegative"))
 
     c = CircuitBuilder(:ConductanceCrossbar)
     gnd = ground!(c, :gnd)

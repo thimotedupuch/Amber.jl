@@ -165,11 +165,15 @@ function _transient(
         temperature = 300.0, solver = SolverOptions(), integration = IntegrationOptions(),
         failure_policy = :return_partial, overrides = nothing
     )
+    p = _si_value(first(p), Unitful.s) => _si_value(last(p), Unitful.s)
+    saveat = _si_value(saveat, Unitful.s)
+    max_step = _si_value(max_step, Unitful.s)
     solver = _effective_solver(solver; reltol, abstol, maxiters)
     reltol, abstol, maxiters, _ = _solver_values(solver)
     _validate_transient(p; saveat, max_step, method, event_mode, reltol, abstol, maxiters)
     _validate_integration(integration)
     failure_policy in (:throw, :return_partial)||throw(AnalysisValidationError("failure_policy must be :throw or :return_partial"))
+    temperature = _si_value(temperature, Unitful.K)
     isfinite(temperature)&&temperature > 0||throw(AnalysisValidationError("temperature must be finite and positive"))
     cc = compile(c); workspace = SimulationWorkspace(cc)
     integration_indices = _integration_indices(cc)

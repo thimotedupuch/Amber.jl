@@ -42,3 +42,7 @@ function _frequency_axis(position, frequencies; kwargs...)
 end
 
 _engineering_ticks(values) = [strip(engineering(value; digits = 3)) for value in values]
+
+function engineering(value::Amber.Unitful.AbstractQuantity; unit=string(Amber.Unitful.unit(Amber.Unitful.upreferred(value))), digits::Integer=4)
+    return engineering(_plot_scalar(value); unit, digits)
+end

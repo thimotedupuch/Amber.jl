@@ -12,29 +12,29 @@
         point = mosfet_operating_point(m, :nmos, v...)
         shifted = mosfet_operating_point(m, :nmos, (v .+ 3)...)
         opposite = mosfet_operating_point(m, :pmos, (-v)...)
-        @test point.id ≈ shifted.id rtol = 1.0e-11 atol = 1.0e-20
-        @test point.id ≈ -opposite.id rtol = 1.0e-12 atol = 1.0e-20
+        @test point.id ≈ shifted.id rtol = 1.0e-11 atol = 1.0e-20A
+        @test point.id ≈ -opposite.id rtol = 1.0e-12 atol = 1.0e-20A
         @test collect(values(point.charges)) ≈ -collect(values(opposite.charges))
-        @test abs(sum(point.charges)) < 1.0e-28
-        @test maximum(abs, sum(point.capacitance_matrix; dims = 1)) < 1.0e-28
-        @test maximum(abs, sum(point.capacitance_matrix; dims = 2)) < 1.0e-28
+        @test abs(sum(point.charges)) < 1.0e-28u"C"
+        @test maximum(abs, sum(point.capacitance_matrix; dims = 1)) < 1.0e-28F
+        @test maximum(abs, sum(point.capacitance_matrix; dims = 2)) < 1.0e-28F
         reverse = mosfet_operating_point(m, :nmos, v[3], v[2], v[1], v[4])
-        @test point.id ≈ -reverse.id atol = 1.0e-20
+        @test point.id ≈ -reverse.id atol = 1.0e-20A
         @test point.charges.source ≈ reverse.charges.drain
         @test point.charges.drain ≈ reverse.charges.source
         # Independent voltage differences check analytic current and charge derivatives.
-        numerical = Amber._jacobian(z -> collect(values(terminal_charges(m, :nmos, z...))), v)
-        @test norm(point.capacitance_matrix - numerical) < 1.0e-6 * max(norm(numerical), 1.0e-20)
-        ji = Amber._jacobian(z -> [mosfet_operating_point(m, :nmos, z...).id], v)
+        numerical = Amber._jacobian(z -> ustrip.(collect(values(terminal_charges(m, :nmos, z...)))), v)
+        @test norm(ustrip.(point.capacitance_matrix) - numerical) < 1.0e-6 * max(norm(numerical), 1.0e-20)
+        ji = Amber._jacobian(z -> [ustrip(mosfet_operating_point(m, :nmos, z...).id)], v)
         analytic = Amber._mosfet_channel(m, :nmos, v...)[2]
         @test norm(vec(ji) - collect(analytic)) < 1.0e-6 * max(norm(ji), 1.0e-20)
     end
     weak = mosfet_operating_point(m, :nmos, 1.0, -0.2, 0.0, 0.0)
-    @test weak.id > 0
-    @test weak.gm_over_id ≈ 1 / (m.slope_factor * Amber._thermal_voltage(300.0)) rtol = 1.0e-8
+    @test weak.id > 0A
+    @test weak.gm_over_id ≈ 1 / (m.slope_factor * Amber._thermal_voltage(300.0) * V) rtol = 1.0e-8
     strong = mosfet_operating_point(m, :nmos, 100.0, 50.0, 0.0, 0.0)
     beta = m.mobility * m.oxide_capacitance * m.width / m.length
-    @test strong.id ≈ beta / (2m.slope_factor) * (50 - m.threshold_voltage)^2 rtol = 0.02
+    @test strong.id ≈ beta / (2m.slope_factor) * (50 - m.threshold_voltage)^2 * A rtol = 0.02
     @test strong.charges.drain / strong.charges.source ≈ 2 / 3 rtol = 0.01
     nominal = mosfet_operating_point(m, :nmos, 1.0, 1.0, 0.0, 0.0)
     for field in (:width, :multiplicity)
@@ -73,7 +73,7 @@
         ]
         integral = sum((xs[k] * density[k] + xs[k + 1] * density[k + 1]) / 2 for k in 1:(length(xs) - 1)) / (length(xs) - 1)
         scale = -2m.slope_factor * m.oxide_capacitance * m.width * m.length * Amber._thermal_voltage(300.0)
-        @test op.charges.drain ≈ scale * integral rtol = 2.0e-6
+        @test op.charges.drain ≈ scale * integral * u"C" rtol = 2.0e-6
     end
     junction = ChargeBasedMOSFET(
         drain_area = 1.0e-12, source_area = 2.0e-12,
@@ -84,12 +84,12 @@
         e = Amber._charge_mos_evaluate(junction, :nmos, v)
         @test abs(sum(x.value for x in e.currents)) < 1.0e-18
         @test abs(sum(x.value for x in e.charges)) < 1.0e-28
-        numerical = Amber._jacobian(z -> collect(values(terminal_charges(junction, :nmos, z...))), v)
+        numerical = Amber._jacobian(z -> ustrip.(collect(values(terminal_charges(junction, :nmos, z...)))), v)
         @test norm(numerical - [e.charges[i].gradient[j] for i in 1:4,j in 1:4]) < 1.0e-6 * norm(numerical)
     end
     forward = mosfet_operating_point(junction, :nmos, -0.4, -0.5, 0.0, 0.0)
-    @test forward.currents.bulk > 0
-    @test forward.currents.drain < 0
+    @test forward.currents.bulk > 0A
+    @test forward.currents.drain < 0A
 end
 
 @testset "charge-based MOS circuit integration" begin
@@ -123,17 +123,17 @@ end
     @test norm(Matrix(analytic) - numerical) < 1.0e-6 * norm(numerical)
     # Excite one terminal: AC terminal current must match G + jω dQ/dV at the bias.
     ac = small_signal(design, [1.0e3, 1.0e6]; source = :VG)
-    @test current(ac, :M, :gate) ≈ im .* 2π .* ac.axis .* point.capacitance_matrix[2, 2]
-    @test current(ac, :M, :drain) ≈ point.gm .+ im .* 2π .* ac.axis .* point.capacitance_matrix[1, 2]
-    @test maximum(abs, sum(current(ac, :M, terminal) for terminal in (:drain, :gate, :source, :bulk))) < 1.0e-18
-    @test terminal_charges(ac, :M).gate ≈ fill(point.capacitance_matrix[2, 2], 2)
+    @test current(ac, :M, :gate) ≈ im .* 2π .* ac.axis .* point.capacitance_matrix[2, 2] * V * Hz
+    @test current(ac, :M, :drain) ≈ point.gm * V .+ im .* 2π .* ac.axis .* point.capacitance_matrix[1, 2] * V * Hz
+    @test maximum(abs, sum(current(ac, :M, terminal) for terminal in (:drain, :gate, :source, :bulk))) < 1.0e-18A
+    @test terminal_charges(ac, :M).gate ≈ fill(point.capacitance_matrix[2, 2] * V, 2)
     transient_result = transient(
         ChargeMOSBias(waveform = Sine(offset = 1.0, amplitude = 0.01, frequency = 1.0e5)),
         0.0 => 2.0e-5; max_step = 1.0e-7
     )
     @test transient_result.stats[:converged]
-    @test maximum(abs, sum(current(transient_result, :M, terminal) for terminal in (:drain, :gate, :source, :bulk))) < 1.0e-18
-    @test maximum(abs, sum(values(terminal_charges(transient_result, :M)))) < 1.0e-27
+    @test maximum(abs, sum(current(transient_result, :M, terminal) for terminal in (:drain, :gate, :source, :bulk))) < 1.0e-18A
+    @test maximum(abs, sum(values(terminal_charges(transient_result, :M)))) < 1.0e-27u"C"
     @circuit ChargeMOSAmplifier() begin
         gnd = ground(); supply = node(); gate = node(); output = node()
         VDD = voltage_source(supply, gnd; dc = 1.8)
@@ -143,9 +143,9 @@ end
         C = capacitor(output, gnd; value = 1pF)
     end
     amplifier = ChargeMOSAmplifier()
-    @test real(voltage(small_signal(amplifier, [1.0e3]; source = :VG), :output)[1]) < 0
+    @test real(voltage(small_signal(amplifier, [1.0e3]; source = :VG), :output)[1]) < 0V
     nr = noise(amplifier, [1.0e3, 1.0e4]; output = voltage(:output))
-    @test all(>(0), noise_density(nr))
+    @test all(value -> value > zero(value), noise_density(nr))
     @test any(contains("ChargeBasedMOSFET"), validity_report(nr)[:warnings])
 end
 
@@ -167,7 +167,7 @@ end
     for method in (:bdf1, :bdf2)
         tr = transient(ChargeInverter(), 0s => 200ns; max_step = 0.5ns, method, event_mode = :exact)
         @test tr.stats[:converged]
-        @test minimum(voltage(tr, :output)) < 0.1
-        @test maximum(voltage(tr, :output)) > 1.7
+        @test minimum(voltage(tr, :output)) < 0.1V
+        @test maximum(voltage(tr, :output)) > 1.7V
     end
 end

@@ -202,6 +202,7 @@ function _foreach_hierarchical_primitive(f::F, design::CircuitDesign, root_mappi
     for (primitive_index, primitive) in enumerate(design.root_ir.primitives)
         terminals = ntuple(i -> root_mapping[Int(design.root_ir.terminal_data[first(primitive.terminals) + i - 1])], length(primitive.terminals))
         parameters = materialize ? _materialize_parameter(primitive.parameters, _EmptyParameterValues(), nothing) : nothing
+        materialize && (parameters = _normalized_component_parameters(typeof(primitive.kernel).parameters[1], parameters))
         f(primitive, terminals, parameters, DeviceLocator(InstanceId(0), TemplateId(0), Int32(primitive_index), PathId(0)))
     end
     for (instance_index, record) in enumerate(design.root.records)
@@ -215,6 +216,7 @@ function _foreach_hierarchical_primitive(f::F, design::CircuitDesign, root_mappi
                 ), length(primitive.terminals)
             )
             parameters = materialize ? _materialize_parameter(primitive.parameters, parameter_values, nothing) : nothing
+            materialize && (parameters = _normalized_component_parameters(typeof(primitive.kernel).parameters[1], parameters))
             f(primitive, terminals, parameters, DeviceLocator(InstanceId(instance_index), record.template, Int32(primitive_index), record.path))
         end
     end
@@ -464,6 +466,7 @@ function _parameter_device_path(design, locator)
 end
 
 function _updated_batch(batch::ResistorBatch, design, parameter, indices, value; owned = false)
+    value = _component_parameter(:resistor, parameter, value)
     parameter === :value || throw(ArgumentError("resistor batches expose the numerical parameter `value`"))
     conductance = owned ? batch.conductance : copy(batch.conductance)
     parameters = owned ? batch.parameters : copy(batch.parameters)
@@ -523,7 +526,7 @@ function _updated_batch(batch::PrimitiveBatch{K, N, P}, design, parameter, indic
             throw(TopologyParameterError(path(), parameter))
         parameter in _elaborated_model_parameters(K) && throw(TopologyParameterError(path(), parameter))
         parameter in (:control, :control_count) && throw(TopologyParameterError(path(), parameter))
-        updated = direct ? merge(values[index], NamedTuple{(parameter,)}((value,))) :
+        updated = direct ? merge(values[index], NamedTuple{(parameter,)}((_component_parameter(_batch_kind(batch), parameter, value),))) :
             merge(values[index], (model = with_model_parameter(model, parameter, value),))
         model === nothing || _check_model_update(K, model, updated.model, path())
         try

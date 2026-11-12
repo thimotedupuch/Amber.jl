@@ -10,7 +10,7 @@
     @test result.stats[:converged]
     @test result.residual_norm < 1.0e-5
     @test length(result.floquet_multipliers) == size(result.monodromy, 1)
-    @test voltage(result.orbit, :output)[1] ≈ voltage(result.orbit, :output)[end] atol = 1.0e-5
+    @test voltage(result.orbit, :output)[1] ≈ voltage(result.orbit, :output)[end] atol = 1.0e-5V
     periodic_result = periodic_noise(
         result, [100Hz, 200Hz];
         output = voltage(:output), sidebands = -1:1
@@ -18,8 +18,8 @@
     stationary_result = noise(DrivenRC(), [100Hz, 200Hz]; output = voltage(:output))
     @test noise_psd(periodic_result) ≈ noise_psd(stationary_result) rtol = 1.0e-4
     direct = periodic_noise(result, [100Hz]; output = current(:Iprobe), input = :Iprobe, sidebands = -1:1)
-    @test noise_psd(direct) == [0.0]
-    @test input_referred_noise_psd(direct) == [0.0]
+    @test all(iszero, noise_psd(direct))
+    @test all(iszero, input_referred_noise_psd(direct))
 
     @test_throws AnalysisValidationError phase_noise(
         result, [100Hz];

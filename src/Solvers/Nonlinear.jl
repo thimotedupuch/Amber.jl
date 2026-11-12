@@ -78,6 +78,9 @@ function _newton(
         line_search_minimum = 1 / 256, voltage_abstol = max(abstol, 1.0e-9), state_abstol = abstol,
         linear_solver = SuiteSparseLU(), history = nothing, storage_history = nothing
     )
+    t = _si_value(t, Unitful.s)
+    α = _si_value(α, inv(Unitful.s))
+    temperature = _si_value(temperature, Unitful.K)
     workspace === nothing && (workspace = SimulationWorkspace(cc))
     qhistory = iszero(α) ? nothing : storage_history === nothing ?
         _storage(cc, previous; temperature, workspace) : storage_history

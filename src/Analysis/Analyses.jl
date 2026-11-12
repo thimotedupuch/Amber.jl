@@ -7,6 +7,14 @@ abstract type AbstractLinearSolver end
 Base.@kwdef struct SuiteSparseLU <: AbstractLinearSolver
     ordering::Symbol = :amd
     pivot_tolerance::Float64 = 0.1
+    function SuiteSparseLU(
+            ordering, pivot_tolerance
+        )
+        return new(
+            _analysis_parameter(:ordering, ordering),
+            _analysis_parameter(:pivot_tolerance, pivot_tolerance)
+        )
+    end
 end
 
 """
@@ -41,6 +49,20 @@ Base.@kwdef struct SolverOptions
     line_search_minimum::Float64 = 1 / 256
     continuation_maxdepth::Int = 10
     linear_solver::AbstractLinearSolver = SuiteSparseLU()
+    function SolverOptions(
+            reltol, voltage_abstol, current_abstol, state_abstol, max_newton_iterations, line_search_minimum, continuation_maxdepth, linear_solver
+        )
+        return new(
+            _analysis_parameter(:reltol, reltol),
+            _analysis_parameter(:voltage_abstol, voltage_abstol),
+            _analysis_parameter(:current_abstol, current_abstol),
+            _analysis_parameter(:state_abstol, state_abstol),
+            _analysis_parameter(:max_newton_iterations, max_newton_iterations),
+            _analysis_parameter(:line_search_minimum, line_search_minimum),
+            _analysis_parameter(:continuation_maxdepth, continuation_maxdepth),
+            _analysis_parameter(:linear_solver, linear_solver)
+        )
+    end
 end
 
 function _validate_solver_options(options::SolverOptions)
@@ -129,6 +151,18 @@ Base.@kwdef struct IntegrationOptions
     state_abstol::Float64 = 1.0e-9
     max_steps::Int = 100_000
     min_step::Float64 = 0.0
+    function IntegrationOptions(
+            reltol, voltage_abstol, current_abstol, state_abstol, max_steps, min_step
+        )
+        return new(
+            _analysis_parameter(:reltol, reltol),
+            _analysis_parameter(:voltage_abstol, voltage_abstol),
+            _analysis_parameter(:current_abstol, current_abstol),
+            _analysis_parameter(:state_abstol, state_abstol),
+            _analysis_parameter(:max_steps, max_steps),
+            _analysis_parameter(:min_step, min_step)
+        )
+    end
 end
 
 function _validate_integration(options::IntegrationOptions)
@@ -144,6 +178,14 @@ end
 Base.@kwdef struct OperatingPoint <: AbstractAnalysis
     solver::SolverOptions = SolverOptions()
     temperature::Float64 = 300.0
+    function OperatingPoint(
+            solver, temperature
+        )
+        return new(
+            _analysis_parameter(:solver, solver),
+            _analysis_parameter(:temperature, temperature)
+        )
+    end
 end
 
 Base.@kwdef struct TransientNoise <: AbstractAnalysis
@@ -156,6 +198,21 @@ Base.@kwdef struct TransientNoise <: AbstractAnalysis
     event_mode::Union{Nothing, Symbol} = nothing
     initial::Union{Nothing, Symbol, Vector{Float64}} = nothing
     solver::SolverOptions = SolverOptions(reltol = 1.0e-6, current_abstol = 1.0e-9, voltage_abstol = 1.0e-9, state_abstol = 1.0e-9, max_newton_iterations = 120)
+    function TransientNoise(
+            interval, timestep, saveat, seed, temperature, low_frequency_cutoff, event_mode, initial, solver
+        )
+        return new(
+            _analysis_parameter(:interval, interval),
+            _analysis_parameter(:timestep, timestep),
+            _analysis_parameter(:saveat, saveat),
+            _analysis_parameter(:seed, seed),
+            _analysis_parameter(:temperature, temperature),
+            _analysis_parameter(:low_frequency_cutoff, low_frequency_cutoff),
+            _analysis_parameter(:event_mode, event_mode),
+            _analysis_parameter(:initial, initial),
+            _analysis_parameter(:solver, solver)
+        )
+    end
 end
 
 Base.@kwdef struct Transient <: AbstractAnalysis
@@ -171,11 +228,29 @@ Base.@kwdef struct Transient <: AbstractAnalysis
     event_mode::Union{Nothing, Symbol} = nothing
     integration::IntegrationOptions = IntegrationOptions()
     failure_policy::Symbol = :return_partial
+    function Transient(
+            interval, saveat, max_step, method, adaptive, temperature, overrides, solver, initial, event_mode, integration, failure_policy
+        )
+        return new(
+            _analysis_parameter(:interval, interval),
+            _analysis_parameter(:saveat, saveat),
+            _analysis_parameter(:max_step, max_step),
+            _analysis_parameter(:method, method),
+            _analysis_parameter(:adaptive, adaptive),
+            _analysis_parameter(:temperature, temperature),
+            _analysis_parameter(:overrides, overrides),
+            _analysis_parameter(:solver, solver),
+            _analysis_parameter(:initial, initial),
+            _analysis_parameter(:event_mode, event_mode),
+            _analysis_parameter(:integration, integration),
+            _analysis_parameter(:failure_policy, failure_policy)
+        )
+    end
 end
-Transient(p::Pair; kw...) = Transient(interval = Float64(first(p)) => Float64(last(p)); kw...)
+Transient(p::Pair; kw...) = Transient(interval = Float64(_si_value(first(p), Unitful.s)) => Float64(_si_value(last(p), Unitful.s)); kw...)
 
 function _validate_transient(interval; saveat = nothing, max_step = nothing, method = :bdf2, event_mode = nothing, reltol = 1.0e-6, abstol = 1.0e-9, maxiters = 120)
-    t0, t1 = Float64(first(interval)), Float64(last(interval))
+    t0, t1 = Float64(_si_value(first(interval), Unitful.s)), Float64(_si_value(last(interval), Unitful.s))
     isfinite(t0)&&isfinite(t1)&&t1 > t0||throw(AnalysisValidationError("transient interval must be finite and increasing"))
     saveat === nothing||(isfinite(saveat)&&saveat > 0)||throw(AnalysisValidationError("saveat must be finite and positive"))
     max_step === nothing||(isfinite(max_step)&&max_step > 0)||throw(AnalysisValidationError("max_step must be finite and positive"))
@@ -187,7 +262,7 @@ function _validate_transient(interval; saveat = nothing, max_step = nothing, met
 end
 
 function _validate_frequency_range(range, points, scale)
-    low, high = Float64(first(range)), Float64(last(range))
+    low, high = Float64(_si_value(first(range), Unitful.Hz)), Float64(_si_value(last(range), Unitful.Hz))
     isfinite(low)&&isfinite(high)&&high >= low||throw(AnalysisValidationError("frequency range must be finite and increasing"))
     low >= 0||throw(AnalysisValidationError("frequencies must be non-negative"))
     scale in (:log, :linear)||throw(AnalysisValidationError("frequency scale must be :log or :linear"))
@@ -199,7 +274,7 @@ end
 
 function _validate_frequency_grid(frequencies::AbstractVector)
     isempty(frequencies)&&throw(AnalysisValidationError("frequency grid must not be empty"))
-    fs = Float64.(frequencies)
+    fs = Float64.(_si_value(frequencies, Unitful.Hz))
     all(isfinite, fs)||throw(AnalysisValidationError("frequencies must be finite"))
     all(>=(0), fs)||throw(AnalysisValidationError("frequencies must be non-negative"))
     all(diff(fs) .> 0)||throw(AnalysisValidationError("frequency grid must be strictly increasing"))
@@ -211,9 +286,20 @@ Base.@kwdef struct SmallSignal <: AbstractAnalysis
     source::Union{Nothing, Symbol, String} = nothing
     temperature::Float64 = 300.0
     solver::SolverOptions = SolverOptions()
+    function SmallSignal(
+            frequencies, source, temperature, solver
+        )
+        return new(
+            _analysis_parameter(:frequencies, frequencies),
+            _analysis_parameter(:source, source),
+            _analysis_parameter(:temperature, temperature),
+            _analysis_parameter(:solver, solver)
+        )
+    end
 end
 SmallSignal(frequencies::AbstractVector; kw...) = SmallSignal(frequencies = _validate_frequency_grid(frequencies); kw...)
 function SmallSignal(range::Pair; points = 100, scale = :log, kw...)
+    range = _si_value(first(range), Unitful.Hz) => _si_value(last(range), Unitful.Hz)
     _validate_frequency_range(range, points, scale)
     frequencies = first(range) == last(range) ? [Float64(first(range))] : scale === :log ? collect(10 .^ Base.range(log10(first(range)), log10(last(range)), length = points)) : collect(Base.range(first(range), last(range), length = points))
     return SmallSignal(frequencies; kw...)

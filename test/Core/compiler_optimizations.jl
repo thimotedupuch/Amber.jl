@@ -112,7 +112,7 @@ end
     @test ac.stats[:symbolic_factorizations] == 1
     @test ac.stats[:numeric_factorizations] == length(fs)
     # Independent RC transfer function, including DC.
-    @test voltage(ac, :vout) ≈ 1 ./ (1 .+ im * 2π .* fs .* 1.0e4 .* 1.0e-8)
+    @test voltage(ac, :vout) ≈ V ./ (1 .+ im * 2π .* fs .* 1.0e4 .* 1.0e-8)
 end
 
 @testset "resolved parameter updates" begin

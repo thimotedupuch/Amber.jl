@@ -80,8 +80,8 @@ function safeoperatingareaplot(
         device, voltage, limits = (;), kwargs...
     )
     voltage_values = voltage isa AbstractVector ? Float64.(real.(voltage)) :
-        Float64.(real.(Amber.trace(result, voltage)))
-    current_values = Float64.(real.(Amber.current(result, device)))
+        Float64.(_plot_values(real.(Amber.trace(result, voltage))))
+    current_values = Float64.(_plot_values(real.(Amber.current(result, device))))
     length(voltage_values) == length(current_values) ||
         throw(DimensionMismatch("SOA voltage and current traces differ in length"))
     v = abs.(voltage_values); i = abs.(current_values); p = v .* i
@@ -160,7 +160,7 @@ function powerdashboard(
     powers = Pair{String, Float64}[]
     for name in selected
         value = try
-            _average_trace(result.axis, Amber.power(result, name))
+            _average_trace(result.axis, _plot_values(Amber.power(result, name)))
         catch
             continue
         end
@@ -171,7 +171,7 @@ function powerdashboard(
     supplied = -sum(min(value, 0.0) for value in values)
     absorbed = sum(max(value, 0.0) for value in values)
     output_power = output === nothing ? nothing :
-        _average_trace(result.axis, Amber.power(result, String(output)))
+        _average_trace(result.axis, _plot_values(Amber.power(result, String(output))))
     efficiency = output_power === nothing || iszero(supplied) ? nothing :
         max(output_power, 0.0) / supplied
     slot = _position(position); layout = Makie.GridLayout(slot)

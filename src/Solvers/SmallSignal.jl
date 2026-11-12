@@ -1,5 +1,6 @@
 function _small_signal_frequencies(specification; points, scale)
     if specification isa Pair
+        specification = _si_value(first(specification), Unitful.Hz) => _si_value(last(specification), Unitful.Hz)
         _validate_frequency_range(specification, points, scale)
         first(specification) == last(specification)&&return [Float64(first(specification))]
         return scale === :log ? collect(10 .^ range(log10(first(specification)), log10(last(specification)), length = points)) : collect(range(first(specification), last(specification), length = points))
@@ -8,6 +9,7 @@ function _small_signal_frequencies(specification; points, scale)
 end
 
 function small_signal(c, p::Union{Pair, AbstractVector}; points = p isa AbstractVector ? length(p) : 100, scale = :log, source = nothing, temperature = 300.0, solver = SolverOptions(), kw...)
+    temperature = _si_value(temperature, Unitful.K)
     isfinite(temperature)&&temperature > 0||throw(AnalysisValidationError("temperature must be finite and positive"))
     cc = compile(c); operating_point_result = _require_converged(operating_point(cc; temperature, solver, kw...), "small-signal operating point"); op = operating_point_result.values[:, 1]
     fs = _small_signal_frequencies(p; points, scale)

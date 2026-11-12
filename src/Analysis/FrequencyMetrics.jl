@@ -4,8 +4,8 @@ db10(values) = 10 .* log10.(abs.(values))
 function _frequency_derivative(frequencies, values)
     length(frequencies) == length(values)||throw(DimensionMismatch("frequency and response vectors must have equal lengths"))
     length(frequencies) >= 2||throw(ArgumentError("at least two frequency points are required"))
-    all(diff(frequencies) .> 0)||throw(ArgumentError("frequencies must be strictly increasing"))
-    derivative = similar(Float64.(values))
+    all(value -> value > zero(value), diff(frequencies))||throw(ArgumentError("frequencies must be strictly increasing"))
+    derivative = similar(values, typeof((values[2] - values[1]) / (frequencies[2] - frequencies[1])))
     derivative[1] = (values[2] - values[1]) / (frequencies[2] - frequencies[1])
     derivative[end] = (values[end] - values[end - 1]) / (frequencies[end] - frequencies[end - 1])
     for index in 2:(length(values) - 1)
@@ -18,11 +18,11 @@ function _frequency_derivative(frequencies, values)
     return derivative
 end
 
-group_delay(frequencies::AbstractVector, response::AbstractVector) = -_frequency_derivative(2π .* Float64.(frequencies), phase(response; unwrap = true))
+group_delay(frequencies::AbstractVector, response::AbstractVector) = -_frequency_derivative(2π .* frequencies, phase(response; unwrap = true))
 function phase_delay(frequencies::AbstractVector, response::AbstractVector)
     length(frequencies) == length(response)||throw(DimensionMismatch("frequency and response vectors must have equal lengths"))
     phases = phase(response; unwrap = true)
-    return [iszero(frequency) ? NaN : -value / (2π * frequency) for (frequency, value) in zip(frequencies, phases)]
+    return [iszero(frequency) ? NaN / oneunit(frequency) : -value / (2π * frequency) for (frequency, value) in zip(frequencies, phases)]
 end
 group_delay(result::SimulationResult; input, output) = group_delay(frequencies(result), transfer(result; input, output))
 phase_delay(result::SimulationResult; input, output) = phase_delay(frequencies(result), transfer(result; input, output))
@@ -71,15 +71,15 @@ end
 cutoff_frequencies(frequencies, response; reference = first(abs.(response)), level_db = -3.0) = _magnitude_crossings(frequencies, response, db20(reference) + level_db)
 cutoff_frequencies(result::SimulationResult; input, output, kw...) = cutoff_frequencies(frequencies(result), transfer(result; input, output); kw...)
 
-struct FrequencyBand
-    low::Float64
-    high::Float64
+struct FrequencyBand{T}
+    low::T
+    high::T
 end
 
 function passbands(frequencies, response; reference = maximum(abs.(response)), level_db = -3.0)
     length(frequencies) == length(response)||throw(DimensionMismatch("frequency and response vectors must have equal lengths"))
     length(frequencies) >= 2||throw(ArgumentError("at least two frequency points are required"))
-    all(isfinite, frequencies) && all(diff(frequencies) .> 0)||throw(ArgumentError("frequencies must be finite and strictly increasing"))
+    all(isfinite, frequencies) && all(value -> value > zero(value), diff(frequencies))||throw(ArgumentError("frequencies must be finite and strictly increasing"))
     values = db20(response); threshold = db20(reference) + level_db; edges = _magnitude_crossings(frequencies, response, threshold)
     boundaries = unique(vcat(Float64(first(frequencies)), edges, Float64(last(frequencies)))); bands = FrequencyBand[]
     for index in 1:(length(boundaries) - 1)
@@ -112,8 +112,8 @@ function bandwidth(result::SimulationResult; input, output, which = :largest, kw
     return which === :first ? bandwidth(first(bands)) : which === :last ? bandwidth(last(bands)) : which === :largest ? maximum(bandwidth.(bands)) : throw(ArgumentError("which must be :first, :last, or :largest"))
 end
 
-struct Resonance
-    frequency::Float64
+struct Resonance{T}
+    frequency::T
     magnitude::Float64
     index::Int
 end
@@ -170,10 +170,10 @@ function integrated_noise(
         result::NoiseResult, band::Pair; referred = :output,
         interpolate_edges = true, quantity = :rms, contributions = false
     )
-    low, high = Float64(first(band)), Float64(last(band))
+    low, high = Float64(_si_value(first(band), Unitful.Hz)), Float64(_si_value(last(band), Unitful.Hz))
     high > low||throw(ArgumentError("noise integration band must be increasing"))
-    psd = referred === :output ? noise_psd(result) :
-        referred === :input ? input_referred_noise_psd(result) :
+    psd = referred === :output ? result.output_psd :
+        referred === :input ? result.input_referred_psd :
         throw(ArgumentError("referred must be :output or :input"))
     psd === nothing&&throw(ArgumentError("input-referred noise was not computed"))
     quantity in (:rms, :variance)||throw(
@@ -181,7 +181,8 @@ function integrated_noise(
             "noise integration quantity must be :rms or :variance"
         )
     )
-    convert_value(value) = quantity === :rms ? sqrt(max(value, 0.0)) : value
+    units = referred === :output ? _noise_output_unit(result) : _noise_input_unit(result)
+    convert_value(value) = quantity === :rms ? sqrt(max(value, 0.0)) * units : value * units^2
     total = convert_value(
         _integrate_noise_psd(
             result.frequencies, psd, low, high;
@@ -189,7 +190,7 @@ function integrated_noise(
         )
     )
     contributions||return total
-    by_source = Dict{Symbol, Float64}()
+    by_source = Dict{Symbol, typeof(total)}()
     for contribution in result.contributions
         source_psd = referred === :output ? contribution.output_psd :
             contribution.input_referred_psd
@@ -201,4 +202,17 @@ function integrated_noise(
         by_source[contribution.source] = convert_value(variance)
     end
     return (total = total, contributions = by_source)
+end
+
+function crossings(f::AbstractVector{<:Unitful.AbstractQuantity}, values::AbstractVector; kwargs...)
+    return crossings(_si_value(f, Unitful.Hz), values; kwargs...) .* Unitful.Hz
+end
+function cutoff_frequencies(f::AbstractVector{<:Unitful.AbstractQuantity}, response; kwargs...)
+    return cutoff_frequencies(_si_value(f, Unitful.Hz), response; kwargs...) .* Unitful.Hz
+end
+function passbands(f::AbstractVector{<:Unitful.AbstractQuantity}, response; kwargs...)
+    return [FrequencyBand(b.low * Unitful.Hz, b.high * Unitful.Hz) for b in passbands(_si_value(f, Unitful.Hz), response; kwargs...)]
+end
+function resonances(f::AbstractVector{<:Unitful.AbstractQuantity}, response)
+    return [Resonance(r.frequency * Unitful.Hz, r.magnitude, r.index) for r in resonances(_si_value(f, Unitful.Hz), response)]
 end

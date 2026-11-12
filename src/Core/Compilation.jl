@@ -39,7 +39,7 @@ end
 compile(compiled::CompiledCircuit) = compiled
 
 _v(values, index) = index == 0 ? zero(eltype(values)) : values[index]
-_thermal_voltage(temperature) = 1.380649e-23 * Float64(temperature) / 1.602176634e-19
+_thermal_voltage(temperature) = 1.380649e-23 * Float64(_si_value(temperature, Unitful.K)) / 1.602176634e-19
 
 function _limited_exponential(argument)
     return if argument > 80.0
@@ -108,6 +108,9 @@ end
 
 """Allocating compatibility wrapper around in-place residual/Jacobian assembly."""
 function residual_jacobian(compiled::CompiledCircuit, state, previous, time, alpha; mode = :time, source_scale = 1.0, gmin = 0.0, temperature = 300.0)
+    time = _si_value(time, Unitful.s)
+    alpha = _si_value(alpha, inv(Unitful.s))
+    temperature = _si_value(temperature, Unitful.K)
     workspace = SimulationWorkspace(compiled; scalar_type = eltype(state))
     residual_values, jacobian_values = residual_jacobian!(
         workspace, compiled, state, previous, time, alpha;

@@ -8,7 +8,7 @@ Base.showerror(io::IO, error::CircuitSerializationError) = print(io, error.messa
 
 const _SERIALIZABLE_STRUCTS = Dict{String, Any}(
     String(nameof(type)) => type for type in (
-            Step, Sine, Pulse, _PASSIVE_MODELS..., DebyeBranches,
+            Step, Sine, Pulse, SIWaveform, _PASSIVE_MODELS..., DebyeBranches,
             JunctionDiode, GummelPoonBJT, Level1MOSFET, ChargeBasedMOSFET, BehavioralOpAmp,
             VoltageControlledSwitch, EventSwitch, SmoothSwitch,
             IdealResistor, IdealCapacitor, MatchedGroup, Differential,
@@ -17,9 +17,18 @@ const _SERIALIZABLE_STRUCTS = Dict{String, Any}(
 
 _stable_sort_key(value) = sprint(show, value)
 
+# Unitful prints dimensionless and percentage units using display abbreviations.
+_serialized_unit(text) = isempty(text) ? Unitful.NoUnits : text == "%" ? Unitful.percent : Unitful.uparse(text)
+
+function _encode_value(value::Unitful.AbstractQuantity)
+    return Dict("type" => "quantity", "value" => _encode_value(Unitful.ustrip(value)),
+        "unit" => replace(string(Unitful.unit(value)), " " => "*"))
+end
+
 _encode_value(::Nothing) = Dict("type" => "nothing")
 _encode_value(value::Bool) = Dict("type" => "bool", "value" => value)
 _encode_value(value::Integer) = Dict("type" => "integer", "value" => string(value), "unsigned" => value isa Unsigned)
+_encode_value(value::Rational) = Dict("type" => "rational", "numerator" => string(numerator(value)), "denominator" => string(denominator(value)))
 _encode_value(value::AbstractFloat) = Dict("type" => "float", "value" => Float64(value))
 _encode_value(value::Complex) = Dict("type" => "complex", "real" => Float64(real(value)), "imag" => Float64(imag(value)))
 _encode_value(value::AbstractString) = Dict("type" => "string", "value" => String(value))
@@ -47,6 +56,8 @@ end
 function _decode_value(encoded, nodes, components, depth::Int = 0, max_depth::Int = 64)
     depth <= max_depth||throw(CircuitSerializationError("serialized value exceeds the nesting-depth limit"))
     kind = encoded["type"]
+    kind == "rational" && return parse(Int, encoded["numerator"]) // parse(Int, encoded["denominator"])
+    kind == "quantity" && return _decode_value(encoded["value"], nodes, components, depth + 1, max_depth) * _serialized_unit(encoded["unit"])
     kind == "nothing" && return nothing
     kind in ("bool", "float", "string") && return encoded["value"]
     kind == "complex" && return ComplexF64(encoded["real"], encoded["imag"])

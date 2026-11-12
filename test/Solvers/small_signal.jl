@@ -1,6 +1,6 @@
 @testset "small signal" begin
     result = small_signal(LowPass(), 10Hz => 1MHz; points = 20)
-    @test abs(voltage(result, :vout)[1]) > 0.9; @test length(frequencies(result)) == 20
+    @test abs(voltage(result, :vout)[1]) > 0.9V; @test length(frequencies(result)) == 20
     @circuit BiasedAC() begin
         gnd = ground(); supply = node(); input = node(); output = node()
         VDD = voltage_source(supply, gnd; dc = 12V)
@@ -16,8 +16,8 @@ end
     grid = [10Hz, 100Hz, 1kHz, 10kHz]
     result = small_signal(LowPass(), grid; source = :V1)
     @test frequencies(result) == grid
-    @test result.analysis.frequencies == grid
-    @test length(db20(voltage(result, :vout))) == length(grid)
+    @test result.analysis.frequencies == ustrip.(uconvert.(Hz, grid))
+    @test length(db20(voltage(result, :vout) ./ V)) == length(grid)
     @test phase(ComplexF64[-1 - im, -1 + im]; unwrap = true)[2] < phase(ComplexF64[-1 - im, -1 + im]; unwrap = true)[1]
     @test all(isfinite, group_delay(grid, voltage(result, :vout)))
     @test_throws AnalysisValidationError small_signal(LowPass(), [1kHz, 100Hz])
@@ -32,7 +32,7 @@ end
 
 @testset "single canonical small-signal API" begin
     analysis = SmallSignal(10Hz => 1kHz; points = 3, source = :V1)
-    @test analysis.frequencies ≈ [10Hz, 100Hz, 1kHz]
+    @test analysis.frequencies ≈ [10, 100, 1000]
     @test !hasproperty(analysis, :points)
     @test !hasproperty(analysis, :scale)
 

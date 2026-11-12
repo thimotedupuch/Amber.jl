@@ -40,8 +40,8 @@ end
     end
     for reverse in (false, true)
         result = transient(InitialNetwork(reverse = reverse), 0.0 => 1.0e-6; saveat = 1.0e-6)
-        @test voltage(result, :a)[1] ≈ 3
-        @test voltage(result, :b)[1] ≈ 2
+        @test voltage(result, :a)[1] ≈ 3V
+        @test voltage(result, :b)[1] ≈ 2V
     end
     @test_throws AnalysisValidationError transient(InitialNetwork(conflict = true), 0.0 => 1.0e-6; saveat = 1.0e-6)
     @test_throws AnalysisValidationError transient(LowPass(), 0.0 => 1.0e-3; initial = :typo)
@@ -57,7 +57,7 @@ end
     tight = IntegrationOptions(reltol = 1.0e-5, current_abstol = 1.0e-8)
     first_run = transient(InductorIntegration(), 0.0 => 1.0; initial = :discharged, adaptive = true, max_step = 0.2, integration = loose)
     refined = transient(InductorIntegration(), 0.0 => 1.0; initial = :discharged, adaptive = true, max_step = 0.2, integration = tight)
-    exact = (1.0e-6 * sin(1.0) - cos(1.0) + exp(-1.0e-6)) / (1 + 1.0e-12)
+    exact = (1.0e-6 * sin(1.0) - cos(1.0) + exp(-1.0e-6)) / (1 + 1.0e-12) * A
     @test first_run.stats[:converged]&&refined.stats[:converged]
     @test abs(current(refined, :L1)[end] - exact) < abs(current(first_run, :L1)[end] - exact)
     @test current(refined, :L1)[end] ≈ exact rtol = 2.0e-3
@@ -83,8 +83,8 @@ end
     @test result.stats[:converged]
     @test length(result.stats[:event_times]) == 1
     @test only(result.stats[:event_times]) ≈ 0.5 atol = 1.0e-8
-    @test voltage(result, :held)[end] ≈ 2.0 rtol = 1.0e-6
-    @test voltage(result, :other)[end] ≈ 1.0 rtol = 1.0e-6
+    @test voltage(result, :held)[end] ≈ 2.0V rtol = 1.0e-6
+    @test voltage(result, :other)[end] ≈ 1.0V rtol = 1.0e-6
     crossing = findfirst(t -> isapprox(t, 0.5; atol = 1.0e-8), result.axis)
     @test result.stats[:bdf_orders][crossing] == 1
     @test result.stats[:bdf_orders][crossing + 1] == 1
@@ -169,7 +169,7 @@ end
     )
     @test result.stats[:converged]
     @test result.axis == collect(0.0:0.1:1.0)
-    @test voltage(result, :x)[end] ≈ 1.0
+    @test voltage(result, :x)[end] ≈ 1.0V
     @test !haskey(result.stats, :bdf_orders)
 end
 
@@ -184,6 +184,6 @@ end
         adaptive = true, saveat = 0.01, max_step = 0.001
     )
     @test result.stats[:converged]
-    expected = 2π * 1.0e-6 * cos.(2π .* result.axis)
-    @test maximum(abs.(current(result, :C1) .- expected)) < 1.0e-8
+    expected = 2π * 1.0e-6A * cos.(2π .* result.axis)
+    @test maximum(abs.(current(result, :C1) .- expected)) < 1.0e-8A
 end

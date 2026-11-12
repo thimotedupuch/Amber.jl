@@ -1,6 +1,6 @@
 @testset "results" begin
     result = small_signal(HierarchicalFilter(), 10Hz => 100kHz; points = 10)
-    @test abs(voltage(result, :output)[1]) > 0.9
+    @test abs(voltage(result, :output)[1]) > 0.9V
     @test length(current(result, "First.R1")) == 10
     @test voltage(result, "First.output") ≈ voltage(result, :middle)
     @test haskey(provenance(result), :topology_fingerprint)
@@ -79,7 +79,7 @@ end
         :warnings => ["whole-run warning"]
     )
     tr = SimulationResult(cc, Transient(0.0 => 3.0), [0.0, 1.0, 3.0], values, stats)
-    @test current(tr, :C1) ≈ [1.0, 1.0, 3.0]
+    @test current(tr, :C1) ≈ [1.0, 1.0, 3.0] .* A
     full = report(tr)
     selected = report(tr; window = 1.0 => 3.0)
     @test full[:devices]["C1"].ripple_current_rms ≈ sqrt(11 / 3)
@@ -119,9 +119,9 @@ end
     rect = transient(HalfWaveRectifier(), 0s => 2ms; max_step = 100μs, saveat = 100μs)
     bounds = rect.axis[5] => rect.axis[10]
     findings = validity_report(rect; window = bounds)
-    @test findings[:devices]["D1"].maximum_forward_current ≈ maximum(current(rect, :D1)[5:10])
+    @test findings[:devices]["D1"].maximum_forward_current ≈ maximum(ustrip.(current(rect, :D1)[5:10]))
     @test findings[:devices]["D1"].maximum_reverse_voltage ≈
-        max(0.0, -minimum((voltage(rect, :vin) - voltage(rect, :vout))[5:10]))
+        max(0.0, -minimum(ustrip.((voltage(rect, :vin) - voltage(rect, :vout))[5:10])))
 
     nr = noise(LowPass(), 10Hz => 1kHz; output = voltage(:vout), points = 3)
     nr.stats[:warnings] = ["noise warning"]
@@ -149,23 +149,23 @@ end
     end
     circuit = SourceReadout()
     op = operating_point(circuit)
-    @test current(op, :B) ≈ [4.0]
+    @test current(op, :B) ≈ [4.0] .* A
     @test current(op, :source_current) == current(op, :B)
     @test observation(op, :source_current) == current(op, :B)
     @test power(op, :B) ≈ voltage(op, :output) .* current(op, :B)
     @test power(op, :G) ≈ voltage(op, :controlled) .* current(op, :G)
-    @test current(op, :B) + current(op, :I) + current(op, :R) ≈ [0.0] atol = 1e-12
+    @test current(op, :B) + current(op, :I) + current(op, :R) ≈ [0.0] .* A atol = 1e-12A
     tr = transient(circuit, 0.0 => 0.01; max_step = 0.001)
-    @test current(tr, :B) ≈ voltage(tr, :input).^2 + tr.axis
-    @test current(tr, :B) + current(tr, :I) + current(tr, :R) ≈ zeros(length(tr.axis)) atol = 1e-10
+    @test current(tr, :B) ≈ (ustrip.(voltage(tr, :input)).^2 + tr.axis) .* A
+    @test current(tr, :B) + current(tr, :I) + current(tr, :R) ≈ zeros(length(tr.axis)) .* A atol = 1e-10A
     ac = small_signal(circuit, [10.0, 100.0]; source = :V)
-    @test current(ac, :B) ≈ 4 .* voltage(ac, :input)
-    @test current(ac, :I) == zeros(ComplexF64, 2)
-    @test current(ac, :B) + current(ac, :R) ≈ zeros(ComplexF64, 2) atol = 1e-12
+    @test current(ac, :B) ≈ 4S .* voltage(ac, :input)
+    @test current(ac, :I) == zeros(ComplexF64, 2) .* A
+    @test current(ac, :B) + current(ac, :R) ≈ zeros(ComplexF64, 2) .* A atol = 1e-12A
     selected = small_signal(circuit, [10.0]; source = "I")
-    @test current(selected, :I) ≈ [0.2 + 0im]
-    @test current(selected, :B) ≈ [0.0 + 0im]
-    @test only(result_table(op; signals = (source_A = current(:B),))).source_A ≈ 4.0
+    @test current(selected, :I) ≈ [0.2 + 0im] .* A
+    @test current(selected, :B) ≈ [0.0 + 0im] .* A
+    @test only(result_table(op; signals = (source_A = current(:B),))).source_A ≈ 4.0A
 
     @circuit ControlledVoltagePower() begin
         gnd = ground(); input = node(); output = node()
@@ -174,7 +174,7 @@ end
         resistor(output, gnd; value = 4.0)
     end
     controlled = operating_point(ControlledVoltagePower())
-    @test power(controlled, :E) ≈ [-9.0]
+    @test power(controlled, :E) ≈ [-9.0] .* u"W"
 end
 
 @subcircuit BehavioralReadoutBlock(p, n) begin
@@ -198,13 +198,13 @@ end
     end
     circuit = BehavioralReadoutHierarchy()
     op = operating_point(circuit)
-    @test current(op, "Block.B") ≈ [-1.0]
-    @test current(op, "Block.measured") ≈ [-1.0]
-    @test current(op, :Bconstant) ≈ [0.25]
+    @test current(op, "Block.B") ≈ [-1.0] .* A
+    @test current(op, "Block.measured") ≈ [-1.0] .* A
+    @test current(op, :Bconstant) ≈ [0.25] .* A
     ac = small_signal(circuit, [10.0, 100.0])
-    @test current(ac, "Block.B") ≈ fill(0.5 + 0im, 2)
-    @test current(ac, :Bconstant) ≈ zeros(ComplexF64, 2)
-    @test current(ac, "Block.B") + current(ac, :Bconstant) + current(ac, :V) ≈ zeros(ComplexF64, 2) atol = 1e-12
+    @test current(ac, "Block.B") ≈ fill(0.5 + 0im, 2) .* A
+    @test current(ac, :Bconstant) ≈ zeros(ComplexF64, 2) .* A
+    @test current(ac, "Block.B") + current(ac, :Bconstant) + current(ac, :V) ≈ zeros(ComplexF64, 2) .* A atol = 1e-12A
 end
 
 @testset "bipolar small signal terminal currents" begin
@@ -218,7 +218,7 @@ end
     @test_throws ArgumentError current(result, :Q, :invalid)
     @test current(result, :Q) ≈ -current(result, :VC)
     @test current(result, :Q, :base) ≈ -current(result, :VB)
-    @test current(result, :Q) + current(result, :Q, :base) + current(result, :Q, :emitter) ≈ zeros(2)
+    @test current(result, :Q) + current(result, :Q, :base) + current(result, :Q, :emitter) ≈ zeros(2) .* A
 end
 
 @testset "switch small signal current readout" begin

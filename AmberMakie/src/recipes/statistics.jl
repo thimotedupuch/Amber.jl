@@ -36,7 +36,7 @@ function ensembleplot(
     if confidence && length(values) >= 2
         interval = Amber.confidence_interval(result)
         confidence_band = Makie.vspan!(
-            axis, first(interval), last(interval);
+            axis, _plot_scalar(first(interval)), _plot_scalar(last(interval));
             color = (_AMBER_COLORS.output, 0.15)
         )
         mean_marker = Makie.vlines!(
@@ -178,7 +178,7 @@ function compareplot(
     aligned = Dict{Tuple{Int, Any}, Vector{Float64}}()
     diagnostics = NamedTuple[]
     for signal in signal_list
-        reference = Float64.(real.(Amber.trace(first(result_list), signal)))
+        reference = Float64.(_plot_values(real.(Amber.trace(first(result_list), signal))))
         allowed = _tolerance_values(reference, tolerance)
         if allowed !== nothing
             displayed_allowed = delta === :absolute ? allowed :
@@ -192,7 +192,7 @@ function compareplot(
             )
         end
         for (ri, result) in enumerate(result_list)
-            raw = Float64.(real.(Amber.trace(result, signal)))
+            raw = Float64.(_plot_values(real.(Amber.trace(result, signal))))
             values = alignment === :strict || result.axis == reference_axis ? raw :
                 _linear_alignment(result.axis, raw, reference_axis)
             aligned[(ri, signal)] = values

@@ -3,7 +3,7 @@
     view = mosfetview(model; vgs = range(0.1, 1.4; length = 31), vds = [0.05, 0.6, 1.2])
     @test size(view.points) == (31, 3)
     @test view.points[12, 2] == mosfet_operating_point(model, :nmos, 0.6, view.vgs[12], 0.0, 0.0)
-    @test view.provenance[:parameters].width == 8μm
+    @test view.provenance[:parameters].width == 8e-6
     pview = mosfetview(model; kind = :pmos, vgs = view.vgs, vds = view.vds)
     @test pview.points[12, 2].id ≈ -view.points[12, 2].id
     @test pview.points[12, 2].gm_over_id ≈ view.points[12, 2].gm_over_id
@@ -29,11 +29,11 @@
         @test filesize(path) > 1000
         if name == "capacitance"
             @test any(<(0), handle.plots.capacitance[3][])
-            @test handle.plots.capacitance[3][][1, 2] ≈ view.points[12, 2].capacitance_matrix[2, 1] * 1.0e15
+            @test handle.plots.capacitance[3][][1, 2] ≈ ustrip(view.points[12, 2].capacitance_matrix[2, 1]) * 1.0e15
         end
     end
     h = workbench(view)
-    selectbias!(h; vgs = view.vgs[20], vds = 1.2)
+    selectbias!(h; vgs = view.vgs[20] * V, vds = 1.2V)
     @test h.measurements[:selected_point][] == view.points[20, 3]
     @test h.measurements[:drain_control].i_selected[] == 3
     @test h.measurements[:gate_control].value[] == view.vgs[20]
@@ -47,7 +47,7 @@
     close(rebuilt)
     path = joinpath(directory, "cmos.png"); savefigure(path, h)
     metadata = TOML.parsefile(path * ".toml")
-    @test metadata["provenance"]["parameters"]["width"] == 8μm
+    @test metadata["provenance"]["parameters"]["width"] == 8e-6
     @test metadata["measurements"]["selected_drain"] == 3
     close(h); close(h)
     @test_throws ArgumentError selectbias!(h; vgs = 1.0)
@@ -65,11 +65,11 @@ end
     setcursor!(h.cursors, :a, 0.00025); setinterval!(h.cursors, 0.0001 => 0.001)
     selectsignal!(h, :output)
     expected = cursor_readout(tr.axis, voltage(tr, :output), h.cursors.a[], h.cursors.b[])
-    @test h.cursors.readout[].a.y == expected.a.y
+    @test h.cursors.readout[].a.y == ustrip(expected.a.y)
     @test h.cursors.interval_readout[].rms ≈ interval_readout(tr.axis, voltage(tr, :output), 0.0001 => 0.001).rms
     selectsignal!(h, current(:R))
     setcursor!(h.cursors, :a, 0.0005)
-    @test h.cursors.readout[].a.y == nearest_sample(tr.axis, current(tr, :R), 0.0005).y
+    @test h.cursors.readout[].a.y == ustrip(nearest_sample(tr.axis, current(tr, :R), 0.0005).y)
     @test occursin("A", h.measurements[:interval_text][])
     @test h.axes.trace.ylabel[] == "A"
     @test maximum(abs, h.axes.trace.limits[][2]) < 0.01
@@ -78,7 +78,7 @@ end
     isolatetrace!(h, "[2]")
     @test h.measurements[:selected_signal][] == :output
     @test h.measurements[:signal_control].i_selected[] == 2
-    @test h.cursors.readout[].a.y == nearest_sample(tr.axis, voltage(tr, :output), 0.0005).y
+    @test h.cursors.readout[].a.y == ustrip(nearest_sample(tr.axis, voltage(tr, :output), 0.0005).y)
     @test occursin("s", h.measurements[:cursor_text][])
     directory = mktempdir(); savefigure(joinpath(directory, "transient.png"), h); close(h)
     spectrum_result = spectrum(tr; signal = :output)
@@ -101,7 +101,7 @@ end
     end
     nr = noise(QuietResistor(), [10.0, 100.0, 1000.0]; output = voltage(:output))
     budget = noisebudgetplot(Figure()[1, 1], nr)
-    @test budget.view.floor_value < minimum(noise_psd(nr)) / 100
+    @test budget.view.floor_value < minimum(ustrip.(noise_psd(nr))) / 100
     savefigure(joinpath(directory, "budget.png"), budget)
     @circuit ClampedResistor() begin
         gnd = ground(); output = node()
@@ -114,4 +114,12 @@ end
     @test nh.axes.noise.yscale[] === identity
     savefigure(joinpath(directory, "zero-noise.png"), nh)
     savefigure(joinpath(directory, "zero-budget.png"), noisebudgetplot(Figure()[1, 1], zero_noise))
+end
+
+@testset "Unitful MOS plotting adapter" begin
+    view = mosfetview(ChargeBasedMOSFET(); vgs=[0V, 1V], vds=[1V], temperature=300K)
+    @test view.vgs == [0.0, 1.0]
+    @test view.vds == [1.0]
+    @test AmberMakie._display_values([view.points[2].id])[1] > 0
+    @test_throws Amber.Unitful.DimensionError mosfetview(ChargeBasedMOSFET(); vgs=[0A, 1A])
 end

@@ -14,7 +14,7 @@ using LinearAlgebra: norm
         M1 = nmos(drain, gate, gnd, gnd; model)
     end
     nresult = operating_point(BiasedNMOS())
-    expected = 0.5model.transconductance * (2.5V - model.threshold_voltage)^2 * (1 + model.channel_length_modulation * 3V)
+    expected = 0.5model.transconductance * (2.5 - model.threshold_voltage)^2 * (1 + model.channel_length_modulation * 3) * A
     @test current(nresult, :M1)[1] ≈ expected rtol = 2.0e-10
     @test_throws ArgumentError current(nresult, :M1, :invalid)
     @test region(nresult, :M1) == Saturation
@@ -62,9 +62,9 @@ using LinearAlgebra: norm
 
     response = small_signal(CMOSInverter(), 1kHz => 1MHz; source = :Input, points = 3)
     @test all(isfinite, voltage(response, :output))
-    @test real(voltage(response, :output)[1]) < 0
+    @test real(voltage(response, :output)[1]) < 0V
     noise_result = noise(CMOSInverter(), 1kHz => 10kHz; output = voltage(:output), points = 3)
-    @test all(>(0), noise_density(noise_result))
+    @test all(value -> value > zero(value), noise_density(noise_result))
 
     serialized = serialize_circuit(CMOSInverter())
     restored = deserialize_circuit(serialized)

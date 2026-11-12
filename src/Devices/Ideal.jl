@@ -29,7 +29,8 @@ function _component(k, ns...; kw...)
             "$(k) received unsupported keyword(s): " * join(string.(unknown), ", ")
         )
     )
-    return PrimitiveDraft{k, typeof(ns), typeof((; kw...))}(ns, (; kw...))
+    parameters = (; (name => _component_parameter(k, name, value) for (name, value) in pairs(kw))...)
+    return PrimitiveDraft{k, typeof(ns), typeof(parameters)}(ns, parameters)
 end
 
 voltage_source(a, b; dc = 0.0, ac = 0.0, waveform = nothing, kw...) = _component(:voltage_source, a, b; dc, ac, waveform, kw...)

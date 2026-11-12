@@ -5,6 +5,7 @@ Base.@kwdef struct MatchedGroup
     sigma_vbe::Float64 = 0.0
     sigma_log_beta::Float64 = 0.0
     correlation::Float64 = 0.0
+    MatchedGroup(name, sigma_vbe, sigma_log_beta, correlation) = new(name, _si_value(sigma_vbe, Unitful.V), _si_value(sigma_log_beta, Unitful.NoUnits), _si_value(correlation, Unitful.NoUnits))
 end
 matched_group(name::Symbol; kw...) = MatchedGroup(; name, kw...)
 

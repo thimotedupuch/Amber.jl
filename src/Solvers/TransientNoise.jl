@@ -112,18 +112,18 @@ function transient_noise(
         temperature = 300.0, initial = nothing, event_mode = nothing, reltol = nothing,
         abstol = nothing, maxiters = nothing,
         solver = SolverOptions(reltol = 1.0e-6, current_abstol = 1.0e-9, voltage_abstol = 1.0e-9, state_abstol = 1.0e-9, max_newton_iterations = 120),
-        low_frequency_cutoff = inv(Float64(last(interval)) - Float64(first(interval)))
+        low_frequency_cutoff = inv(Float64(_si_value(last(interval), Unitful.s)) - Float64(_si_value(first(interval), Unitful.s)))
     )
     solver = _effective_solver(solver; reltol, abstol, maxiters)
     reltol, abstol, maxiters, _ = _solver_values(solver)
-    t0, t1 = Float64(first(interval)), Float64(last(interval))
+    t0, t1 = Float64(_si_value(first(interval), Unitful.s)), Float64(_si_value(last(interval), Unitful.s))
     isfinite(t0)&&isfinite(t1)&&t1 > t0||throw(
         AnalysisValidationError(
             "transient-noise interval must be finite and increasing"
         )
     )
-    timestep = Float64(timestep)
-    saveat = Float64(saveat)
+    timestep = Float64(_si_value(timestep, Unitful.s))
+    saveat = Float64(_si_value(saveat, Unitful.s))
     timestep > 0&&isfinite(timestep)||throw(
         AnalysisValidationError(
             "stochastic timestep must be finite and positive"
@@ -134,7 +134,7 @@ function transient_noise(
             "saveat must be a positive integer multiple of the stochastic timestep"
         )
     )
-    low_frequency_cutoff = Float64(low_frequency_cutoff)
+    low_frequency_cutoff = Float64(_si_value(low_frequency_cutoff, Unitful.Hz))
     low_frequency_cutoff > 0&&isfinite(low_frequency_cutoff)||throw(
         AnalysisValidationError(
             "low-frequency cutoff must be finite and positive"
@@ -150,6 +150,7 @@ function transient_noise(
             "event_mode must be nothing or :exact"
         )
     )
+    temperature = _si_value(temperature, Unitful.K)
     isfinite(temperature)&&temperature > 0||throw(
         AnalysisValidationError(
             "temperature must be finite and positive"

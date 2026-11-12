@@ -1,6 +1,6 @@
 # Catalogue devices lower to the existing MNA primitives at construction time.
-_positive(name, x) = (isfinite(x) && x > 0) ? x : throw(ArgumentError("$name must be finite and positive"))
-_nonnegative(name, x) = (isfinite(x) && x >= 0) ? x : throw(ArgumentError("$name must be finite and nonnegative"))
+_positive(name, x) = (isfinite(x) && x > zero(x)) ? x : throw(ArgumentError("$name must be finite and positive"))
+_nonnegative(name, x) = (isfinite(x) && x >= zero(x)) ? x : throw(ArgumentError("$name must be finite and nonnegative"))
 
 """Zener diode, anode first; `breakdown_voltage` is a positive reverse voltage."""
 function zener(a, b; breakdown_voltage = 5.1, breakdown_current = 1.0e-3, kw...)
@@ -82,11 +82,17 @@ function _catalog_source(kind, controls, a, b, parameters; voltage = false)
 end
 """Four-quadrant multiplier: V(out)=gain*V(xp,xn)*V(yp,yn)+offset; ideal output."""
 function analog_multiplier(xp, xn, yp, yn, a, b; gain = 1.0, offset = 0.0)
+    gain = _si_value(gain, inv(Unitful.V))
+    offset = _si_value(offset, Unitful.V)
     all(isfinite, (gain, offset))||throw(ArgumentError("gain and offset must be finite"))
     return _catalog_source(:multiplier, ((xp, xn), (yp, yn)), a, b, (gain, offset); voltage = true)
 end
 """Smooth voltage limiter: midpoint + halfspan*tanh(gain*(Vin-offset)/halfspan)."""
 function voltage_limiter(cp, cn, a, b; low = -1.0, high = 1.0, gain = 1.0, offset = 0.0)
+    low = _si_value(low, Unitful.V)
+    high = _si_value(high, Unitful.V)
+    offset = _si_value(offset, Unitful.V)
+    gain = _si_value(gain, Unitful.NoUnits)
     all(isfinite, (low, high, gain, offset))&&high > low||throw(ArgumentError("finite parameters and high > low required"))
     return _catalog_source(:limiter, ((cp, cn),), a, b, (low, high, gain, offset); voltage = true)
 end
@@ -94,18 +100,29 @@ end
 comparator(cp, cn, a, b; low = 0.0, high = 5.0, gain = 1.0e4, offset = 0.0) = voltage_limiter(cp, cn, a, b; low, high, gain, offset)
 """Smooth voltage-controlled resistor; positive control lowers resistance toward `rmin`."""
 function voltage_controlled_resistor(a, b, cp, cn; rmin = 1.0, rmax = 1.0e6, threshold = 0.0, transition = 1.0)
+    rmin = _si_value(rmin, Unitful.Ω)
+    rmax = _si_value(rmax, Unitful.Ω)
+    threshold = _si_value(threshold, Unitful.V)
+    transition = _si_value(transition, Unitful.V)
     _positive(:rmin, rmin); _positive(:rmax, rmax); _positive(:transition, transition)
     rmax >= rmin&&isfinite(threshold)||throw(ArgumentError("rmax >= rmin and finite threshold required"))
     return _catalog_source(:vcr, ((a, b), (cp, cn)), a, b, (rmin, rmax, threshold, transition))
 end
 """Symmetric power-law varistor: I=iref*sign(V)*abs(V/vref)^exponent. No capacitance or noise."""
 function varistor(a, b; vref = 100.0, iref = 1.0e-3, exponent = 10.0)
+    vref = _si_value(vref, Unitful.V)
+    iref = _si_value(iref, Unitful.A)
+    exponent = _si_value(exponent, Unitful.NoUnits)
     _positive(:vref, vref); _positive(:iref, iref)
     isfinite(exponent)&&exponent > 1||throw(ArgumentError("exponent must exceed one"))
     return _catalog_source(:varistor, ((a, b),), a, b, (vref, iref, exponent))
 end
 """NTC beta-law resistor at fixed temperature in kelvin; no self-heating."""
 function thermistor(a, b; rnom = 1.0e4, beta = 3950.0, temperature = 300.0, nominal_temperature = 298.15)
+    rnom = _si_value(rnom, Unitful.Ω)
+    beta = _si_value(beta, Unitful.K)
+    temperature = _si_value(temperature, Unitful.K)
+    nominal_temperature = _si_value(nominal_temperature, Unitful.K)
     foreach(pair -> _positive(pair...), ((:rnom, rnom), (:beta, beta), (:temperature, temperature), (:nominal_temperature, nominal_temperature)))
     resistance = rnom * exp(beta * (1 / temperature - 1 / nominal_temperature))
     return resistor(a, b; value = _positive(:resistance, resistance))
@@ -119,11 +136,16 @@ function pjfet(d, g, s; idss = 1.0e-3, pinch_off = -2.0, channel_length_modulati
     return _jfet(d, g, s, idss, pinch_off, channel_length_modulation, -1.0)
 end
 function _jfet(d, g, s, idss, vp, lambda, polarity)
+    idss = _si_value(idss, Unitful.A)
+    vp = _si_value(vp, Unitful.V)
+    lambda = _si_value(lambda, inv(Unitful.V))
     _positive(:idss, idss); _positive(:negative_pinch_off, -vp); _nonnegative(:channel_length_modulation, lambda)
     return _catalog_source(:jfet, ((d, s), (g, s)), d, s, (idss, vp, lambda, polarity))
 end
 """Three-terminal potentiometer (top, wiper, bottom); position is fraction measured from bottom."""
 function potentiometer(top, wiper, bottom; resistance = 1.0e4, position = 0.5)
+    resistance = _si_value(resistance, Unitful.Ω)
+    position = _si_value(position, Unitful.NoUnits)
     _positive(:resistance, resistance)
     0 < position < 1||throw(ArgumentError("position must be strictly between zero and one"))
     return _component(:potentiometer, top, wiper, bottom; resistance, position)

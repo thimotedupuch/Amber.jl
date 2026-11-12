@@ -60,7 +60,7 @@
     add!(b, voltage_source(x, g; ac = 1.0); name = :supply)
     add!(b, capacitor(x, g; value = 1.0e-6, package = PassivePackage(esr = 10.0, esl = 1.0e-3), esr = 0.0, esl = 0.0); name = :C)
     result = small_signal(finish(b), [1000.0])
-    @test -current(result, :supply)[1] ≈ 2π * 1000im * 1.0e-6
+    @test -current(result, :supply)[1] ≈ 2π * 1000im * 1.0e-6A
 end
 
 @testset "elaborated model updates require rebuilding" begin
@@ -105,7 +105,7 @@ end
     end
     cc = capacitor_circuit(dielectric = C0G(), dielectric_absorption = DebyeBranches())
     result = small_signal(with_parameters(cc, "C.value" => 2.0e-6), [1000.0])
-    @test -current(result, :supply)[1] ≈ 2π * 1000im * 2.0e-6
+    @test -current(result, :supply)[1] ≈ 2π * 1000im * 2.0e-6A
 end
 
 @testset "current control updates require recompilation" begin

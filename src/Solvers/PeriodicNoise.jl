@@ -12,13 +12,13 @@ struct PeriodicNoiseResult
     stats::Dict{Symbol, Any}
 end
 
-frequencies(result::PeriodicNoiseResult) = result.offset_frequencies
-noise_psd(result::PeriodicNoiseResult) = result.output_psd
-noise_density(result::PeriodicNoiseResult) = sqrt.(max.(result.output_psd, 0.0))
-input_referred_noise_psd(result::PeriodicNoiseResult) = result.input_referred_psd
+frequencies(result::PeriodicNoiseResult) = result.offset_frequencies .* Unitful.Hz
+noise_psd(result::PeriodicNoiseResult) = result.output_psd .* _noise_output_unit(result)^2 / Unitful.Hz
+noise_density(result::PeriodicNoiseResult) = sqrt.(max.(result.output_psd, 0.0)) .* _noise_output_unit(result) / sqrt(Unitful.Hz)
+input_referred_noise_psd(result::PeriodicNoiseResult) = result.input_referred_psd === nothing ? nothing : result.input_referred_psd .* _noise_input_unit(result)^2 / Unitful.Hz
 input_referred_noise_density(result::PeriodicNoiseResult) =
     result.input_referred_psd === nothing ? nothing :
-    sqrt.(max.(result.input_referred_psd, 0.0))
+    sqrt.(max.(result.input_referred_psd, 0.0)) .* _noise_input_unit(result) / sqrt(Unitful.Hz)
 
 function noise_contributions(result::PeriodicNoiseResult; component = nothing, mechanism = nothing)
     return filter(result.contributions) do contribution
@@ -263,6 +263,7 @@ function periodic_noise(
         output_harmonic = 0, sidebands = -5:5, temperature = pss.stats[:temperature],
         points = 100, scale = :log
     )
+    temperature = _si_value(temperature, Unitful.K)
     get(pss.stats, :converged, false)||throw(
         ConvergenceError(
             "periodic noise requires a converged periodic steady state", copy(pss.stats)

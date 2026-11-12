@@ -11,7 +11,7 @@
         add!(b, resistor(y, g; value = 1000.0); name = :load)
         design = finish(b); restored = deserialize_circuit(serialize_circuit(design))
         @test serialize_circuit(restored) == serialize_circuit(design)
-        @test voltage(operating_point(restored), :y)[1] ≈ 0.5
+        @test voltage(operating_point(restored), :y)[1] ≈ 0.5V
         result = noise(restored, [10.0, 1000.0]; output = voltage(:y))
         contribution = only(noise_contributions(result; component = :R, mechanism = :flicker))
         # 0.5 mA bias; parallel 1 kohm resistors give a 500 ohm transfer impedance.
@@ -38,7 +38,7 @@
         for (i, f) in enumerate(fs)
             w = 2π * f
             expected = kind === :resistor ? inv(100 + im * w * 2.0e-6) + im * w * 3.0e-9 : inv(2 + im * w * 2.0e-6 + inv(im * w * 1.0e-6))
-            @test -current(result, :supply)[i] ≈ expected rtol = 1.0e-6
+            @test -current(result, :supply)[i] ≈ expected * A rtol = 1.0e-6
         end
         @test_throws ArgumentError T(esr = -1.0)
         @test_throws ArgumentError T(esl = Inf)
@@ -62,7 +62,7 @@
         for (i, f) in enumerate(fs)
             w = 2π * f
             y = im * w * 1.0e-6 + 1.0e-6 + inv(0.01 / 1.0e-7 + inv(im * w * 1.0e-7))
-            @test -current(result, :supply)[i] ≈ inv(3 + loss_resistance + inv(y)) rtol = 1.0e-6
+            @test -current(result, :supply)[i] ≈ inv(3 + loss_resistance + inv(y)) * A rtol = 1.0e-6
         end
         @test with_model_parameter(dielectric, :loss_tangent, 0.01).loss_tangent == 0.01
         @test_throws TopologyParameterError with_parameters(compile(restored), "dut.dielectric" => T())
@@ -83,9 +83,9 @@
     # The specified tangent gives 1 kohm ESR and a 1 ms time constant.
     design = DielectricTransient()
     tr = transient(design, 0.0 => 0.005; max_step = 1.0e-5)
-    @test current(tr, :supply)[end] ≈ -1.0e-3 * exp(-5) rtol = 0.03
+    @test current(tr, :supply)[end] ≈ -1.0e-3A * exp(-5) rtol = 0.03
     nr = noise(design, [100.0, 1000.0]; output = voltage(Symbol("C1.__esr")))
-    @test noise_psd(nr) ≈ [4 * 1.380649e-23 * 300 * 1000 / (1 + (2π * f * 0.001)^2) for f in (100.0, 1000.0)] rtol = 1.0e-6
+    @test noise_psd(nr) ≈ [4 * 1.380649e-23 * 300 * 1000 / (1 + (2π * f * 0.001)^2) for f in (100.0, 1000.0)] .* (V^2 / Hz) rtol = 1.0e-6
 
     @test_throws ArgumentError DebyeBranches(time_constants = [0.0], fractions = [0.1])
     @test_throws ArgumentError DebyeBranches(time_constants = [1.0], fractions = [-0.1])

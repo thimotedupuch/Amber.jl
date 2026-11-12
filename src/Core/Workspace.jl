@@ -476,6 +476,9 @@ function residual_jacobian!(
         workspace::SimulationWorkspace, compiled::CompiledCircuit, state, previous, t, α;
         mode = :time, source_scale = 1.0, gmin = 0.0, temperature = 300.0
     )
+    t = _si_value(t, Unitful.s)
+    α = _si_value(α, inv(Unitful.s))
+    temperature = _si_value(temperature, Unitful.K)
     _all_inplace_supported(compiled.parameters.batches) ||
         throw(ArgumentError("one or more compiled batches do not support in-place assembly"))
     length(state) == compiled.n == length(previous) || throw(DimensionMismatch("state vectors must match the compiled unknown count"))
@@ -499,6 +502,8 @@ function residual!(
         workspace::SimulationWorkspace, compiled::CompiledCircuit, state, derivative, t;
         mode = :time, source_scale = 1.0, gmin = 0.0, temperature = 300.0
     )
+    t = _si_value(t, Unitful.s)
+    temperature = _si_value(temperature, Unitful.K)
     _all_inplace_supported(compiled.parameters.batches) ||
         throw(ArgumentError("one or more compiled batches do not support in-place assembly"))
     length(state) == compiled.n == length(derivative) || throw(DimensionMismatch("state vectors must match the compiled unknown count"))

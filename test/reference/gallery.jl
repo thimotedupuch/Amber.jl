@@ -56,8 +56,8 @@
     ring_start = transient(ring, 0s => 300ns; max_step = 1ns, saveat = 1ns)
     ring_metrics = harmonic_analysis(ring_start; signal = voltage(:stage5), interval = 100ns => 300ns)
     @test ring_start.stats[:converged]
-    @test ring_metrics.fundamental.frequency > 10MHz
-    @test ring_metrics.fundamental.amplitude_rms > 1V
+    @test ring_metrics.fundamental.frequency > 1e7
+    @test ring_metrics.fundamental.amplitude_rms > 1.0
     crossbar = getfield(modules[14], :ConductanceCrossbar)()
     crossbar_result = operating_point(crossbar)
     crossbar_outputs = [voltage(crossbar_result, Symbol(:output_, row))[1] for row in 1:2]

@@ -10,7 +10,7 @@ struct SpectrumResult
     stats::Dict{Symbol, Any}
 end
 
-frequencies(result::SpectrumResult) = result.frequencies
+frequencies(result::SpectrumResult) = result.frequencies .* Unitful.Hz
 
 struct HarmonicComponent
     order::Int
@@ -57,9 +57,10 @@ function _uniform_signal(result::SimulationResult, signal, interval)
             "spectrum requires a deterministic or stochastic transient result"
         )
     )
+    interval = interval === nothing ? nothing : _si_value(first(interval), Unitful.s) => _si_value(last(interval), Unitful.s)
     indices = interval === nothing ? collect(eachindex(result.axis)) : findall(time -> first(interval) <= time <= last(interval), result.axis)
     length(indices) >= 4||throw(ArgumentError("selected spectrum interval must contain at least four samples"))
-    times = result.axis[indices]; values = Float64.(real.(_signal(result, signal)[indices])); steps = diff(times)
+    times = result.axis[indices]; values = Float64.(Unitful.ustrip.(Unitful.upreferred.(real.(_signal(result, signal)[indices])))); steps = diff(times)
     all(isfinite, values)||throw(ArgumentError("spectrum signal samples must be finite"))
     all(isfinite, times) && all(>(0), steps)||throw(ArgumentError("transient timestamps must be finite and strictly increasing"))
     step = median(steps); step > 0||throw(ArgumentError("transient timestamps must be strictly increasing"))
@@ -103,10 +104,17 @@ end
 
 crest_factor(result::SpectrumResult) = result.signal_rms == 0 ? NaN : result.signal_peak / result.signal_rms
 function band_power(result::SpectrumResult, band::Pair)
+    band = _si_value(first(band), Unitful.Hz) => _si_value(last(band), Unitful.Hz)
     first(band) <= last(band)||throw(ArgumentError("spectrum band must be increasing"))
     indices = findall(f -> first(band) <= f <= last(band), result.frequencies)
     isempty(indices)&&throw(ArgumentError("band contains no spectrum bins"))
-    bin_width = result.sample_rate / result.stats[:nfft]
+    bin_width = if haskey(result.stats, :nfft)
+        result.sample_rate / result.stats[:nfft]
+    elseif length(result.frequencies) >= 2
+        result.frequencies[2] - result.frequencies[1]
+    else
+        throw(ArgumentError("spectrum bin width requires nfft metadata or at least two frequency bins"))
+    end
     return sum(result.psd[indices]) * bin_width
 end
 
@@ -123,10 +131,10 @@ function harmonic_analysis(result::SimulationResult; signal, fundamental = :auto
     amplitudes = spectral.amplitude_rms; bin_width = spectral.sample_rate / spectral.stats[:nfft]
     harmonics isa Integer && harmonics >= 1||throw(ArgumentError("harmonics must be a positive integer"))
     if fundamental !== :auto
-        frequency = Float64(fundamental)
+        frequency = Float64(_si_value(fundamental, Unitful.Hz))
         isfinite(frequency) && 0 < frequency <= last(spectral.frequencies)||throw(ArgumentError("fundamental must lie in the positive evaluated frequency range"))
     end
-    fundamental_index = fundamental === :auto ? argmax(@view amplitudes[2:end]) + 1 : clamp(round(Int, Float64(fundamental) / bin_width) + 1, 2, length(amplitudes))
+    fundamental_index = fundamental === :auto ? argmax(@view amplitudes[2:end]) + 1 : clamp(round(Int, Float64(_si_value(fundamental, Unitful.Hz)) / bin_width) + 1, 2, length(amplitudes))
     offset, amplitude = _quadratic_peak(amplitudes, fundamental_index); fundamental_frequency = spectral.frequencies[fundamental_index] + offset * bin_width
     base = HarmonicComponent(1, fundamental_frequency, amplitude, angle(spectral.coefficients[fundamental_index]), fundamental_index)
     components = HarmonicComponent[]
@@ -158,6 +166,7 @@ function harmonic_analysis(result::SimulationResult; signal, fundamental = :auto
     snr_value = ratio_db(fundamental_power, noise_power); sinad_value = ratio_db(fundamental_power, distortion_noise)
     excluded = union(Set((1,)), fundamental_bins); spur = maximum((amplitudes[index] for index in eachindex(amplitudes) if !(index in excluded)); init = 0.0)
     sfdr_value = spur == 0 ? (base.amplitude_rms == 0 ? NaN : Inf) : 20log10(base.amplitude_rms / spur); enob_value = (sinad_value - 1.76) / 6.02
+    interval = interval === nothing ? nothing : _si_value(first(interval), Unitful.s) => _si_value(last(interval), Unitful.s)
     selected_indices = interval === nothing ? eachindex(result.axis) : findall(time -> first(interval) <= time <= last(interval), result.axis)
     cycles = fundamental_frequency * (result.axis[last(selected_indices)] - result.axis[first(selected_indices)]); warnings = copy(spectral.stats[:warnings]); cycles < 4&&push!(warnings, "the selected record contains fewer than four fundamental cycles")
     stats = Dict{Symbol, Any}(:warnings => warnings, :fundamental_cycles => cycles)

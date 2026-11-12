@@ -64,6 +64,7 @@ function operating_point(
         c; temperature = 300.0, solver = SolverOptions(), continuation_maxdepth = nothing,
         reltol = nothing, abstol = nothing, maxiters = nothing, workspace = nothing, kw...
     )
+    temperature = _si_value(temperature, Unitful.K)
     isfinite(temperature)&&temperature > 0||throw(AnalysisValidationError("temperature must be finite and positive"))
     solver = _effective_solver(solver; reltol, abstol, maxiters, continuation_maxdepth)
     voltage_abstol = solver.voltage_abstol

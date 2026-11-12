@@ -30,7 +30,7 @@ end
 function integratednoiseplot(position, result::Amber.NoiseResult; referred = :output, kwargs...)
     view = noiseview(result; referred)
     psd = referred === :output ? Amber.noise_psd(result) : Amber.input_referred_noise_psd(result)
-    cumulative = _cumulative_noise(view.frequencies, psd)
+    cumulative = _cumulative_noise(view.frequencies, _plot_values(psd))
     slot = _position(position)
     axis = _frequency_axis(
         slot, view.frequencies; xlabel = "Frequency (Hz)",

@@ -27,7 +27,7 @@ end
             @test serialize_circuit(restored) == serialize_circuit(design)
             result = operating_point(restored)
             @test result.stats[:converged]
-            @test voltage(result, :x)[1] ≈ bias
+            @test voltage(result, :x)[1] ≈ bias * V
         end
     end
 
@@ -41,12 +41,12 @@ end
     end
     design = deserialize_circuit(serialize_circuit(CatalogSignals()))
     op = operating_point(design)
-    @test voltage(op, :product)[1] ≈ 1.2
-    @test voltage(op, :limited)[1] ≈ 2tanh(0.3)
-    @test voltage(op, :decision)[1] ≈ 5.0
+    @test voltage(op, :product)[1] ≈ (1.2) * V
+    @test voltage(op, :limited)[1] ≈ (2tanh(0.3)) * V
+    @test voltage(op, :decision)[1] ≈ (5.0) * V
     ac = small_signal(design, [100.0])
-    @test voltage(ac, :product)[1] ≈ 6.0
-    @test voltage(ac, :limited)[1] ≈ 3 / cosh(0.3)^2
+    @test voltage(ac, :product)[1] ≈ (6.0) * V
+    @test voltage(ac, :limited)[1] ≈ (3 / cosh(0.3)^2) * V
 
     @circuit CatalogTransformer begin
         g = ground(); p = node(); s = node(); w = node()
@@ -55,9 +55,9 @@ end
         potentiometer(s, w, g; resistance = 100.0, position = 0.25)
     end
     op = operating_point(deserialize_circuit(serialize_circuit(CatalogTransformer())))
-    @test voltage(op, :s)[1] ≈ 5.0
-    @test voltage(op, :w)[1] ≈ 1.25
-    @test current(op, :supply)[1] ≈ -0.025
+    @test voltage(op, :s)[1] ≈ (5.0) * V
+    @test voltage(op, :w)[1] ≈ (1.25) * V
+    @test current(op, :supply)[1] ≈ (-0.025) * A
 
     @circuit CatalogLine begin
         g = ground(); input = node(); output = node()
@@ -66,11 +66,11 @@ end
         resistor(output, g; value = 100.0)
     end
     line = deserialize_circuit(serialize_circuit(CatalogLine()))
-    @test voltage(operating_point(line), :output)[1] ≈ 100 / 110
-    @test abs(voltage(small_signal(line, [1.0]), :output)[1]) ≈ 100 / 110 rtol = 1.0e-6
+    @test voltage(operating_point(line), :output)[1] ≈ (100 / 110) * V
+    @test abs(voltage(small_signal(line, [1.0]), :output)[1]) ≈ (100 / 110) * V rtol = 1.0e-6
     tr = transient(line, 0.0 => 2.0e-6; max_step = 1.0e-8)
     @test tr.stats[:converged]
-    @test voltage(tr, :output)[end] ≈ 100 / 110 rtol = 0.01
+    @test voltage(tr, :output)[end] ≈ (100 / 110) * V rtol = 0.01
 
     for bias in (-5.0, 5.0)
         b = CircuitBuilder(:Bridge); g = ground!(b, :gnd); x = node!(b, :x); p = node!(b, :p); n = node!(b, :n)
@@ -78,7 +78,7 @@ end
         add!(b, bridge_rectifier(x, g, p, n); name = :bridge)
         add!(b, resistor(p, n; value = 1.0e3))
         op = operating_point(deserialize_circuit(serialize_circuit(finish(b))))
-        @test 3.0 < voltage(op, :p)[1] - voltage(op, :n)[1] < 4.0
+        @test 3.0V < voltage(op, :p)[1] - voltage(op, :n)[1] < 4.0V
     end
 
     # Independent constitutive checks, including source/drain and polarity reversal.
@@ -129,7 +129,7 @@ end
         ω = 2π * f
         expected = im * ω * 5.0e-12 + inv(20 + im * ω * 0.01 + inv(im * ω * 1.0e-10))
         # AC extracts the small capacitance matrix by subtracting Jacobians.
-        @test -current(ac, :supply)[i] ≈ expected rtol = 1.0e-6
+        @test -current(ac, :supply)[i] ≈ expected * A rtol = 1.0e-6
     end
     @circuit PhotoReference begin
         g = ground(); x = node()
@@ -137,7 +137,7 @@ end
         photodiode(x, g; photocurrent = 2.0e-3)
         thermistor(x, g; rnom = 1.0e4, temperature = 298.15)
     end
-    @test current(operating_point(PhotoReference()), :supply)[1] ≈ 2.0e-3
+    @test current(operating_point(PhotoReference()), :supply)[1] ≈ 2.0e-3A
     # Series resistance must carry photocurrent as well as junction current.
     # With negligible junction conduction, the short-circuit current is set by
     # the photocurrent divider between series and shunt resistances.
@@ -150,7 +150,7 @@ end
         )
     end
     solar = deserialize_circuit(serialize_circuit(SolarSeriesReference()))
-    @test current(operating_point(solar), :supply)[1] ≈ 0.5e-3 rtol = 1.0e-6
+    @test current(operating_point(solar), :supply)[1] ≈ 0.5e-3A rtol = 1.0e-6
     @test thermistor(:a, :b; rnom = 1.0e4, temperature = 298.15).parameters.value ≈ 1.0e4
     @test thermistor(:a, :b; rnom = 1.0e4, temperature = 320.0).parameters.value < 1.0e4
     @test Amber.CatalogLaw(:varistor, (100.0, 0.001, 10.0))((100.0, 0.0, 0.0, 0.0), 0.0) ≈ 0.001
@@ -174,5 +174,5 @@ end
     instance!(b, CatalogueTemplate; instance_name = :stage, connections = (input = x, output = y, reference = g))
     add!(b, resistor(y, g; value = 1.0e3))
     restored = deserialize_circuit(serialize_circuit(finish(b)))
-    @test voltage(operating_point(restored), :y)[1] ≈ 1.0
+    @test voltage(operating_point(restored), :y)[1] ≈ 1.0V
 end

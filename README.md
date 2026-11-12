@@ -100,9 +100,31 @@ end
 filter = LowPass()
 ```
 
-Values such as `10kΩ`, `1V`, and `100μs` are plain SI-scaled Julia numbers.
-The suffixes make circuit code readable without imposing a runtime units
-dependency.
+Values such as `10kΩ`, `1V`, and `100μs` are Unitful.jl quantities.
+Physical inputs are dimensionally checked and converted to SI values at the
+simulation boundary. Use `uconvert` and `ustrip` for explicit conversions.
+
+Voltage, current, power, and charge result accessors return Unitful quantities;
+`frequencies(result)` returns Hz. Solver matrices and analysis descriptor fields
+store numeric SI values. Bare numeric physical inputs continue to mean SI units.
+A quantity with incompatible dimensions raises a dimension error.
+
+Decibels follow Unitful's logarithmic conventions. Use
+`uconvertrp(NoUnits, 120dB)` for an amplitude ratio and
+`uconvertp(NoUnits, 20dB)` for a power ratio. Voltage/current gain inputs interpret
+decibels as root-power ratios. Degrees are Unitful angles; use
+`ustrip(uconvert(u"rad", 180°))` when a numeric radian value is needed.
+
+```julia
+output_mV = uconvert.(u"mV", voltage(result, :vout))
+output_V = ustrip.(uconvert.(V, voltage(result, :vout)))
+gain_dB = db20(voltage(result, :vout) ./ voltage(result, :vin))
+```
+
+Normalize a voltage or power by an explicit reference before passing it to
+`db20` or `db10`, for example `db20(voltage(result, :vout) ./ 1V)`.
+Physical columns from `result_table` retain their units.
+
 
 Validate before a long run, then choose an analysis:
 
@@ -1252,9 +1274,8 @@ Amber is intentionally transparent about what it does not yet model:
   numerical refinement.
 - There is currently no SPICE netlist importer/exporter or foundry model-card
   parser.
-- SI suffixes such as `kΩ`, `nF`, and `MHz` are readable scale factors, not a
-  dimensional type system. Internally, Amber uses SI-valued `Float64` and
-  `ComplexF64` data.
+- SI suffixes such as `kΩ`, `nF`, and `MHz` use Unitful.jl. Internally,
+  simulation kernels use SI-valued `Float64` and `ComplexF64` data.
 
 Treat model validity and numerical convergence as separate questions. Inspect
 `result.stats`, `provenance(result)`, and `validity_report(result)`; refine time

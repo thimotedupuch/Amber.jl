@@ -41,7 +41,7 @@ function pssplot(position, result::Amber.PSSResult; signals, cycles = 1, kwargs.
     )
     plots = Any[]
     for signal in signal_list
-        values = Amber.trace(orbit, signal)
+        values = _plot_values(Amber.trace(orbit, signal))
         times = reduce(vcat, [orbit.axis .+ (cycle - 1) * result.period for cycle in 1:cycles])
         repeated = repeat(values, cycles)
         push!(plots, Makie.lines!(axis, times, real.(repeated); label = string(signal), kwargs...))
@@ -83,7 +83,7 @@ function pssplot(position, result::Amber.PSSResult; signals, cycles = 1, kwargs.
 end
 
 function orbitplot(position, result::Amber.PSSResult; x, y, kwargs...)
-    xv, yv = Amber.trace(result.orbit, x), Amber.trace(result.orbit, y)
+    xv, yv = _plot_values(Amber.trace(result.orbit, x)), _plot_values(Amber.trace(result.orbit, y))
     slot = _position(position); axis = Makie.Axis(slot; xlabel = string(x), ylabel = string(y))
     plot = Makie.lines!(axis, real.(xv), real.(yv); kwargs...)
     return PlotHandle(slot, (orbit = axis,), (orbit = plot,), result)

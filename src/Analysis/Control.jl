@@ -18,7 +18,7 @@ struct LinearFrequencyResponse
     outputs::Vector{Observable}
     stats::Dict{Symbol, Any}
 end
-frequencies(result::LinearFrequencyResponse) = result.frequencies
+frequencies(result::LinearFrequencyResponse) = result.frequencies .* Unitful.Hz
 
 struct TimeResponse
     axis::Vector{Float64}
@@ -88,6 +88,7 @@ function _linear_output_direct(cc, observable::Observable, input)
 end
 
 function linearize(c; inputs, outputs, bias = nothing, temperature = 300.0, kw...)
+    temperature = _si_value(temperature, Unitful.K)
     isfinite(temperature) && temperature > 0||throw(ArgumentError("temperature must be finite and positive"))
     cc = compile(c)
     if bias isa SimulationResult
@@ -190,8 +191,8 @@ sensitivity(loop_gain_values) = inv.(1 .+ loop_gain_values)
 complementary_sensitivity(loop_gain_values) = loop_gain_values ./ (1 .+ loop_gain_values)
 
 function _time_response(model::LinearizedModel, interval::Pair; saveat, input_index = 1, impulse = false)
-    start, stop = Float64(first(interval)), Float64(last(interval)); isfinite(start) && isfinite(stop) && stop > start||throw(ArgumentError("response interval must be finite and increasing"))
-    step = Float64(saveat); isfinite(step) && step > 0||throw(ArgumentError("saveat must be finite and positive")); times = collect(start:step:stop)
+    start, stop = Float64(_si_value(first(interval), Unitful.s)), Float64(_si_value(last(interval), Unitful.s)); isfinite(start) && isfinite(stop) && stop > start||throw(ArgumentError("response interval must be finite and increasing"))
+    step = Float64(_si_value(saveat, Unitful.s)); isfinite(step) && step > 0||throw(ArgumentError("saveat must be finite and positive")); times = collect(start:step:stop)
     last(times) < stop && push!(times, stop)
     step = times[2] - times[1]
     states = zeros(Float64, size(model.A, 1), length(times)); values = zeros(Float64, length(model.outputs), length(model.inputs), length(times))

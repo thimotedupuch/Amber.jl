@@ -157,8 +157,10 @@ Quasi-static charges in coulombs, ordered/named `(drain, gate, source, bulk)`.
 The four charges sum to zero. See the charge-based MOS model manual for scope.
 """
 function terminal_charges(model::ChargeBasedMOSFET, kind, vd, vg, vs, vb; temperature = 300.0)
+    vd, vg, vs, vb = map(v -> _si_value(v, Unitful.V), (vd, vg, vs, vb))
+    temperature = _si_value(temperature, Unitful.K)
     evaluated = _charge_mos_evaluate(model, kind, (vd, vg, vs, vb); temperature, order = Val(0))
-    return NamedTuple{(:drain, :gate, :source, :bulk)}(map(q -> q.value, evaluated.charges))
+    return NamedTuple{(:drain, :gate, :source, :bulk)}(map(q -> q.value * Unitful.C, evaluated.charges))
 end
 
 """
@@ -171,16 +173,19 @@ source/drain inversion charges. Ratios are `NaN` when their denominator is zero.
 `gm`, `gds`, and `gmb` are signed derivatives at the physical drain terminal.
 """
 function mosfet_operating_point(model::ChargeBasedMOSFET, kind, vd, vg, vs, vb; temperature = 300.0)
+    vd, vg, vs, vb = map(v -> _si_value(v, Unitful.V), (vd, vg, vs, vb))
+    temperature = _si_value(temperature, Unitful.K)
     e = _charge_mos_evaluate(model, kind, (vd, vg, vs, vb); temperature, order = Val(1))
     id = e.channel.value; gds, gm, _, gmb = e.channel.gradient
     names = (:drain, :gate, :source, :bulk)
     return (;
-        id, gm, gds, gmb, gm_over_id = iszero(id) ? NaN : abs(gm / id),
+        id = id * Unitful.A, gm = gm * Unitful.S, gds = gds * Unitful.S, gmb = gmb * Unitful.S,
+        gm_over_id = (iszero(id) ? NaN : abs(gm / id)) / Unitful.V,
         intrinsic_gain = iszero(gds) ? NaN : abs(gm / gds),
-        currents = NamedTuple{names}(map(x -> x.value, e.currents)),
-        charges = NamedTuple{names}(map(x -> x.value, e.charges)),
-        capacitance_matrix = [e.charges[i].gradient[j] for i in 1:4,j in 1:4],
+        currents = NamedTuple{names}(map(x -> x.value * Unitful.A, e.currents)),
+        charges = NamedTuple{names}(map(x -> x.value * Unitful.C, e.charges)),
+        capacitance_matrix = [e.charges[i].gradient[j] for i in 1:4,j in 1:4] .* Unitful.F,
         source_inversion = e.source_inversion, drain_inversion = e.drain_inversion,
-        temperature = Float64(temperature),
+        temperature = Float64(temperature) * Unitful.K,
     )
 end

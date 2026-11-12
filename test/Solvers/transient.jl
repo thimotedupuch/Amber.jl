@@ -12,7 +12,7 @@
     @test voltage(initialized, :output)[1] ≈ 2V
     @test voltage(initialized, :output)[end] < 2V
     supplied = transient(InitializedCapacitor(), 0s => 100μs; saveat = 10μs, initial = [0.5])
-    @test voltage(supplied, :output)[1] == 0.5
+    @test voltage(supplied, :output)[1] == 0.5V
     compiled = compile(LowPass())
     overridden = simulate(compiled, Transient(0s => 200μs; saveat = 10μs, overrides = Dict(Symbol("V1.waveform") => Step(low = 0V, high = 2V, at = 0s))))
     @test voltage(overridden, :vout)[end] > 1V
@@ -24,8 +24,8 @@
     end
     pulse_circuit = PulseEvents()
     event_result = transient(pulse_circuit, 0s => 3μs; max_step = 50ns, event_mode = :exact)
-    @test any(==(2ns), event_result.axis)
-    @test any(==(1.5μs), event_result.axis)
+    @test any(==(Float64(ustrip(uconvert(s, 2ns)))), event_result.axis)
+    @test any(t -> isapprox(t, 1.5e-6; rtol=8eps()), event_result.axis)
     sampler_module = Module(:SwitchEventSampler)
     Base.include(sampler_module, normpath(joinpath(@__DIR__, "..", "..", "examples", "06_sample_and_hold", "circuit.jl")))
     sampler_result = transient(getfield(sampler_module, :SampleAndHold)(), 0s => 3μs; max_step = 50ns, event_mode = :exact)
@@ -50,7 +50,7 @@ end
 @testset "transient validation and save grid" begin
     @test_throws AnalysisValidationError transient(LowPass(), 1s => 0s)
     result = transient(LowPass(), 0s => 95μs; saveat = 10μs)
-    @test result.axis == vcat(0.0, collect(10μs:10μs:90μs), 95μs)
+    @test result.axis ≈ Float64.(ustrip.(uconvert.(s, vcat(0s, collect(10μs:10μs:90μs), 95μs))))
 
     @circuit SaveGridRC() begin
         gnd = ground(); input = node(); output = node()
@@ -61,16 +61,16 @@ end
     # 100μs and the corresponding save-grid timestamp differ by roundoff.
     # Corners must remain integration boundaries without adding or losing
     # output samples, even when the internal step is smaller than saveat.
-    expected = vcat(0.0, collect(2μs:2μs:140μs), 141μs)
+    expected = vcat(0s, collect(2μs:2μs:140μs), 141μs)
     saved_axes = Vector{Float64}[]
     for adaptive in (false, true), max_step in (2μs, 1μs)
         sampled = transient(SaveGridRC(), 0s => 141μs; saveat = 2μs, max_step, adaptive, event_mode = :exact)
         @test sampled.stats[:converged]
-        @test sampled.axis ≈ expected
+        @test sampled.axis ≈ ustrip.(uconvert.(s, expected))
         push!(saved_axes, sampled.axis)
         @test size(sampled.values, 2) == length(expected)
-        @test any(t -> isapprox(t, 100μs), sampled.stats[:event_times])
-        @test any(t -> isapprox(t, 101μs), sampled.stats[:event_times])
+        @test any(t -> isapprox(t, Float64(ustrip(uconvert(s, 100μs)))), sampled.stats[:event_times])
+        @test any(t -> isapprox(t, Float64(ustrip(uconvert(s, 101μs)))), sampled.stats[:event_times])
         @test !haskey(sampled.stats, :bdf_orders)
         @test all(isfinite, current(sampled, :C1))
     end
@@ -78,7 +78,7 @@ end
     resolved = transient(SaveGridRC(), 0s => 140μs; saveat = 2μs, max_step = 0.1μs, event_mode = :exact)
     # Exact response after the one-microsecond linear ramp.
     expected_output = 1 - 100 * (1 - exp(-0.01)) * exp(-(140μs - 101μs) / 100μs)
-    @test voltage(resolved, :output)[end] ≈ expected_output atol = 2.0e-4
+    @test voltage(resolved, :output)[end] ≈ expected_output * V atol = 2.0e-4V
 end
 
 @testset "CMOS roundoff-equivalent stop times" begin
@@ -98,8 +98,8 @@ end
         ]
         for (r, stop) in zip(results, stops)
             @test r.stats[:converged]
-            @test last(r.axis) == stop
-            @test minimum(diff(r.axis)) > 0.99ns
+            @test last(r.axis) == Float64(Amber._si_value(stop, s))
+            @test minimum(diff(r.axis)) > 0.99e-9
         end
         for r in results[2:3]
             @test length(results[1].axis) == length(r.axis)

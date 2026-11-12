@@ -8,7 +8,7 @@ function _mosfet_component(
     for (name, value) in pairs((; width, length, multiplicity, drain_area, source_area, drain_perimeter, source_perimeter))
         value === nothing && continue
         model isa ChargeBasedMOSFET || throw(ArgumentError("explicit MOS geometry requires ChargeBasedMOSFET"))
-        model = with_model_parameter(model, name, Float64(value))
+        model = with_model_parameter(model, name, value)
     end
     return _component(kind, d, g, s, b; model, kw...)
 end
@@ -105,3 +105,9 @@ function _diode_conduction(model::JunctionDiode, voltage, temperature)
     end
     return current, conductance
 end
+
+charge(model::JunctionDiode, voltage::Unitful.AbstractQuantity; temperature=300.0) =
+    charge(model, _si_value(voltage, Unitful.V); temperature=_si_value(temperature, Unitful.K)) * Unitful.C
+
+differential_capacitance(model::JunctionDiode, voltage::Unitful.AbstractQuantity; temperature=300.0) =
+    differential_capacitance(model, _si_value(voltage, Unitful.V); temperature=_si_value(temperature, Unitful.K)) * Unitful.F

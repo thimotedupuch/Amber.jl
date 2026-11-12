@@ -597,7 +597,7 @@ function _set_initial_voltage!(builder::CircuitBuilder, primitive::BuilderPrimit
     specification = builder.primitives[Int(primitive.id)]
     kind = typeof(specification.kernel).parameters[1]
     kind === :capacitor||throw(ArgumentError("initial_voltage applies only to capacitors"))
-    parameters = merge(specification.parameters, (initial_voltage = _builder_parameter(builder, value),))
+    parameters = merge(specification.parameters, (initial_voltage = _builder_parameter(builder, _si_value(value, Unitful.V)),))
     builder.primitives[Int(primitive.id)] = PrimitiveSpec(specification.kernel, specification.terminals, parameters, specification.name)
     return primitive
 end

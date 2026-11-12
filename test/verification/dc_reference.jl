@@ -9,7 +9,7 @@
     end
     result = operating_point(DividerReference())
     conductance = [inv(2kΩ) + inv(3kΩ) + inv(10kΩ) -inv(3kΩ); -inv(3kΩ) inv(3kΩ) + inv(5kΩ)]
-    expected = conductance \ [12V / 2kΩ, 0.0]
+    expected = (ustrip.(uconvert.(S, conductance)) \ ustrip.(uconvert.(A, [12V / 2kΩ, 0A]))) .* V
     @test [voltage(result, :first)[1], voltage(result, :second)[1]] ≈ expected rtol = 1.0e-11
 
     @circuit BridgeReference() begin
@@ -21,7 +21,7 @@
     end
     bridge = operating_point(BridgeReference())
     g1, g2, g3, g4, g5 = inv.((1kΩ, 2kΩ, 3kΩ, 4kΩ, 5kΩ))
-    exact = [g1 + g2 + g5 -g5; -g5 g3 + g4 + g5] \ [g1 * 5V, g3 * 5V]
+    exact = (ustrip.(uconvert.(S, [g1 + g2 + g5 -g5; -g5 g3 + g4 + g5])) \ ustrip.(uconvert.(A, [g1 * 5V, g3 * 5V]))) .* V
     @test voltage(bridge, :left)[1] ≈ exact[1] rtol = 1.0e-11
     @test voltage(bridge, :right)[1] ≈ exact[2] rtol = 1.0e-11
 end

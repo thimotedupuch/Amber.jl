@@ -49,20 +49,53 @@ with_model_parameter(model, name::Symbol, value) = throw(
     )
 )
 
-Base.@kwdef struct Step <: AbstractWaveform
-    low::Float64 = 0.0; high::Float64 = 1.0; at::Float64 = 0.0; rise::Float64 = 0.0
-end
-Base.@kwdef struct Sine <: AbstractWaveform
-    amplitude::Float64 = 1.0; frequency::Float64 = 1.0; phase::Float64 = 0.0; offset::Float64 = 0.0
-end
-Base.@kwdef struct Pulse <: AbstractWaveform
-    low::Float64 = 0.0; high::Float64 = 1.0; frequency::Float64 = 1.0; duty_cycle::Float64 = 0.5
-    rise::Float64 = 0.0; fall::Float64 = 0.0; delay::Float64 = 0.0
+function _waveform_levels(low, high)
+    units = low isa Unitful.AbstractQuantity ? Unitful.unit(Unitful.upreferred(low)) : high isa Unitful.AbstractQuantity ? Unitful.unit(Unitful.upreferred(high)) : nothing
+    units === nothing && return low, high
+    convert_level(value) = value isa Unitful.AbstractQuantity ? Unitful.uconvert(units, value) : value * units
+    return convert_level(low), convert_level(high)
 end
 
-(w::Step)(t) = t < w.at ? w.low : w.rise <= 0 ? w.high : w.low + (w.high - w.low) * clamp((t - w.at) / w.rise, 0, 1)
-(w::Sine)(t) = w.offset + w.amplitude * sin(2π * w.frequency * t + w.phase)
+struct Step{L,H} <: AbstractWaveform
+    low::L
+    high::H
+    at::Float64
+    rise::Float64
+end
+Step(; low=0.0, high=1.0, at=0.0, rise=0.0) = Step(_waveform_levels(low, high)..., Float64(_si_value(at, Unitful.s)), Float64(_si_value(rise, Unitful.s)))
+struct Sine{A,O} <: AbstractWaveform
+    amplitude::A
+    frequency::Float64
+    phase::Float64
+    offset::O
+end
+function Sine(; amplitude=1.0, frequency=1.0, phase=0.0, offset=0.0)
+    amplitude, offset = _waveform_levels(amplitude, offset)
+    return Sine(amplitude, Float64(_si_value(frequency, Unitful.Hz)),
+        Float64(_si_value(phase, Unitful.rad)), offset)
+end
+struct Pulse{L,H} <: AbstractWaveform
+    low::L
+    high::H
+    frequency::Float64
+    duty_cycle::Float64
+    rise::Float64
+    fall::Float64
+    delay::Float64
+end
+Pulse(; low=0.0, high=1.0, frequency=1.0, duty_cycle=0.5, rise=0.0, fall=0.0, delay=0.0) = Pulse(_waveform_levels(low, high)..., Float64(_si_value(frequency, Unitful.Hz)), Float64(_si_value(duty_cycle, Unitful.NoUnits)), Float64(_si_value(rise, Unitful.s)), Float64(_si_value(fall, Unitful.s)), Float64(_si_value(delay, Unitful.s)))
+
+function _component_parameter(kind, name, waveform::AbstractWaveform)
+    name === :waveform || return waveform
+    units = kind === :voltage_source ? Unitful.V : Unitful.A
+    values = (; (field => _si_value(getfield(waveform, field), field in (:low, :high, :amplitude, :offset) ? units : Unitful.NoUnits) for field in fieldnames(typeof(waveform)))...)
+    return Base.typename(typeof(waveform)).wrapper(; values...)
+end
+
+(w::Step)(t) = _si_value(t, Unitful.s) < w.at ? w.low : w.rise <= 0 ? w.high : w.low + (w.high - w.low) * clamp((_si_value(t, Unitful.s) - w.at) / w.rise, 0, 1)
+(w::Sine)(t) = (w.amplitude isa Unitful.AbstractQuantity && !(w.offset isa Unitful.AbstractQuantity) ? w.offset * Unitful.unit(w.amplitude) : w.offset) + w.amplitude * sin(2π * w.frequency * _si_value(t, Unitful.s) + w.phase)
 function (w::Pulse)(t)
+    t = _si_value(t, Unitful.s)
     t < w.delay&&return w.low
     τ = mod(t - w.delay, 1 / w.frequency); on = w.duty_cycle / w.frequency
     τ < w.rise&&w.rise > 0&&return w.low + (w.high - w.low) * τ / w.rise
@@ -72,7 +105,7 @@ function (w::Pulse)(t)
 end
 
 function _validate_waveform(w::Pulse)
-    all(name -> isfinite(getfield(w, name)), fieldnames(Pulse))||throw(AnalysisValidationError("pulse parameters must be finite"))
+    all(name -> isfinite(getfield(w, name)), fieldnames(typeof(w)))||throw(AnalysisValidationError("pulse parameters must be finite"))
     isfinite(w.frequency)&&w.frequency > 0||throw(AnalysisValidationError("pulse frequency must be finite and positive"))
     0 <= w.duty_cycle <= 1||throw(AnalysisValidationError("pulse duty cycle must lie in [0, 1]"))
     w.rise >= 0&&w.fall >= 0||throw(AnalysisValidationError("pulse rise and fall times must be non-negative"))
@@ -81,12 +114,12 @@ function _validate_waveform(w::Pulse)
     return w
 end
 function _validate_waveform(w::Step)
-    all(name -> isfinite(getfield(w, name)), fieldnames(Step))||throw(AnalysisValidationError("step parameters must be finite"))
+    all(name -> isfinite(getfield(w, name)), fieldnames(typeof(w)))||throw(AnalysisValidationError("step parameters must be finite"))
     isfinite(w.at)&&isfinite(w.rise)&&w.rise >= 0||throw(AnalysisValidationError("step time and rise time must be finite, with non-negative rise"))
     return w
 end
 function _validate_waveform(w::Sine)
-    all(name -> isfinite(getfield(w, name)), fieldnames(Sine))||throw(AnalysisValidationError("sine parameters must be finite"))
+    all(name -> isfinite(getfield(w, name)), fieldnames(typeof(w)))||throw(AnalysisValidationError("sine parameters must be finite"))
     isfinite(w.frequency)&&w.frequency >= 0||throw(AnalysisValidationError("sine frequency must be finite and non-negative"))
     return w
 end
@@ -208,23 +241,25 @@ for (T, defaults) in (
                         join(string.(unknown), ", ")
                 )
             )
-            return _validate_model_parameters($T((; defaults..., kw...)))
+            return _validate_model_parameters($T(_model_parameters((; defaults..., kw...))))
         end
         Base.@constprop :aggressive Base.getproperty(x::$T, s::Symbol) =
             s === :data ? getfield(x, :data) : getproperty(getfield(x, :data), s)
         model_parameters(x::$T) = x.data
         function with_model_parameter(x::$T, name::Symbol, value)
             hasproperty(x.data, name)||throw(ArgumentError("model $(nameof($T)) has no parameter $(name)"))
-            return _validate_model_parameters($T(merge(x.data, NamedTuple{(name,)}((value,)))))
+            return _validate_model_parameters($T(_model_parameters(merge(x.data, NamedTuple{(name,)}((value,))))))
         end
     end
 end
 
 struct IdealResistor
     value::Float64
+    IdealResistor(value) = new(_si_value(value, Unitful.Ω))
 end
 struct IdealCapacitor
     value::Float64
+    IdealCapacitor(value) = new(_si_value(value, Unitful.F))
 end
 
 # Keep neutral values readable in existing snapshots, but never accept a
@@ -330,3 +365,12 @@ const _PASSIVE_MODELS = Tuple(
     getfield(@__MODULE__, name) for name in
         (_RESISTOR_MATERIAL_NAMES..., _PASSIVE_PACKAGE_NAMES..., _CAPACITOR_DIELECTRIC_NAMES...)
 )
+
+"""Adapt a user waveform's numeric or Unitful output to the source's SI kernel."""
+struct SIWaveform{F}
+    waveform::F
+    kind::Symbol
+end
+SIWaveform(; waveform, kind) = SIWaveform(waveform, kind)
+(w::SIWaveform)(time) = _si_value(w.waveform(time), w.kind === :voltage_source ? Unitful.V : Unitful.A)
+_component_parameter(kind, name, value::SIWaveform) = kind === value.kind ? value : SIWaveform(value.waveform, kind)

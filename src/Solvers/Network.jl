@@ -4,7 +4,7 @@ struct Port
     reference_impedance::Float64
     name::Union{Nothing, Symbol}
     function Port(positive, negative; reference_impedance = 50.0, name = nothing)
-        z0 = Float64(reference_impedance)
+        z0 = Float64(_si_value(reference_impedance, Unitful.Ω))
         isfinite(z0)&&z0 > 0||throw(ArgumentError("port reference impedance must be finite and positive"))
         return new(positive, negative, z0, name === nothing ? nothing : Symbol(name))
     end
@@ -18,7 +18,7 @@ struct NetworkResult
     stats::Dict{Symbol, Any}
 end
 
-frequencies(result::NetworkResult) = result.frequencies
+frequencies(result::NetworkResult) = result.frequencies .* Unitful.Hz
 
 function _port_node_index(cc, node)
     index = _hierarchical_net_index(cc, node)
@@ -52,13 +52,13 @@ function port_response(c, frequency_specification::Union{Pair, AbstractVector}; 
     return NetworkResult(_snapshot_compiled(cc), Float64.(fs), deepcopy(port_list), z, stats)
 end
 
-impedance(result::NetworkResult) = copy(result.z)
+impedance(result::NetworkResult) = result.z .* Unitful.Ω
 function admittance(result::NetworkResult)
     output = similar(result.z)
     for index in eachindex(result.frequencies)
         output[:, :, index] = _solve_linear(result.z[:, :, index], Matrix{ComplexF64}(I, length(result.ports), length(result.ports)), "network impedance matrix is singular at $(result.frequencies[index]) Hz")
     end
-    return output
+    return output .* Unitful.S
 end
 
 function _z0_matrix(ports)
@@ -94,6 +94,7 @@ function network_parameters(result::NetworkResult, kind::Symbol = :z)
 end
 
 function renormalize(result::NetworkResult, reference_impedances)
+    reference_impedances = _si_value(reference_impedances, Unitful.Ω)
     values = reference_impedances isa Real ? fill(Float64(reference_impedances), length(result.ports)) : Float64.(reference_impedances)
     length(values) == length(result.ports)||throw(DimensionMismatch("one reference impedance is required per port"))
     all(value -> isfinite(value)&&value > 0, values)||throw(ArgumentError("reference impedances must be finite and positive"))

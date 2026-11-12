@@ -1,3 +1,8 @@
+# Rendering uses SI coordinates; units stay in the view metadata and axis labels.
+_plot_scalar(value) = value
+_plot_scalar(value::Amber.Unitful.AbstractQuantity) = Amber.ustrip(Amber.Unitful.upreferred(value))
+_plot_values(values) = _plot_scalar.(values)
+
 abstract type AbstractDisplayView end
 
 struct TraceView{X <: AbstractVector, Y <: AbstractVector} <: AbstractDisplayView
@@ -145,7 +150,7 @@ function jitterview(
         throw(ArgumentError("jitterview requires a transient result"))
     edge in (:rising, :falling) ||
         throw(ArgumentError("edge must be :rising or :falling"))
-    values = Float64.(real.(Amber.trace(result, signal)))
+    values = Float64.(_plot_values(real.(Amber.trace(result, signal))))
     isempty(values) && throw(ArgumentError("jitter trace is empty"))
     level = threshold === nothing ? (minimum(values) + maximum(values)) / 2 : Float64(threshold)
     crossings = _threshold_crossings(result.axis, values, level, edge)
@@ -177,7 +182,7 @@ function eyediagramview(
     period = Float64(period)
     period > 0 || throw(ArgumentError("period must be positive"))
     unit_intervals >= 1 || throw(ArgumentError("unit_intervals must be positive"))
-    times = result.axis; trace = Float64.(real.(Amber.trace(result, signal)))
+    times = result.axis; trace = Float64.(_plot_values(real.(Amber.trace(result, signal))))
     length(times) == length(trace) || throw(DimensionMismatch("trace and time lengths differ"))
     window = unit_intervals * period
     cycle = floor.(Int, (times .- Float64(offset)) ./ window)
@@ -216,7 +221,7 @@ function operatingpointview(result::Amber.SimulationResult; query = "", kind = n
     for node in Amber.nets(result.compiled.design; limit = typemax(Int))
         name = string(node.path)
         matches(name) || continue
-        value = node.ground ? 0.0 : Float64(real(only(Amber.voltage(result, name))))
+        value = node.ground ? 0.0 : Float64(_plot_scalar(real(only(Amber.voltage(result, name)))))
         push!(node_rows, (name, voltage = value, ground = node.ground))
     end
     device_rows = NamedTuple[]
@@ -225,12 +230,12 @@ function operatingpointview(result::Amber.SimulationResult; query = "", kind = n
         name = string(device.path)
         matches(name) || continue
         current = try
-            Float64(real(only(Amber.current(result, name))))
+            Float64(_plot_scalar(real(only(Amber.current(result, name)))))
         catch
             nothing
         end
         power = try
-            Float64(real(only(Amber.power(result, name))))
+            Float64(_plot_scalar(real(only(Amber.power(result, name)))))
         catch
             nothing
         end
@@ -305,7 +310,7 @@ end
 function traceview(result::Amber.SimulationResult, signal; label = nothing)
     result.analysis isa Union{Amber.Transient, Amber.TransientNoise} ||
         throw(ArgumentError("traceview requires a transient result"))
-    values = collect(Amber.trace(result, signal))
+    values = _plot_values(Amber.trace(result, signal))
     length(values) == length(result.axis) || throw(DimensionMismatch("trace and axis lengths differ"))
     quantity, unit = _signal_metadata(signal)
     return TraceView(
@@ -317,9 +322,9 @@ end
 function frequencyview(result::Amber.SimulationResult; input, output)
     result.analysis isa Amber.SmallSignal ||
         throw(ArgumentError("frequencyview requires a small-signal result"))
-    response = collect(Amber.transfer(result; input, output))
+    response = _plot_values(Amber.transfer(result; input, output))
     return FrequencyView(
-        Amber.frequencies(result), response, _signal_label(input), _signal_label(output),
+        _plot_values(Amber.frequencies(result)), response, _signal_label(input), _signal_label(output),
         _warnings(result.stats), _provenance(result)
     )
 end
@@ -417,7 +422,7 @@ function noiseview(result::Amber.NoiseResult; referred = :output)
     density = referred === :output ? Amber.noise_density(result) : Amber.input_referred_noise_density(result)
     density === nothing && throw(ArgumentError("input-referred noise is unavailable for this result"))
     return NoiseView(
-        result.frequencies, density, referred, "V/√Hz", _warnings(result.stats),
+        result.frequencies, _plot_values(density), referred, string(referred === :output ? Amber._noise_output_unit(result) : Amber._noise_input_unit(result), "/√Hz"), _warnings(result.stats),
         _provenance(result)
     )
 end
@@ -463,7 +468,7 @@ function noisecontributionview(
     ranked = sort!(collect(totals); by = last, rev = true)
     total_psd = referred === :output ? Amber.noise_psd(result) : Amber.input_referred_noise_psd(result)
     total_psd === nothing && throw(ArgumentError("input-referred noise is unavailable for this result"))
-    total = _band_variance(result.frequencies, total_psd, low, high)
+    total = _band_variance(result.frequencies, _plot_values(total_psd), low, high)
     return NoiseContributionView(
         string.(first.(ranked)), last.(ranked), total, low => high,
         referred, _warnings(result.stats), _provenance(result)
@@ -471,7 +476,7 @@ function noisecontributionview(
 end
 
 function networkview(result::Amber.NetworkResult; parameter = :s, element = (2, 1))
-    matrix = Amber.network_parameters(result, Symbol(parameter))
+    matrix = _plot_values(Amber.network_parameters(result, Symbol(parameter)))
     row, column = element
     checkbounds(matrix, row, column, :)
     labels = [something(port.name, Symbol("port", index)) |> string for (index, port) in enumerate(result.ports)]
@@ -486,7 +491,7 @@ function ensembleview(result::Union{Amber.SweepResult, Amber.MonteCarloResult})
     values = result isa Amber.SweepResult ? result.metrics : result.values
     parameters = result isa Amber.SweepResult ? result.parameter_values : result.parameters
     return EnsembleView(
-        collect(eachindex(values)), collect(values), copy(result.converged),
-        copy(result.failures), collect(parameters), String[], _provenance(result)
+        collect(eachindex(values)), _plot_values(collect(values)), copy(result.converged),
+        copy(result.failures), _plot_values(collect(parameters)), String[], _provenance(result)
     )
 end

@@ -94,6 +94,7 @@ export Hz, fHz, pHz, nHz, μHz, mHz, kHz, MHz, GHz, THz
 export S, fS, pS, nS, μS, mS, kS, MS, GS, TS
 export K, fK, pK, nK, μK, mK, kK, MK, GK, TK
 export m, fm, pm, nm, μm, mm, km, Mm, Gm, Tm
+export NoUnits, @u_str, uconvert, ustrip, uconvertrp, uconvertp
 export dB, percent
 export °
 

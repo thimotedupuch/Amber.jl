@@ -74,10 +74,10 @@ end
 @testset "time response includes requested endpoint" begin
     model = linearize(LowPass(); inputs = :V1, outputs = :vout)
     response = step_response(model, 0s => 1ms; saveat = 0.7ms)
-    @test last(response.axis) == 1ms
+    @test last(response.axis) == 0.001
     @test response.values[1, 1, end] ≈ 1 - 1 / 8 / 4
     coarse = step_response(model, 0s => 1ms; saveat = 2ms)
-    @test coarse.axis == [0.0, 1ms]
+    @test coarse.axis == [0.0, 0.001]
     @test coarse.values[1, 1, end] ≈ 10 / 11
     @test_throws ArgumentError step_response(model, 0.0 => Inf; saveat = 1.0)
     @test_throws ArgumentError step_response(model, 0.0 => 1.0; saveat = Inf)

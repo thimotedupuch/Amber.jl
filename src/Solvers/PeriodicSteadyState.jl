@@ -102,16 +102,18 @@ function _pss_monodromy(
 end
 
 function periodic_steady_state(
-        c; period, saveat = Float64(period) / 200, max_step = nothing, method = :bdf2, event_mode = nothing,
+        c; period, saveat = Float64(_si_value(period, Unitful.s)) / 200, max_step = nothing, method = :bdf2, event_mode = nothing,
         temperature = 300.0, initial = nothing, reltol = nothing, abstol = nothing, maxiters = 12,
         newton_damping = 1.0, fd_step = sqrt(eps(Float64)), monodromy_method = :variational,
         autonomous = false, phase_index = nothing,
         solver = SolverOptions(current_abstol = 1.0e-9, voltage_abstol = 1.0e-9, state_abstol = 1.0e-9, max_newton_iterations = 120)
     )
+    temperature = _si_value(temperature, Unitful.K)
+    max_step = _si_value(max_step, Unitful.s)
     solver = _effective_solver(solver; reltol, abstol)
     reltol, abstol, _, _ = _solver_values(solver)
-    period = Float64(period); period > 0&&isfinite(period)||throw(AnalysisValidationError("PSS period must be finite and positive"))
-    saveat = Float64(saveat); saveat > 0||throw(AnalysisValidationError("PSS saveat must be positive"))
+    period = Float64(_si_value(period, Unitful.s)); period > 0&&isfinite(period)||throw(AnalysisValidationError("PSS period must be finite and positive"))
+    saveat = Float64(_si_value(saveat, Unitful.s)); saveat > 0||throw(AnalysisValidationError("PSS saveat must be positive"))
     maxiters > 0||throw(AnalysisValidationError("PSS maxiters must be positive")); 0 < newton_damping <= 1||throw(AnalysisValidationError("PSS Newton damping must lie in (0, 1]"))
     cc = compile(c); state = _initial_transient_state(cc, initial; temperature, solver)
     autonomous = Bool(autonomous)

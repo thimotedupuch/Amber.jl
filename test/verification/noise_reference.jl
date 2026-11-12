@@ -4,6 +4,6 @@
         gnd = ground(); output = node(); R1 = resistor(output, gnd; value = resistance)
     end
     result = noise(ResistorNoise(), 1kHz => 1kHz; output = voltage(:output), points = 1, temperature)
-    expected = sqrt(4 * 1.380649e-23 * temperature * resistance)
+    expected = sqrt(4 * 1.380649e-23u"J/K" * (temperature * K) * resistance)
     @test noise_density(result)[1] ≈ expected rtol = 2.0e-12
 end

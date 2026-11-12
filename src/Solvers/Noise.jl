@@ -51,12 +51,12 @@ struct NoiseResult
     end
 end
 
-frequencies(result::NoiseResult) = result.frequencies
-noise_psd(result::NoiseResult) = result.output_psd
-noise_density(result::NoiseResult) = sqrt.(max.(result.output_psd, 0.0))
-input_referred_noise_psd(result::NoiseResult) = result.input_referred_psd
+frequencies(result::NoiseResult) = result.frequencies .* Unitful.Hz
+noise_psd(result::NoiseResult) = result.output_psd .* _noise_output_unit(result)^2 / Unitful.Hz
+noise_density(result::NoiseResult) = sqrt.(max.(result.output_psd, 0.0)) .* _noise_output_unit(result) / sqrt(Unitful.Hz)
+input_referred_noise_psd(result::NoiseResult) = result.input_referred_psd === nothing ? nothing : result.input_referred_psd .* _noise_input_unit(result)^2 / Unitful.Hz
 input_referred_noise_density(result::NoiseResult) = result.input_referred_psd === nothing ?
-    nothing : sqrt.(max.(result.input_referred_psd, 0.0))
+    nothing : sqrt.(max.(result.input_referred_psd, 0.0)) .* _noise_input_unit(result) / sqrt(Unitful.Hz)
 
 function noise_contributions(result::NoiseResult; component = nothing, mechanism = nothing)
     return filter(result.contributions) do contribution
@@ -387,6 +387,7 @@ end
 
 function _frequency_grid(specification; points = 100, scale = :log)
     specification isa AbstractVector&&return _validate_frequency_grid(specification)
+    specification = _si_value(first(specification), Unitful.Hz) => _si_value(last(specification), Unitful.Hz)
     _validate_frequency_range(specification, points, scale)
     return first(specification) == last(specification) ? [Float64(first(specification))] :
         scale === :log ? collect(
@@ -412,6 +413,7 @@ function noise(
         c, frequency_specification; output, input = nothing, points = 100, scale = :log,
         temperature = 300.0, contributions = true, bias = nothing, operating_point_options...
     )
+    temperature = _si_value(temperature, Unitful.K)
     isfinite(temperature)&&temperature > 0||
         throw(AnalysisValidationError("noise temperature must be finite and positive"))
     frequencies = _frequency_grid(frequency_specification; points, scale)
@@ -557,7 +559,7 @@ function noise_figure(result::NoiseResult; source_resistance)
             "noise figure requires an input-referred noise result"
         )
     )
-    resistance = Float64(source_resistance)
+    resistance = Float64(_si_value(source_resistance, Unitful.Ω))
     resistance > 0&&isfinite(resistance)||throw(
         ArgumentError(
             "source resistance must be finite and positive"
@@ -612,3 +614,11 @@ end
 
 _mos_noise_warning(::Level1MOSFET) = "Level1MOSFET noise excludes body-diode, junction, substrate, and foundry BSIM mechanisms"
 _mos_noise_warning(::ChargeBasedMOSFET) = "ChargeBasedMOSFET uses long-channel charge-based thermal noise and empirical flicker/gate noise; junction shot noise, substrate and foundry-calibrated mechanisms are excluded"
+
+_noise_output_unit(result) = result.output.kind === :voltage ? Unitful.V : result.output.kind === :current ? Unitful.A : throw(ArgumentError("unsupported noise observable $(result.output.kind)"))
+
+function _noise_input_unit(result)
+    located = _hierarchical_device(result.compiled, result.input_source)
+    located === nothing && throw(ArgumentError("noise input source is unavailable"))
+    return _batch_kind(first(located)) === :voltage_source ? Unitful.V : Unitful.A
+end

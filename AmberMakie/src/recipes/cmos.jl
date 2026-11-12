@@ -25,7 +25,11 @@ function mosfetview(
         vgs = range(0.0, 1.5; length = 101), vds = [0.05, 0.6, 1.2], vbs = 0.0, temperature = 300.0
     )
     kind in (:nmos, :pmos) || throw(ArgumentError("kind must be :nmos or :pmos"))
-    gates = Float64.(collect(vgs)); drains = vds isa Real ? [Float64(vds)] : Float64.(collect(vds))
+    gates = Float64.(Amber._si_value(collect(vgs), Amber.V))
+    vds = Amber._si_value(vds, Amber.V)
+    drains = vds isa Real ? [Float64(vds)] : Float64.(collect(vds))
+    vbs = Amber._si_value(vbs, Amber.V)
+    temperature = Amber._si_value(temperature, Amber.K)
     length(gates) >= 2 || throw(ArgumentError("vgs needs at least two samples"))
     isempty(drains) && throw(ArgumentError("vds must not be empty"))
     all(isfinite, gates) && all(isfinite, drains) && isfinite(vbs) ||
@@ -58,7 +62,7 @@ const _MOS_LABELS = Dict(
     :id => "|ID| (A)", :gm => "|gm| (S)", :gds => "|gds| (S)",
     :gm_over_id => "gm / |ID| (1/V)", :intrinsic_gain => "|gm / gds|", :cgg => "∂Qg / ∂Vg (F)"
 )
-_display_values(values; positive = false) = [isfinite(x) && (!positive || x > 0) ? Float64(x) : NaN for x in values]
+_display_values(values; positive = false) = [isfinite(x) && (!positive || x > 0) ? Float64(x) : NaN for x in _plot_values(values)]
 
 """
     mosfetplot(position, view; quantity=:id, x=:vgs, scale=:linear, axis=(;))
@@ -137,7 +141,7 @@ function capacitanceplot(position, point::NamedTuple; kwargs...)
         xticks = (1:4, names), yticks = (1:4, names), yreversed = true,
         title = "Signed ∂Qi / ∂Vj"
     )
-    values = Float64.(matrix) .* 1.0e15; extent = maximum(abs, values)
+    values = Float64.(_plot_values(matrix)) .* 1.0e15; extent = maximum(abs, values)
     extent = iszero(extent) ? 1.0 : extent
     plot = Makie.heatmap!(
         ax, 1:4, 1:4, permutedims(values); colormap = :RdBu,
@@ -183,7 +187,8 @@ function workbench(view::MOSFETView)
     marker_positions = map((:id, :gm_over_id, :intrinsic_gain, :cgg)) do quantity
         Makie.lift(selected_gate, selected_point) do i, point
             x = quantity === :gm_over_id ? abs(point.id) / (view.model.width * view.model.multiplicity) : quantity === :intrinsic_gain ? point.gm_over_id : view.vgs[i]
-            y = _mos_quantity(point, quantity)
+            x = _plot_scalar(x)
+            y = _plot_scalar(_mos_quantity(point, quantity))
             valid = isfinite(x)&&isfinite(y) && (quantity === :gm_over_id ? x > 0 : quantity in (:id, :intrinsic_gain) ? y > 0 : true)
             [valid ? Makie.Point2f(x, y) : Makie.Point2f(NaN, NaN)]
         end
@@ -243,6 +248,8 @@ workbench(model::Amber.ChargeBasedMOSFET; kwargs...) = workbench(mosfetview(mode
 
 """Snap a CMOS workbench to the nearest stored polarity-normalized gate/drain biases."""
 function selectbias!(handle::WorkbenchHandle; vgs = nothing, vds = nothing)
+    vgs = Amber._si_value(vgs, Amber.V)
+    vds = Amber._si_value(vds, Amber.V)
     handle.closed && throw(ArgumentError("workbench is closed"))
     view = get(handle.measurements, :mosfet_view, nothing)
     view === nothing && throw(ArgumentError("workbench does not support CMOS bias selection"))

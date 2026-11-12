@@ -1,7 +1,7 @@
 using LinearAlgebra
 using Statistics
 
-relative_error(actual, expected) = norm(actual - expected) / max(norm(expected), eps(Float64))
+relative_error(actual, expected) = norm(actual - expected) / max(norm(expected), eps(Float64) * oneunit(norm(expected)))
 observed_order(coarse, fine) = log2(coarse / fine)
 
 function final_error(result, signal, reference)

@@ -53,6 +53,8 @@ function _trapezoid(x, y)
 end
 
 function interval_readout(x::AbstractVector, y::AbstractVector, interval::Pair)
+    x, y = _plot_values(x), _plot_values(y)
+    interval = _plot_scalar(first(interval)) => _plot_scalar(last(interval))
     length(x) == length(y) || throw(DimensionMismatch("axis and trace lengths differ"))
     lo, hi = extrema((first(interval), last(interval)))
     indices = findall(value -> lo <= value <= hi, x)

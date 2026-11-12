@@ -17,7 +17,7 @@ struct PeakToPeakMetric
     observable::Observable
     window::Union{Nothing, Pair{Float64, Float64}}
 end
-peak_to_peak(observable; window = nothing) = PeakToPeakMetric(observable, window)
+peak_to_peak(observable; window = nothing) = PeakToPeakMetric(observable, window === nothing ? nothing : _si_value(first(window), Unitful.s) => _si_value(last(window), Unitful.s))
 function (metric::PeakToPeakMetric)(result::SimulationResult)
     values = _signal(result, metric.observable)
     indices = metric.window === nothing ? eachindex(values) : findall(t -> first(metric.window) <= t <= last(metric.window), result.axis)
@@ -25,28 +25,28 @@ function (metric::PeakToPeakMetric)(result::SimulationResult)
     return maximum(real.(values[indices])) - minimum(real.(values[indices]))
 end
 
-struct SamplingMetrics
-    acquisition_time::Float64
-    hold_droop::Float64
-    aperture_error::Float64
-    charge_injection_step::Float64
+struct SamplingMetrics{T,V}
+    acquisition_time::T
+    hold_droop::V
+    aperture_error::V
+    charge_injection_step::V
 end
 function sampling_metrics(result::SimulationResult; input, held, clock)
     vin = real.(_signal(result, input)); vhold = real.(_signal(result, held)); clk = real.(_signal(result, clock)); t = result.axis
     threshold = (minimum(clk) + maximum(clk)) / 2; rises = [i for i in 2:length(clk) if clk[i - 1] < threshold <= clk[i]]; falls = [i for i in 2:length(clk) if clk[i - 1] >= threshold > clk[i]]
     acquisition_end = isempty(rises) ? nothing : findfirst(falling -> falling > first(rises), falls)
     acquisition = acquisition_end === nothing ? NaN : t[falls[acquisition_end]] - t[first(rises)]
-    droops = Float64[]
+    droops = eltype(vhold)[]
     for falling in falls
         next_rise = findfirst(rising -> rising > falling, rises)
         next_rise === nothing&&continue; ending = rises[next_rise] - 1
         ending > falling&&push!(droops, abs(vhold[ending] - vhold[falling]))
     end
-    droop = isempty(droops) ? NaN : maximum(droops)
+    droop = isempty(droops) ? NaN * Unitful.V : maximum(droops)
     edge = isempty(falls) ? nothing : first(falls)
-    aperture = edge === nothing ? NaN : abs(vhold[edge] - vin[edge])
-    injection = edge === nothing ? NaN : abs(vhold[edge] - vhold[edge - 1])
-    return SamplingMetrics(acquisition, droop, aperture, injection)
+    aperture = edge === nothing ? NaN * Unitful.V : abs(vhold[edge] - vin[edge])
+    injection = edge === nothing ? NaN * Unitful.V : abs(vhold[edge] - vhold[edge - 1])
+    return SamplingMetrics(acquisition * Unitful.s, droop, aperture, injection)
 end
 
 function _first_crossing(t, y, level)
@@ -85,16 +85,16 @@ function propagation_delay(
         output_threshold = threshold, input_edge = :auto, output_edge = :auto,
         occurrence::Integer = 1, window = nothing
     )
-    x = _cmos_grid(t); a, b = Float64.(vin), Float64.(vout)
+    x = _cmos_grid(t, Unitful.s); a, b = Float64.(_si_value(vin, Unitful.V)), Float64.(_si_value(vout, Unitful.V))
     length(a) == length(b) == length(x) || throw(ArgumentError("waveform lengths differ"))
     all(isfinite, a)&&all(isfinite, b) || throw(ArgumentError("waveforms must be finite"))
     occurrence > 0 || throw(ArgumentError("occurrence must be positive"))
     all(e -> e in (:auto, :rising, :falling), (input_edge, output_edge)) ||
         throw(ArgumentError("edge direction must be :auto, :rising or :falling"))
-    lo, hi = window === nothing ? (first(x), last(x)) : (Float64(first(window)), Float64(last(window)))
+    lo, hi = window === nothing ? (first(x), last(x)) : (Float64(_si_value(first(window), Unitful.s)), Float64(_si_value(last(window), Unitful.s)))
     first(x) <= lo < hi <= last(x) || throw(ArgumentError("window must lie within the trace"))
-    ta = input_threshold === nothing ? (minimum(a) + maximum(a)) / 2 : Float64(input_threshold)
-    tb = output_threshold === nothing ? (minimum(b) + maximum(b)) / 2 : Float64(output_threshold)
+    ta = input_threshold === nothing ? (minimum(a) + maximum(a)) / 2 : _si_value(input_threshold, Unitful.V)
+    tb = output_threshold === nothing ? (minimum(b) + maximum(b)) / 2 : _si_value(output_threshold, Unitful.V)
     isfinite(ta)&&isfinite(tb) || throw(ArgumentError("thresholds must be finite"))
     direction(e) = e === :rising ? 1 : e === :falling ? -1 : 0
     all_inputs = _cmos_crossings(x, a, ta)
@@ -116,12 +116,12 @@ function propagation_delay(
 end
 function propagation_delay(result::SimulationResult; input, output, kwargs...)
     _require_timing_result(result)
-    return propagation_delay(result.axis, real.(_signal(result, input)), real.(_signal(result, output)); kwargs...)
+    return propagation_delay(result.axis, real.(_signal(result, input)), real.(_signal(result, output)); kwargs...) * Unitful.s
 end
 function overshoot(result::SimulationResult, signal)
     y = real.(_signal(result, signal)); final = last(y); initial = first(y); step = final - initial
-    step == 0&&return 0.0
-    return step > 0 ? (maximum(y) - final) / abs(step) : (final - minimum(y)) / abs(step)
+    iszero(step)&&return 0.0
+    return step > zero(step) ? (maximum(y) - final) / abs(step) : (final - minimum(y)) / abs(step)
 end
 
 function _cmos_derivative(x, y)
@@ -140,8 +140,8 @@ function _cmos_derivative(x, y)
     return derivative
 end
 
-function _cmos_grid(x)
-    a = Float64.(collect(x))
+function _cmos_grid(x, units=Unitful.NoUnits)
+    a = Float64.(_si_value(collect(x), units))
     length(a) >= 2 && all(isfinite, a) && all(>(0), diff(a)) ||
         throw(ArgumentError("axis needs at least two finite, strictly increasing samples"))
     return a
@@ -176,8 +176,9 @@ Monotonicity allows adjacent increases up to `monotonic_atol=1e-9` volts
 for solver roundoff. Refine the DC grid to check convergence of these sampled measurements.
 """
 function invertermetrics(vin, vout; source = nothing, monotonic_atol = 1.0e-9)
+    monotonic_atol = _si_value(monotonic_atol, Unitful.V)
     isfinite(monotonic_atol) && monotonic_atol >= 0 || throw(ArgumentError("monotonic_atol must be finite and nonnegative"))
-    x = _cmos_grid(vin); y = Float64.(collect(vout))
+    x = _cmos_grid(vin, Unitful.V); y = Float64.(_si_value(collect(vout), Unitful.V))
     length(x) == length(y) || throw(ArgumentError("input/output lengths differ"))
     gain = _cmos_derivative(x, y)
     crossings = _cmos_crossings(x, gain, -1.0)
@@ -193,7 +194,7 @@ function invertermetrics(vin, vout; source = nothing, monotonic_atol = 1.0e-9)
     return (input = x, output = y, gain = gain, measurements = m, warnings = warnings, source = source)
 end
 function invertermetrics(s::SweepResult; output, kwargs...)
-    y = [s.converged[i] ? Float64(real(only(voltage(s.simulations[i], output)))) : NaN for i in eachindex(s.parameter_values)]
+    y = [s.converged[i] ? Float64(real(only(_voltage_si(s.simulations[i], output)))) : NaN for i in eachindex(s.parameter_values)]
     return invertermetrics(s.parameter_values, y; source = s, kwargs...)
 end
 
@@ -211,11 +212,12 @@ The result overload rejects nonconverged or non-transient results. Refine
 the timestep and compare both delays and energy before claiming accuracy.
 """
 function switchingmetrics(t, vin, vout, p; vdd, window)
-    x = _cmos_grid(t); a, b, p = Float64.(vin), Float64.(vout), Float64.(p)
+    x = _cmos_grid(t, Unitful.s); a, b, p = Float64.(_si_value(vin, Unitful.V)), Float64.(_si_value(vout, Unitful.V)), Float64.(_si_value(p, Unitful.W))
     all(length(z) == length(x) for z in (a, b, p)) || throw(ArgumentError("waveform lengths differ"))
     all(z -> all(isfinite, z), (a, b, p)) || throw(ArgumentError("waveforms must be finite"))
+    vdd = _si_value(vdd, Unitful.V)
     isfinite(vdd) && vdd > 0 || throw(ArgumentError("vdd must be positive"))
-    lo, hi = Float64(first(window)), Float64(last(window))
+    lo, hi = Float64(_si_value(first(window), Unitful.s)), Float64(_si_value(last(window), Unitful.s))
     first(x) <= lo < hi <= last(x) || throw(ArgumentError("window must lie within the trace"))
     rises = _cmos_crossings(x, a, vdd / 2; direction = 1)
     falls = _cmos_crossings(x, a, vdd / 2; direction = -1)

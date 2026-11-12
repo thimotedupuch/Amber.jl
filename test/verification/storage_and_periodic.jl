@@ -8,11 +8,11 @@
     for (r, c) in ((1.0, 1.0e-17), (1.0e3, 1.0e-15), (1.0e6, 1.0e-12))
         circuit = StorageRC(; r, c); frequency = inv(2π * r * c)
         ac = small_signal(circuit, [frequency]; source = :V1)
-        @test voltage(ac, :output)[1] ≈ 0.5 - 0.5im rtol = 1.0e-12
+        @test voltage(ac, :output)[1] ≈ (0.5 - 0.5im) * V rtol = 1.0e-12
         model = linearize(circuit; inputs = :V1, outputs = voltage(:output))
         @test frequency_response(model, [frequency]).values[1, 1, 1] ≈ 0.5 - 0.5im rtol = 1.0e-12
         nr = noise(circuit, [frequency]; output = voltage(:output))
-        @test noise_psd(nr)[1] ≈ 4 * 1.380649e-23 * 300 * r / 2 rtol = 1.0e-12
+        @test noise_psd(nr)[1] ≈ 4 * 1.380649e-23 * 300 * r / 2 * (V^2 / Hz) rtol = 1.0e-12
     end
 end
 
@@ -55,9 +55,9 @@ end
         )
         @test result.stats[:converged]
         charges = charge.(Ref(model), voltage(result, :x))
-        @test charges ≈ q0 .+ 1.0e-6 .* result.axis rtol = 1.0e-8 atol = 1.0e-19
+        @test charges ≈ (q0 .+ 1.0e-6 .* result.axis) .* u"C" rtol = 1.0e-8 atol = 1.0e-19u"C"
         if !adaptive
-            @test current(result, :D)[2:end] ≈ fill(1.0e-6, length(result.axis) - 1) rtol = 1.0e-8
+            @test current(result, :D)[2:end] ≈ fill(1.0e-6A, length(result.axis) - 1) rtol = 1.0e-8
         end
     end
 end
@@ -166,7 +166,7 @@ end
         expected = 4 * 1.380649e-23 * 300 / (2radius^2) * (inv(2scale)^2 + inv(5scale)^2)
         @test projections[end] ≈ fill(expected, 2) rtol = 0.03
         result = phase_noise(pss, [0.01, 0.02]; output = voltage(:x), sidebands = -1:1)
-        push!(phase_spectra, noise_psd(result))
+        push!(phase_spectra, ustrip.(uconvert.(inv(Hz), noise_psd(result))))
         @test phase_spectra[end][1] / phase_spectra[end][2] ≈ 4 rtol = 1.0e-12
     end
     @test sensitivities[2] ≈ sensitivities[1] ./ 7 rtol = 1.0e-10
@@ -184,7 +184,7 @@ end
     for method in (:bdf1, :bdf2)
         result = transient(StorageMOS(), 0.0 => 1.0e-6; max_step = 7.0e-8, method, reltol = 1.0e-10, abstol = 1.0e-15)
         @test result.stats[:converged]
-        @test current(result, :VG)[2:end] ≈ -current(result, :M, :gate)[2:end] rtol = 1.0e-8 atol = 1.0e-15
-        @test current(result, :VD)[2:end] ≈ -current(result, :M, :drain)[2:end] rtol = 1.0e-8 atol = 1.0e-15
+        @test current(result, :VG)[2:end] ≈ -current(result, :M, :gate)[2:end] rtol = 1.0e-8 atol = 1.0e-15A
+        @test current(result, :VD)[2:end] ≈ -current(result, :M, :drain)[2:end] rtol = 1.0e-8 atol = 1.0e-15A
     end
 end

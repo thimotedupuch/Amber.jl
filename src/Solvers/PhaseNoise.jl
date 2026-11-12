@@ -12,9 +12,9 @@ struct PhaseNoiseResult
     stats::Dict{Symbol, Any}
 end
 
-frequencies(result::PhaseNoiseResult) = result.offset_frequencies
-noise_psd(result::PhaseNoiseResult) = result.phase_noise_ratio
-noise_density(result::PhaseNoiseResult) = sqrt.(max.(result.phase_noise_ratio, 0.0))
+frequencies(result::PhaseNoiseResult) = result.offset_frequencies .* Unitful.Hz
+noise_psd(result::PhaseNoiseResult) = result.phase_noise_ratio / Unitful.Hz
+noise_density(result::PhaseNoiseResult) = sqrt.(max.(result.phase_noise_ratio, 0.0)) / sqrt(Unitful.Hz)
 
 function noise_contributions(result::PhaseNoiseResult; component = nothing, mechanism = nothing)
     return filter(result.contributions) do contribution
@@ -136,6 +136,7 @@ function phase_noise(
         pss::PSSResult, offset_specification; output, sidebands = -5:5,
         temperature = pss.stats[:temperature], points = 100, scale = :log
     )
+    temperature = _si_value(temperature, Unitful.K)
     get(pss.stats, :converged, false)||throw(
         ConvergenceError(
             "phase noise requires a converged periodic steady state", copy(pss.stats)

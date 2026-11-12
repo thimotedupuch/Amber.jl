@@ -7,7 +7,7 @@
     circuit = PowerBalance(); result = operating_point(circuit); compiled = result.compiled; point = result.values[:, 1]
     @test norm(Amber.residual(compiled, point, zero(point), 0.0; mode = :dc), Inf) < 1.0e-12
     total_power = sum(power(result, name)[1] for name in (:V1, :R1, :R2))
-    @test abs(total_power) < 1.0e-12
+    @test abs(total_power) < 1.0e-12u"W"
 
     @circuit ReactiveBalance() begin
         gnd = ground(); input = node(); output = node()

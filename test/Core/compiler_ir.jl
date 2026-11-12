@@ -46,7 +46,7 @@ end
 
     resistor_batch = only(batch for batch in compiled.parameters.batches if batch isa ResistorBatch)
     @test length(resistor_batch.p) == 8
-    @test resistor_batch.conductance == 1.0 ./ (collect(1:8) .* 1kΩ)
+    @test resistor_batch.conductance == 1.0 ./ (collect(1:8) .* 1000.0)
     @test all(resistor_batch.jacobian_slots .> 0)
     @test length(unique(resistor_batch.locators)) == 8
 
@@ -58,7 +58,7 @@ end
     @test updated_capacitors === original_capacitors
     @test updated_resistors !== resistor_batch
     @test updated_resistors.p === resistor_batch.p
-    @test updated_resistors.conductance[1:3] == fill(1 / 10kΩ, 3)
+    @test updated_resistors.conductance[1:3] == fill(1 / 10000.0, 3)
     @test updated.parameters.fingerprint != compiled.parameters.fingerprint
     @test !hasproperty(compiled, :circuit)
     @test !hasproperty(updated, :circuit)

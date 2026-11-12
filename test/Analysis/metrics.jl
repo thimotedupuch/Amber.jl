@@ -1,9 +1,9 @@
 @testset "analysis metrics" begin
     result = transient(LowPass(), 0s => 1ms; saveat = 10μs)
     ripple = peak_to_peak(voltage(:vout), window = 500μs => 1ms)
-    @test ripple(result) >= 0
+    @test ripple(result) >= 0V
     @test overshoot(result, :vout) >= 0
-    @test propagation_delay(result; input = :vin, output = :vout) > 0
+    @test propagation_delay(result; input = :vin, output = :vout) > 0s
     periodic_module = Module(:PeriodicMetricsTest)
     Core.eval(periodic_module, :(using Amber))
     periodic_result = transient(LowPass(), 0s => 1ms; saveat = 10μs)
@@ -102,11 +102,11 @@ end
     values[Amber._hierarchical_net_index(base.compiled, :vout), :] .= [0, 0, 0, 1, 7, 8]
     result = SimulationResult(base.compiled, base.analysis, collect(0.0:5.0), values, Dict{Symbol, Any}())
     metrics = sampling_metrics(result; input = :vin, held = :vout, clock = :vin)
-    @test metrics.acquisition_time == 2.0
-    @test metrics.aperture_error == 7.0
-    @test metrics.charge_injection_step == 6.0
+    @test metrics.acquisition_time == 2.0s
+    @test metrics.aperture_error == 7.0V
+    @test metrics.charge_injection_step == 6.0V
     values[Amber._hierarchical_net_index(base.compiled, :vin), :] .= [1, 0, 0, 1, 1, 0]
-    @test sampling_metrics(result; input = :vin, held = :vout, clock = :vin).acquisition_time == 2.0
+    @test sampling_metrics(result; input = :vin, held = :vout, clock = :vin).acquisition_time == 2.0s
     values[Amber._hierarchical_net_index(base.compiled, :vin), :] .= 1
     absent = sampling_metrics(result; input = :vin, held = :vout, clock = :vin)
     @test isnan(absent.acquisition_time)

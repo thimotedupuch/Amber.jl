@@ -9,7 +9,7 @@ struct SimulationResult{T, A <: AbstractAnalysis}
     end
 end
 
-frequencies(r::SimulationResult{<:Any, <:SmallSignal}) = r.axis
+frequencies(r::SimulationResult{<:Any, <:SmallSignal}) = r.axis .* Unitful.Hz
 
 _unknown_trace(r, index::Integer) = index == 0 ? zeros(eltype(r.values), length(r.axis)) : vec(r.values[Int(index), :])
 
@@ -145,24 +145,24 @@ function observation(result::SimulationResult, name::Union{Symbol, String})
     return _observable(result, observable)
 end
 
-function voltage(r::SimulationResult, name::Union{Symbol, String})
+function _voltage_si(r::SimulationResult, name::Union{Symbol, String})
     index = _hierarchical_net_index(r.compiled, name)
     if index === nothing
         observable = _named_observable(r, name)
         observable === nothing&&throw(_lookup_error(:net, name, _net_names(r.compiled)))
         observable.kind === :voltage||throw(ArgumentError("named observation $(name) is not a voltage"))
-        return _observable(r, observable)
+        return _si_value(_observable(r, observable), Unitful.V)
     end
     return _unknown_trace(r, index)
 end
-voltage(r::SimulationResult, a::Union{Symbol, String}, b::Union{Symbol, String}) = voltage(r, a) - voltage(r, b)
-function current(r::SimulationResult, name::Union{Symbol, String}, branch = nothing)
+_voltage_si(r::SimulationResult, a::Union{Symbol, String}, b::Union{Symbol, String}) = _voltage_si(r, a) - _voltage_si(r, b)
+function _current_si(r::SimulationResult, name::Union{Symbol, String}, branch = nothing)
     located = _hierarchical_device(r.compiled, name)
     if located === nothing
         observable = _named_observable(r, name)
         observable === nothing&&throw(_lookup_error(:device, name, _device_names(r.compiled)))
         observable.kind === :current||throw(ArgumentError("named observation $(name) is not a current"))
-        return current(r, _observable_name(observable.target), branch === nothing ? observable.extra : branch)
+        return _current_si(r, _observable_name(observable.target), branch === nothing ? observable.extra : branch)
     end
     batch, device = located
     kind = _batch_kind(batch)
@@ -331,24 +331,24 @@ function _derivative(r::SimulationResult, values)
     return output
 end
 
-function power(r::SimulationResult, name::Union{Symbol, String})
+function _power_si(r::SimulationResult, name::Union{Symbol, String})
     located = _hierarchical_device(r.compiled, name); located === nothing&&throw(_lookup_error(:device, name, _device_names(r.compiled)))
     batch, device = located; kind = _batch_kind(batch)
     terminal(index) = _unknown_trace(r, _batch_terminal(batch, index, device))
     if kind === :npn
-        return (terminal(1) - terminal(3)) .* current(r, name, :collector) .+
-            (terminal(2) - terminal(3)) .* current(r, name, :base)
+        return (terminal(1) - terminal(3)) .* _current_si(r, name, :collector) .+
+            (terminal(2) - terminal(3)) .* _current_si(r, name, :base)
     elseif kind in (:nmos, :pmos)
-        return (terminal(1) - terminal(3)) .* current(r, name, :drain) .+
-            (terminal(2) - terminal(3)) .* current(r, name, :gate) .+
-            (terminal(4) - terminal(3)) .* current(r, name, :bulk)
+        return (terminal(1) - terminal(3)) .* _current_si(r, name, :drain) .+
+            (terminal(2) - terminal(3)) .* _current_si(r, name, :gate) .+
+            (terminal(4) - terminal(3)) .* _current_si(r, name, :bulk)
     elseif kind in (:vccs, :vcvs)
-        return (terminal(3) - terminal(4)) .* current(r, name)
+        return (terminal(3) - terminal(4)) .* _current_si(r, name)
     end
-    return (terminal(1) - terminal(2)) .* current(r, name)
+    return (terminal(1) - terminal(2)) .* _current_si(r, name)
 end
 
-function charge(r::SimulationResult, name::Union{Symbol, String})
+function _charge_si(r::SimulationResult, name::Union{Symbol, String})
     located = _hierarchical_device(r.compiled, name); located === nothing&&throw(_lookup_error(:device, name, _device_names(r.compiled)))
     batch, device = located; kind = _batch_kind(batch)
     voltage_values = _unknown_trace(r, _batch_terminal(batch, 1, device)) - _unknown_trace(r, _batch_terminal(batch, 2, device))
@@ -483,7 +483,7 @@ function _device_report_window(r, window)
     indices = eachindex(r.axis)
     if window !== nothing
         window isa Pair||throw(ArgumentError("window must be start => stop in seconds"))
-        lo, hi = Float64(first(window)), Float64(last(window))
+        lo, hi = Float64(_si_value(first(window), Unitful.s)), Float64(_si_value(last(window), Unitful.s))
         isfinite(lo)&&isfinite(hi)&&lo <= hi||throw(ArgumentError("window bounds must be finite and ordered"))
         first(r.axis) <= lo <= hi <= last(r.axis)||throw(ArgumentError("window must lie within the saved result interval"))
         indices = searchsortedfirst(r.axis, lo):searchsortedlast(r.axis, hi)
@@ -518,7 +518,7 @@ function report(r::SimulationResult; detailed = false, window = nothing)
                 collector = _unknown_trace(r, _batch_terminal(batch, 1, device)); base = _unknown_trace(r, _batch_terminal(batch, 2, device)); emitter = _unknown_trace(r, _batch_terminal(batch, 3, device))
                 devices[path] = (
                     vbe = (base - emitter)[1], vce = (collector - emitter)[1],
-                    collector_current = current(r, path, :collector)[1], base_current = current(r, path, :base)[1],
+                    collector_current = _current_si(r, path, :collector)[1], base_current = _current_si(r, path, :base)[1],
                 )
             end
         end
@@ -550,10 +550,10 @@ function validity_report(r::SimulationResult; window = nothing)
         path = isempty(instance_name) ? device_name : string(instance_name, '.', device_name)
         if kind === :diode
             terminal_voltage = real.(_unknown_trace(r, _batch_terminal(batch, 1, device)) - _unknown_trace(r, _batch_terminal(batch, 2, device)))
-            device_current = real.(current(r, path))
+            device_current = real.(_current_si(r, path))
             devices[path] = (maximum_forward_current = maximum(device_current[indices]), maximum_reverse_voltage = max(0.0, -minimum(terminal_voltage[indices])), model_validity = :satisfied)
         elseif kind === :capacitor
-            ripple = current(r, path); rms = _device_current_rms(r, ripple, indices, device_window)
+            ripple = _current_si(r, path); rms = _device_current_rms(r, ripple, indices, device_window)
             devices[path] = (ripple_current_rms = rms, rated_ripple_current = :unspecified)
             push!(warnings, "$(path): rated ripple current is unspecified; thermal validity cannot be evaluated")
         elseif r.analysis isa TransientNoise&&kind in (:nmos, :pmos)
@@ -619,7 +619,7 @@ function terminal_charges(r::SimulationResult, name::Union{Symbol, String})
     else
         ntuple(i -> [point.charges[i].value for point in e], 4)
     end
-    return NamedTuple{(:drain, :gate, :source, :bulk)}(traces)
+    return NamedTuple{(:drain, :gate, :source, :bulk)}(map(values -> values .* Unitful.C, traces))
 end
 
 """Characterize a ChargeBasedMOSFET instance at a solved DC operating point."""
@@ -637,3 +637,8 @@ function mosfet_operating_point(r::SimulationResult, name::Union{Symbol, String}
         temperature = get(r.stats, :temperature, 300.0)
     )
 end
+
+voltage(r::SimulationResult, args...) = _voltage_si(r, args...) .* Unitful.V
+current(r::SimulationResult, args...) = _current_si(r, args...) .* Unitful.A
+power(r::SimulationResult, args...) = _power_si(r, args...) .* Unitful.W
+charge(r::SimulationResult, args...) = _charge_si(r, args...) .* Unitful.C

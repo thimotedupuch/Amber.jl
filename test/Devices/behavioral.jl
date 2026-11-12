@@ -12,7 +12,7 @@
     end
     result = transient(ExponentialDecay(), 0s => 1s; max_step = 1ms)
     @test result.stats[:converged]
-    @test voltage(result, :state)[end] ≈ exp(-1) rtol = 2.0e-3
+    @test voltage(result, :state)[end] ≈ exp(-1) * V rtol = 2.0e-3
 
     @circuit TwoControlProduct begin
         gnd = ground(); x = node(); y = node(); output = node()
@@ -25,7 +25,7 @@
         observe(output)
     end
     op = operating_point(TwoControlProduct())
-    @test voltage(op, :output)[1] ≈ -6.0
+    @test voltage(op, :output)[1] ≈ -6.0V
 end
 
 
@@ -41,7 +41,7 @@ end
         observe(output)
     end
     op = operating_point(SquaringVoltageSource())
-    @test voltage(op, :output)[1] ≈ 4.0
+    @test voltage(op, :output)[1] ≈ 4.0V
 
     @circuit ArbitraryVoltageGenerator begin
         gnd = ground(); output = node()
@@ -54,5 +54,5 @@ end
     end
     result = transient(ArbitraryVoltageGenerator(), 0s => 0.25s; max_step = 0.5ms)
     @test result.stats[:converged]
-    @test voltage(result, :output)[end] ≈ 1.0 atol = 1.0e-5
+    @test voltage(result, :output)[end] ≈ 1.0V atol = 1.0e-5V
 end

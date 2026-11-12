@@ -39,7 +39,7 @@ struct CorrelatedVariation
     covariance::Matrix{Float64}
     factor::Matrix{Float64}
     function CorrelatedVariation(paths, means, covariance)
-        normalized_paths = Symbol.(paths); normalized_means = Float64.(means); matrix = Matrix{Float64}(covariance)
+        normalized_paths = Symbol.(paths); normalized_means = Float64.(Unitful.ustrip.(Unitful.upreferred.(means))); matrix = Float64.(Unitful.ustrip.(Unitful.upreferred.(covariance)))
         length(normalized_paths) == length(normalized_means) == size(matrix, 1) == size(matrix, 2)||throw(ArgumentError("correlated variation dimensions must agree"))
         all(isfinite, normalized_means)&&all(isfinite, matrix)||throw(ArgumentError("correlated variation values must be finite"))
         issymmetric(matrix)||throw(ArgumentError("correlated variation covariance must be symmetric"))
@@ -460,3 +460,13 @@ end
 
 save_monte_carlo(path::AbstractString, result::MonteCarloResult) = (open(io -> write(io, serialize_monte_carlo(result)), path, "w"); path)
 load_monte_carlo(path::AbstractString; kw...) = deserialize_monte_carlo(read(path, String); kw...)
+
+# Variation draws are stored as SI scalars, like compiled parameter values.
+function Gaussian(mean::Unitful.AbstractQuantity, sigma::Unitful.AbstractQuantity)
+    units = Unitful.unit(Unitful.upreferred(mean))
+    return Gaussian(_si_value(mean, units), _si_value(sigma, units))
+end
+function UniformVariation(low::Unitful.AbstractQuantity, high::Unitful.AbstractQuantity)
+    units = Unitful.unit(Unitful.upreferred(low))
+    return UniformVariation(_si_value(low, units), _si_value(high, units))
+end

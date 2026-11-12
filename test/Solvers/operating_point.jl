@@ -23,8 +23,8 @@ end
     @test result.stats[:converged]
     @test result.stats[:strategy] === :pseudo_transient
     @test result.stats[:fallback_trigger] === 5
-    @test voltage(result, :q)[1] ≈ -0.343075557 atol = 1.0e-7
-    @test voltage(result, :qb)[1] ≈ 0.343075557 atol = 1.0e-7
+    @test voltage(result, :q)[1] ≈ -0.343075557V atol = 1.0e-7V
+    @test voltage(result, :qb)[1] ≈ 0.343075557V atol = 1.0e-7V
 end
 
 
@@ -64,13 +64,13 @@ end
     )
     result = operating_point(getfield(example_module, :PathologicalConvergence)())
     @test result.stats[:converged]
-    @test voltage(result, :diode_bias)[1] ≈ 1.071197308 atol = 1.0e-7
-    @test voltage(result, :divider_midpoint)[1] ≈ 50V atol = 1.0e-8
+    @test voltage(result, :diode_bias)[1] ≈ 1.071197308V atol = 1.0e-7V
+    @test voltage(result, :divider_midpoint)[1] ≈ 50V atol = 1.0e-8V
 
     adaptive = operating_point(getfield(example_module, :PathologicalConvergence)(); maxiters = 8)
     @test adaptive.stats[:converged]
     @test adaptive.stats[:rejected_continuation_steps] > 0
-    @test voltage(adaptive, :diode_bias)[1] ≈ voltage(result, :diode_bias)[1] atol = 1.0e-7
+    @test voltage(adaptive, :diode_bias)[1] ≈ voltage(result, :diode_bias)[1] atol = 1.0e-7V
 end
 
 @testset "failed operating point residual uses analysis temperature" begin

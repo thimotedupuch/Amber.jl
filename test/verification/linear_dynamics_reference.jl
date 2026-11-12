@@ -6,10 +6,10 @@
     end
     τ = 1kΩ * 100nF
     rc = transient(RCReference(), 0s => 5τ; initial = :discharged, saveat = τ / 40, method = :bdf2)
-    exact_rc(t) = 1 - exp(-t / τ)
-    @test maximum(abs.(voltage(rc, :output) .- exact_rc.(rc.axis))) < 2.0e-3
+    exact_rc(t) = (1 - exp(-(t * s) / τ)) * V
+    @test maximum(abs.(voltage(rc, :output) .- exact_rc.(rc.axis))) < 2.0e-3V
     ac = small_signal(RCReference(), 10Hz => 100kHz; points = 41, source = :V1)
-    expected_ac = 1 ./ (1 .+ im * 2π .* ac.axis .* τ)
+    expected_ac = V ./ (1 .+ im * 2π .* frequencies(ac) .* τ)
     @test relative_error(voltage(ac, :output), expected_ac) < 1.0e-11
 
     @circuit RLReference(; R = 20Ω, L = 2mH) begin
@@ -19,7 +19,7 @@
     end
     τrl = 2mH / 20Ω
     rl = transient(RLReference(), 0s => 5τrl; initial = :discharged, saveat = τrl / 40, method = :bdf2)
-    expected_current = 2V / 20Ω .* (1 .- exp.(-rl.axis ./ τrl))
+    expected_current = 2V / 20Ω .* (1 .- exp.(-(rl.axis .* s) ./ τrl))
     @test maximum(abs.(current(rl, :L1) .- expected_current)) < 200μA
 
     @circuit RLCReference(; R = 10Ω, L = 1mH, C = 10μF) begin
@@ -30,6 +30,6 @@
     end
     α = 10Ω / (2 * 1mH); ω0 = inv(sqrt(1mH * 10μF)); ωd = sqrt(ω0^2 - α^2)
     rlc = transient(RLCReference(), 0s => 2ms; initial = :discharged, saveat = 2μs, method = :bdf2)
-    exact_rlc(t) = 1 - exp(-α * t) * (cos(ωd * t) + α / ωd * sin(ωd * t))
-    @test maximum(abs.(voltage(rlc, :output) .- exact_rlc.(rlc.axis))) < 6.0e-3
+    exact_rlc(t) = (1 - exp(-α * t * s) * (cos(ωd * t * s) + α / ωd * sin(ωd * t * s))) * V
+    @test maximum(abs.(voltage(rlc, :output) .- exact_rlc.(rlc.axis))) < 6.0e-3V
 end

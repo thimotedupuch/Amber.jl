@@ -267,7 +267,7 @@ end
 @testset "spectrum adapter" begin
     result = SpectrumResult(
         [0.0, 1.0], ComplexF64[0, 1], [0.0, 0.5], [0.0, 0.25],
-        2.0, :hann, 0.5, 1.0, Dict{Symbol, Any}(:warnings => ["example"])
+        2.0, :hann, 0.5, 1.0, Dict{Symbol, Any}(:warnings => ["example"], :nfft => 2)
     )
     view = spectrumview(result)
     @test view.frequencies === result.frequencies

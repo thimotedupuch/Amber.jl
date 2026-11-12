@@ -1502,10 +1502,10 @@ for (prefix, prefix_description) in _documented_prefixes
     push!(_documented_units, Symbol(prefix, :m) => (prefix_description * "metre"))
 end
 push!(_documented_units, :mm => "millimetre")
-append!(_documented_units, [:dB => "decibel amplitude conversion", :percent => "percent scale factor", :° => "degree-to-radian conversion"])
+append!(_documented_units, [:dB => "decibel logarithmic scale", :percent => "percent", :° => "degree"])
 
 for (name, description) in _documented_units
-    @eval @doc $("Numeric SI scale factor for one " * description * ".") $name
+    @eval @doc $("Unitful unit for one " * description * ".") $name
 end
 
 @doc """
