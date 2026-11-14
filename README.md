@@ -1387,3 +1387,16 @@ through `solve_reduced(plan, b)`. Rebuild the plan when `A` changes. Both normwi
 and componentwise error checks protect reconstruction; nonlinear and dynamic
 transformations are outside this initial implementation. See the
 [regression study](design_specs/linear_reduction_regression_study.md).
+
+Optional DAE inspection and consistent linear initialization are available:
+
+```julia
+structure = dae_structure(compiled)  # sparse storage incidence
+condition = consistent_initial_conditions(compiled, initial_guess; time=0s)
+result = transient(compiled, 0s => 1ms; initial=condition)
+```
+
+The initializer preserves independent storage coordinates and satisfies algebraic
+constraints and the continuous equations. Higher-index, rank-ambiguous and
+nonlinear systems are explicitly declined. Numerical rank analysis is optional
+and size-bounded. See [DAE initialization](design_specs/dae_initialization.md).

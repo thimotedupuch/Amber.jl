@@ -8,7 +8,7 @@ Base.@kwdef struct PeriodicSteadyState <: AbstractAnalysis
     autonomous::Bool = false
     phase_index::Union{Nothing, Int} = nothing
     monodromy_method::Symbol = :variational
-    initial::Union{Nothing, Symbol, Vector{Float64}} = nothing
+    initial::Union{Nothing, Symbol, Vector{Float64}, AbstractInitialCondition} = nothing
     maxiters::Int = 12
     newton_damping::Float64 = 1.0
     fd_step::Float64 = sqrt(eps(Float64))

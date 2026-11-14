@@ -169,7 +169,7 @@ function transient_noise(
         throw(AnalysisValidationError("the transient-noise interval must contain an integer number of timesteps"))
     times = collect(range(t0, t1; length = step_count + 1))
     workspace = SimulationWorkspace(cc)
-    state = _initial_transient_state(cc, initial; temperature, workspace, solver)
+    state = _initial_transient_state(cc, initial; temperature, workspace, solver, time=t0)
     values = zeros(Float64, cc.n, step_count + 1)
     values[:, 1] = state
     rng = Random.Xoshiro(resolved_seed)
@@ -256,7 +256,7 @@ function transient_noise(
         interval = t0 => t1, timestep = timestep, saveat = saveat,
         seed = resolved_seed, temperature = Float64(temperature),
         low_frequency_cutoff = low_frequency_cutoff, event_mode = event_mode, solver,
-        initial = initial isa AbstractVector ? Float64.(initial) : initial
+        initial = initial isa DAEInitialCondition ? copy(initial.state) : initial isa AbstractVector ? Float64.(initial) : initial
     )
     stats = _finalize_stats!(
         Dict{Symbol, Any}(
@@ -279,6 +279,7 @@ function transient_noise(
             :warnings => warnings
         ); partial = true
     )
+    initial isa DAEInitialCondition && (stats[:initialization] = initial.stats)
     return SimulationResult(cc, analysis, times[saved_indices], values[:, saved_indices], stats)
 end
 

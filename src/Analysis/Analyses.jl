@@ -188,6 +188,8 @@ Base.@kwdef struct OperatingPoint <: AbstractAnalysis
     end
 end
 
+abstract type AbstractInitialCondition end
+
 Base.@kwdef struct TransientNoise <: AbstractAnalysis
     interval::Pair{Float64, Float64}
     timestep::Float64
@@ -196,7 +198,7 @@ Base.@kwdef struct TransientNoise <: AbstractAnalysis
     temperature::Float64 = 300.0
     low_frequency_cutoff::Float64
     event_mode::Union{Nothing, Symbol} = nothing
-    initial::Union{Nothing, Symbol, Vector{Float64}} = nothing
+    initial::Union{Nothing, Symbol, Vector{Float64}, AbstractInitialCondition} = nothing
     solver::SolverOptions = SolverOptions(reltol = 1.0e-6, current_abstol = 1.0e-9, voltage_abstol = 1.0e-9, state_abstol = 1.0e-9, max_newton_iterations = 120)
     function TransientNoise(
             interval, timestep, saveat, seed, temperature, low_frequency_cutoff, event_mode, initial, solver
@@ -224,7 +226,7 @@ Base.@kwdef struct Transient <: AbstractAnalysis
     temperature::Float64 = 300.0
     overrides::Any = nothing
     solver::SolverOptions = SolverOptions()
-    initial::Union{Nothing, Symbol, Vector{Float64}} = nothing
+    initial::Union{Nothing, Symbol, Vector{Float64}, AbstractInitialCondition} = nothing
     event_mode::Union{Nothing, Symbol} = nothing
     integration::IntegrationOptions = IntegrationOptions()
     failure_policy::Symbol = :return_partial

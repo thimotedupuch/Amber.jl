@@ -17,7 +17,10 @@ parallel compiler implementations or default backend replacement are planned.
 4. Equation elimination and observable reconstruction — initial numerical affine
    reduction implemented with reversible substitutions and a linear-only DC
    entry point. General symbolic/DAE transformations remain pending.
-5. DAE structure and consistent initialization — pending.
+5. DAE structure and consistent initialization — sparse storage inspection and
+   bounded numerical analysis implemented; opt-in linear initialization preserves
+   dynamic coordinates and solves state/derivative constraints. Higher-index and
+   rank-ambiguous systems are explicitly declined.
 6. Template symbolic compilation reuse — pending.
 7. Bounded specialization and diversity benchmarks — pending.
 8. Derivative requests and shared intermediates — pending.
@@ -160,3 +163,8 @@ and factorization reuse remain future work. See the
 Item 4 validation checkpoint: 115 new assertions and 166 existing operating-point/
 result/report/display assertions pass. Numerical regressions and performance
 costs are recorded in the study. This remains an opt-in numerical transformation.
+
+## Item 5: DAE inspection and consistent initialization
+
+See [DAE initialization](dae_initialization.md) for the mathematical contract,
+rank-ambiguity regression, descriptor integration and current boundaries.

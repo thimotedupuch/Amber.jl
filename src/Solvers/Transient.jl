@@ -95,8 +95,10 @@ function _merge_time_grid(times, nominal_step; preferred = Set{Float64}())
     return merged
 end
 
-function _initial_transient_state(cc, initial; temperature = 300.0, workspace = nothing, solver = SolverOptions())
-    if initial === :discharged
+function _initial_transient_state(cc, initial; temperature = 300.0, workspace = nothing, solver = SolverOptions(), time = 0.0)
+    if initial isa DAEInitialCondition
+        return _validated_dae_initial_state(cc,initial,time,temperature)
+    elseif initial === :discharged
         z = zeros(cc.n)
     elseif initial isa AbstractVector
         length(initial) == cc.n||throw(DimensionMismatch("initial state does not match the compiled circuit"))
@@ -106,7 +108,7 @@ function _initial_transient_state(cc, initial; temperature = 300.0, workspace = 
         result = _require_converged(operating_point(cc; temperature, workspace, solver), "transient operating point")
         z = copy(result.values[:, 1])
     else
-        throw(AnalysisValidationError("initial must be nothing, :discharged, or a state vector"))
+        throw(AnalysisValidationError("initial must be nothing, :discharged, a state vector, or a DAEInitialCondition"))
     end
     return _apply_initial_conditions!(z, cc)
 end
@@ -192,7 +194,7 @@ function _transient(
     append!(grid, waveform_events)
     grid = _merge_time_grid(grid, dt; preferred = union(output_targets, Set([t1])))
     boundary_index = 1
-    z = _initial_transient_state(cc, initial; temperature, workspace, solver)
+    z = _initial_transient_state(cc, initial; temperature, workspace, solver, time=t0)
     recorder === nothing || recorder(t0, copy(z))
     times = Float64[t0]; states = [copy(z)]; orders = Int[0]
     save_sparse = saveat !== nothing
@@ -338,7 +340,7 @@ function _transient(
     end
     analysis = Transient(
         t0 => t1; saveat, max_step, method, adaptive = use_adaptive, temperature,
-        solver, initial = initial isa AbstractVector ? Float64.(initial) : initial, event_mode, integration, failure_policy, overrides
+        solver, initial = initial isa DAEInitialCondition ? copy(initial.state) : initial isa AbstractVector ? Float64.(initial) : initial, event_mode, integration, failure_policy, overrides
     )
     stats = Dict{Symbol, Any}(
         :converged => failure_reason === nothing, :iterations => total_iterations,
@@ -348,6 +350,7 @@ function _transient(
         :rejected_step_sizes => rejected_step_sizes, :integration_method => method,
         :warnings => failure_reason === nothing ? String[] : [failure_reason]
     )
+    initial isa DAEInitialCondition && (stats[:initialization] = initial.stats)
     if method === :trapezoidal || use_adaptive || (save_sparse && length(saved_indices) != length(times))
         # Saved samples need not share the integration stencil, and BE step
         # doubling also contains an unsaved midpoint. Trace derivatives must
