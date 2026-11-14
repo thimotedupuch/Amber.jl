@@ -527,3 +527,29 @@ end
 
 jacobian!(workspace::SimulationWorkspace, compiled::CompiledCircuit, state, previous, t, α; kwargs...) =
     last(residual_jacobian!(workspace, compiled, state, previous, t, α; kwargs...))
+
+
+# A mutable context is boxed once at the execution boundary. Dynamic dispatch
+# then passes two existing references, rather than boxing scalar/view arguments
+# anew for every heterogeneous batch. Its type does not encode batch diversity.
+mutable struct BatchExecutionContext{V,A<:Tuple}
+    view::V
+    arguments::A
+end
+_run_batch_assembly!(batch,context::BatchExecutionContext) =
+    _assemble_batch!(context.view,batch,context.arguments...)
+_all_inplace_supported(batches::AbstractVector{<:AbstractCompiledBatch}) = all(_inplace_batch_supported,batches)
+_all_linear(batches::AbstractVector{<:AbstractCompiledBatch}) = all(_linear_batch,batches)
+function _assemble_batches!(workspace,batches::AbstractVector{<:AbstractCompiledBatch},state,derivative,t,alpha,mode,source_scale,temperature)
+    context=BatchExecutionContext(workspace,(state,derivative,t,alpha,mode,source_scale,temperature))
+    for batch in batches
+        _run_batch_assembly!(batch,context)
+    end
+    return nothing
+end
+"""Inspect the compiler's specialization boundary without running a simulation."""
+function batch_execution_plan(compiled::CompiledCircuit)
+    batches=compiled.parameters.batches
+    return (;layout=batches isa Tuple ? :specialized_tuple : :bounded_dispatch,
+        batches=length(batches),kernel_types=length(unique(typeof.(batches))))
+end

@@ -266,3 +266,51 @@ function _bdf_storage_history(cc, previous, older, ratio, h, alpha; temperature 
     qolder = _storage(cc, older; temperature, workspace)
     return (((1 + ratio) / h) .* qprevious .- (ratio^2 / ((1 + ratio) * h)) .* qolder) ./ alpha
 end
+
+
+_run_batch_storage!(batch,context::BatchExecutionContext) =
+    _storage_batch!(context.view,batch,context.arguments...)
+function _run_batch_step!(batch,context::BatchExecutionContext)
+    _linear_batch(batch) || _step_batch!(context.view,batch,context.arguments...)
+    return nothing
+end
+function _run_batch_constant!(batch,context::BatchExecutionContext)
+    if _linear_batch(batch)
+        zero_state=only(context.arguments)
+        _assemble_batch!(context.view,batch,zero_state,zero_state,0.0,0.0,:matrix,0.0,300.0)
+        _has_storage(batch) && _storage_batch!(context.view,batch,zero_state,300.0)
+    end
+    return nothing
+end
+function _run_batch_forcing!(batch,context::BatchExecutionContext)
+    _has_forcing(batch) && _forcing_batch!(context.view,batch,context.arguments...)
+    return nothing
+end
+function _storage_batches!(workspace,batches::AbstractVector{<:AbstractCompiledBatch},state,temperature)
+    context=BatchExecutionContext(workspace,(state,temperature))
+    for batch in batches
+        _run_batch_storage!(batch,context)
+    end
+    return nothing
+end
+function _step_batches!(view,batches::AbstractVector{<:AbstractCompiledBatch},args...)
+    context=BatchExecutionContext(view,args)
+    for batch in batches
+        _run_batch_step!(batch,context)
+    end
+    return nothing
+end
+function _constant_batches!(view,batches::AbstractVector{<:AbstractCompiledBatch},zero_state)
+    context=BatchExecutionContext(view,(zero_state,))
+    for batch in batches
+        _run_batch_constant!(batch,context)
+    end
+    return nothing
+end
+function _forcing_batches!(residual,batches::AbstractVector{<:AbstractCompiledBatch},args...)
+    context=BatchExecutionContext(residual,args)
+    for batch in batches
+        _run_batch_forcing!(batch,context)
+    end
+    return nothing
+end

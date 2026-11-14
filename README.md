@@ -1413,3 +1413,10 @@ symbolic_cache_stats(cache)
 Numerical parameters and controlled-source bindings are resolved afresh. See
 [template plan reuse](design_specs/template_plan_reuse.md) for ownership,
 regression measurements and limitations.
+
+`compile(design; specialization_limit=8)` bounds circuit-wide batch specialization.
+Small collections use typed tuples; larger collections dispatch through typed
+batch kernels without encoding the entire collection in the compiled type.
+`batch_execution_plan(compiled)` reports the selected layout. The limit is
+configurable; [the specialization study](design_specs/bounded_specialization.md)
+records JIT, warm-time and allocation tradeoffs.

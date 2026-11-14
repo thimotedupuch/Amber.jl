@@ -24,7 +24,9 @@ parallel compiler implementations or default backend replacement are planned.
 6. Template symbolic compilation reuse — local connectivity/stamp/auxiliary
    plans reused across instances; optional bounded caller-owned cache supports
    repeated compilation without caching numerical bindings.
-7. Bounded specialization and diversity benchmarks — pending.
+7. Bounded specialization and diversity benchmarks — configurable tuple/erased
+   batch boundary implemented across numerical paths; dispatch contexts avoid
+   per-batch argument boxing. Diversity/JIT/warm regressions are measured.
 8. Derivative requests and shared intermediates — pending.
 9. Parameter dependency graphs — pending.
 10. Numerical cache dependency identities — pending.
@@ -175,3 +177,8 @@ rank-ambiguity regression, descriptor integration and current boundaries.
 
 See [template plan reuse](template_plan_reuse.md) for key/ownership contracts,
 historical baseline measurements, small-design overhead and validation.
+
+## Item 7: bounded specialization
+
+See [bounded specialization](bounded_specialization.md) for policy, dispatch
+boundary design, inference/boxing regressions, measurements and validation.

@@ -81,14 +81,14 @@ end
 _batch_kind(::ResistorBatch) = :resistor
 _batch_kind(::PrimitiveBatch{Val{K}}) where {K} = K
 
-struct ParameterStore{B <: Tuple}
+struct ParameterStore{B}
     batches::B
     fingerprint::UInt128
     matrix_fingerprint::UInt128
     batch_fingerprints::Vector{UInt128}
     matrix_batch_fingerprints::Vector{UInt128}
 end
-function ParameterStore(batches::Tuple, fingerprint::UInt128)
+function ParameterStore(batches::Union{Tuple,AbstractVector{<:AbstractCompiledBatch}}, fingerprint::UInt128)
     hashes = UInt128[_parameter_store_fingerprint((batch,)) for batch in batches]
     matrix_hashes = UInt128[_matrix_parameter_fingerprint((batch,)) for batch in batches]
     return ParameterStore(batches, fingerprint, _combine_parameter_fingerprints(matrix_hashes), hashes, matrix_hashes)
@@ -281,7 +281,7 @@ function _freeze_batch(builder::_BatchBuilder)
     )
 end
 
-function _compile_hierarchy(design::CircuitDesign;symbolic_cache=nothing)
+function _compile_hierarchy(design::CircuitDesign;symbolic_cache=nothing,specialization_limit=8)
     plans=_design_symbolic_plans(design,symbolic_cache)
     root_mapping, root_solver_count = _solver_root_nets(design)
     internal_bases, solver_net_count = _instance_internal_bases(design, root_solver_count)
@@ -368,7 +368,8 @@ function _compile_hierarchy(design::CircuitDesign;symbolic_cache=nothing)
         end
     end
     pattern = _pattern_from_contributions!(contributions, builders, unknown_count, Int(solver_net_count))
-    batches = Tuple(_freeze_batch(builder) for builder in builders)
+    frozen=AbstractCompiledBatch[_freeze_batch(builder) for builder in builders]
+    batches = length(frozen) <= specialization_limit ? Tuple(frozen) : frozen
     hierarchy = ElaborationIndex(
         root_mapping, internal_bases, getfield.(design.root.records, :path),
         primitive_count, Int(solver_net_count), unknown_count
@@ -700,7 +701,7 @@ function with_parameters(compiled, updates::Pair...)
             )
         end
     end
-    new_batches = Tuple(batches)
+    new_batches = compiled.parameters.batches isa Tuple ? Tuple(batches) : AbstractCompiledBatch[batches...]
     hashes = copy(compiled.parameters.batch_fingerprints)
     matrix_hashes = copy(compiled.parameters.matrix_batch_fingerprints)
     for index in eachindex(batches)

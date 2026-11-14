@@ -32,7 +32,7 @@ export StructuralAnalysis, structural_analysis
 export StructuralSolvePlan, structural_solve_plan, structural_solve
 export LinearReduction, reduce_linear_system, reduction_rhs, reconstruct_solution, solve_reduced
 export reduced_operating_point
-export SymbolicCompilationCache, symbolic_cache_stats
+export SymbolicCompilationCache, symbolic_cache_stats, batch_execution_plan
 export DAEStructure, DAEInitialCondition, dae_structure, consistent_initial_conditions
 export AbstractLinearSolver, SuiteSparseLU, SolverOptions, IntegrationOptions
 export ConvergenceError

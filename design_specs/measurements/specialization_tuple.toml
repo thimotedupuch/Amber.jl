@@ -1,0 +1,35 @@
+cpu = "raptorlake"
+julia_version = "1.13.1"
+layout = "tuple"
+sequence = "increasing diversity in a fresh process per layout"
+
+[[cases]]
+batches = 3
+compile_seconds = 3.119961999
+distinct_callback_types = 1
+first_evaluation_jit_seconds = 0.454362742
+first_evaluation_seconds = 0.454397584
+layout = "specialized_tuple"
+warm_median_seconds = 1.76e-7
+warm_minimum_bytes = 0
+warm_minimum_seconds = 1.7e-7
+[[cases]]
+batches = 10
+compile_seconds = 5.587886312
+distinct_callback_types = 8
+first_evaluation_jit_seconds = 1.422602156
+first_evaluation_seconds = 1.422911235
+layout = "specialized_tuple"
+warm_median_seconds = 3.4817e-5
+warm_minimum_bytes = 5504
+warm_minimum_seconds = 3.4225e-5
+[[cases]]
+batches = 42
+compile_seconds = 28.659766111
+distinct_callback_types = 40
+first_evaluation_jit_seconds = 12.266666481
+first_evaluation_seconds = 12.269051476
+layout = "specialized_tuple"
+warm_median_seconds = 0.00018913
+warm_minimum_bytes = 193488
+warm_minimum_seconds = 0.000183688
