@@ -1,5 +1,5 @@
 """Reusable numerical storage owned by one simulation task."""
-mutable struct SimulationWorkspace{T}
+mutable struct SimulationWorkspace{T,F,P}
     state::Vector{T}
     history::Vector{T}
     derivative::Vector{T}
@@ -14,8 +14,8 @@ mutable struct SimulationWorkspace{T}
     variable_scales::Vector{T}
     row_norms::Vector{T}
     inverse_row_norms::Vector{T}
-    factorization::Any
-    factorization_key::Any
+    factorization::Union{Nothing,F}
+    factorization_key::Union{Nothing,FactorizationKey}
     numeric_factorizations::Int
     storage::Vector{T}
     storage_jacobian::SparseMatrixCSC{T, Int}
@@ -27,23 +27,27 @@ mutable struct SimulationWorkspace{T}
     constant_assemblies::Int
     topology::HierarchicalCompiledTopology
     factorization_scales::Vector{T}
+    plan::P
 end
 
-function SimulationWorkspace(compiled::AbstractCompiledCircuit; scalar_type::Type{T} = Float64) where {T}
-    n = compiled.n
-    pattern = SparseMatrixCSC{Float64, Int}(compiled.topology.pattern)
+function SimulationWorkspace(plan::CompiledSolvePlan; scalar_type::Type{T} = Float64) where {T}
+    n = plan.n
+    pattern = SparseMatrixCSC(n,n,copy(plan.colptr),copy(plan.rowval),zeros(length(plan.rowval)))
     jacobian = SparseMatrixCSC{T, Int}(pattern.m, pattern.n, copy(pattern.colptr), copy(pattern.rowval), zeros(T, length(pattern.nzval)))
     scaled_jacobian = copy(jacobian); system = copy(jacobian)
-    variable_scales = ones(T, n)
-    for (index, kind) in enumerate(compiled.topology.layout.kinds)
-        kind === BranchCurrentUnknown && (variable_scales[index] = convert(T, 1.0e-3))
-    end
-    return SimulationWorkspace(
+    variable_scales = T.(plan.variable_scales)
+    F = SparseArrays.UMFPACK.UmfpackLU{promote_type(T,Float64),Int}
+    return SimulationWorkspace{T,F,typeof(plan)}(
         zeros(T, n), zeros(T, n), zeros(T, n), zeros(T, n), zeros(T, n), jacobian,
         scaled_jacobian, system, zeros(T, n), zeros(T, n), zeros(T, n), variable_scales,
         zeros(T, n), zeros(T, n), nothing, nothing, 0, zeros(T, n), copy(jacobian),
-        copy(jacobian), copy(jacobian), nothing, zero(UInt128), nothing, 0, compiled.topology, copy(variable_scales)
+        copy(jacobian), copy(jacobian), nothing, zero(UInt128), nothing, 0, plan.topology, copy(variable_scales), plan
     )
+end
+
+function SimulationWorkspace(compiled::AbstractCompiledCircuit; scalar_type=Float64, plan=compiled_solve_plan(compiled))
+    plan.topology === compiled.topology || throw(ArgumentError("solve plan belongs to another topology"))
+    SimulationWorkspace(plan;scalar_type)
 end
 
 function _validate_workspace(workspace::SimulationWorkspace,compiled)

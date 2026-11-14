@@ -91,17 +91,22 @@ end
 end
 
 @testset "capacitor updates preserve derived effects" begin
-    function capacitor_circuit(; kw...)
+    function capacitor_circuit(; value=1.0e-6, kw...)
         b = CircuitBuilder(:CapacitorUpdate); g = ground!(b, :g); x = node!(b, :x)
         add!(b, voltage_source(x, g; ac = 1.0); name = :supply)
-        add!(b, capacitor(x, g; value = 1.0e-6, kw...); name = :C)
+        add!(b, capacitor(x, g; value, kw...); name = :C)
         compile(deserialize_circuit(serialize_circuit(finish(b))))
     end
-    for cc in (
-            capacitor_circuit(dielectric = C0G(loss_tangent = 0.02, reference_frequency = 1000.0)),
-            capacitor_circuit(dielectric_absorption = DebyeBranches(time_constants = [0.01], fractions = [0.1])),
+    for options in (
+            (;dielectric = C0G(loss_tangent = 0.02, reference_frequency = 1000.0)),
+            (;dielectric_absorption = DebyeBranches(time_constants = [0.01], fractions = [0.1])),
         )
-        @test_throws TopologyParameterError with_parameters(cc, "C.value" => 2.0e-6)
+        cc=capacitor_circuit(;options...)
+        updated=with_parameters(cc,"C.value"=>2.0e-6)
+        fresh=capacitor_circuit(;value=2.0e-6,options...)
+        frequencies=[100.0,1000.0,10000.0]
+        @test current(small_signal(updated,frequencies),:supply) ≈
+            current(small_signal(fresh,frequencies),:supply)
     end
     cc = capacitor_circuit(dielectric = C0G(), dielectric_absorption = DebyeBranches())
     result = small_signal(with_parameters(cc, "C.value" => 2.0e-6), [1000.0])

@@ -9,7 +9,8 @@ parallel compiler implementations or default backend replacement are planned.
    kernels remain the production backend.
 2. Fine-grained dependency analysis — experimental per-expression input sets,
    dependency roles and invalidation queries implemented; 22 assertions pass.
-   Production cache integration remains pending.
+   Expression-level production lowering remains a future extension; item 10
+   integrates explicit coefficient dependencies into production cache identities.
 3. Executable structural solve plans — implemented as an opt-in block linear
    executor and operating-point strategy; numerical compatibility checks and
    global fallback protect changed matrices. Block-local nonlinear iteration and
@@ -37,7 +38,8 @@ parallel compiler implementations or default backend replacement are planned.
     declared matrix fields, topology binding and scale-aware factor reuse implemented.
 11. Conflict-aware parallel assembly — opt-in ordered dependency waves,
     disjoint writes and serial callback barriers implemented.
-12. Symbolic solve plans and typed backend workspaces — pending.
+12. Symbolic solve plans and typed backend workspaces — shared topology/pattern/
+    scaling metadata and concrete task-owned LU cache implemented; final suite pending.
 
 ## Item 1: current implementation boundary
 
@@ -54,8 +56,9 @@ construction-time data. Independent reference device kernels and central
 finite differences validate derivatives. Passive current/charge tests validate
 both outputs and type inference.
 
-This is a typed expression tree, not yet a shared SSA DAG: common-subexpression
-elimination and global sparse lowering are not implemented. The experimental diode law now includes depletion and diffusion charge;
+This checkpoint introduced a typed expression tree. Item 8 adds shared instruction
+DAG lowering and common-subexpression elimination; global sparse lowering remains
+a future extension. The experimental diode law now includes depletion and diffusion charge;
 production simulation still uses the handwritten backend. Arbitrary external
 callbacks, noise declarations, units in expressions, and a public modeling DSL
 remain future work. Piecewise derivatives follow the selected branch and omit
@@ -89,9 +92,11 @@ errors instead of silently permitting a stale cache. Exact-name invalidation
 handles expressions with multiple dynamic categories; coarse stage labels are
 inspection hints and must never replace full dependency sets in cache keys.
 
-Production `DeviceDependencies` and existing numerical cache rules are unchanged.
-Migrating built-in models requires complete IR coverage and cache-equivalence
-regressions, including temperature/mode changes. This is not yet accomplished.
+At this checkpoint production cache rules were unchanged. Item 10 subsequently
+adds declared coefficient dependencies and exact cache identities for the
+handwritten kernels. Migrating every built-in model to expression-level cache
+dependencies still requires complete IR coverage, including temperature/mode
+qualification.
 
 Latest validation: 351 combined IR/dependency assertions and 139 existing
 compiler/device-reference assertions pass. The full package suite was not rerun
@@ -209,3 +214,9 @@ contracts, conservative invalidation and scale/topology regression coverage.
 See [parallel assembly](parallel_assembly.md) for the dependency schedule,
 callback contract and opt-in execution boundary. Twenty-two new assertions pass
 with four Julia threads; existing compiler and optimization regressions pass.
+
+## Item 12: solve metadata and numerical ownership
+
+See [compiled solve plans](compiled_solve_plans.md) for ownership, typed cache
+fields, policy changes and structural-plan integration. Final validation is in
+progress.

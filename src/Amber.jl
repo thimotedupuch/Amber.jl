@@ -26,6 +26,7 @@ export PrimitiveBatch, ResistorBatch, with_parameters, TopologyParameterError
 export ParameterUpdateError, model_parameters, with_model_parameter
 export ParameterHandle, parameter_handle, parameter_dependencies
 export ParallelAssemblyPlan, parallel_assembly_plan, parallel_residual_jacobian!
+export CompiledSolvePlan, compiled_solve_plan
 export SimulationWorkspace, residual!, jacobian!, residual_jacobian!
 export invertermetrics, switchingmetrics
 export storage_jacobian!
@@ -132,6 +133,8 @@ include("Core/TemplatePlans.jl")
 include("Core/Compilation.jl")
 include("Core/ParameterDependencies.jl")
 include("Core/MatrixDependencies.jl")
+include("Core/LinearSolveTypes.jl")
+include("Core/CompiledSolvePlan.jl")
 include("Core/Workspace.jl")
 include("Core/Storage.jl")
 include("Core/ParallelAssembly.jl")

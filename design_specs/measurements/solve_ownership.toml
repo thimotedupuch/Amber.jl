@@ -1,0 +1,23 @@
+unknowns = 512
+threads = 4
+julia_version = "1.13.1"
+
+[assembly_serial]
+median_seconds = 1.492e-6
+median_bytes = 64.0
+
+[assembly_threaded]
+median_seconds = 1.2551e-5
+median_bytes = 20272.0
+
+[assembly_scheduled_serial]
+median_seconds = 2.195e-6
+median_bytes = 3616.0
+
+[workspace_default]
+median_seconds = 1.5261e-5
+median_bytes = 155960.0
+
+[workspace_shared_plan]
+median_seconds = 1.1672e-5
+median_bytes = 142976.0

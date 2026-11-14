@@ -76,7 +76,7 @@ function _newton(
         cc, z0, previous, t, α; reltol = 1.0e-7, abstol = 1.0e-10, maxiters = 60,
         mode = :time, source_scale = 1.0, gmin = 0.0, temperature = 300.0, forcing = nothing, workspace = nothing,
         line_search_minimum = 1 / 256, voltage_abstol = max(abstol, 1.0e-9), state_abstol = abstol,
-        linear_solver = SuiteSparseLU(), history = nothing, storage_history = nothing,
+        linear_solver = nothing, history = nothing, storage_history = nothing,
         linear_plan = nothing, linear_solve_history = nothing
     )
     t = _si_value(t, Unitful.s)
@@ -84,16 +84,18 @@ function _newton(
     temperature = _si_value(temperature, Unitful.K)
     workspace === nothing && (workspace = SimulationWorkspace(cc))
     _validate_workspace(workspace,cc)
+    linear_solver === nothing && (linear_solver = workspace.plan.solver)
+    linear_plan === nothing && (linear_plan = workspace.plan.structural)
     length(workspace.variable_scales) == cc.n || throw(DimensionMismatch("variable scales must match unknown count"))
     all(x -> isfinite(x) && !iszero(x),workspace.variable_scales) || throw(ArgumentError("variable scales must be finite and nonzero"))
     qhistory = iszero(α) ? nothing : storage_history === nothing ?
         _storage(cc, previous; temperature, workspace) : storage_history
     z = copy(z0); factorization = workspace.factorization
     linear_hierarchy = _all_linear(cc.parameters.batches)
-    factorization_key = linear_hierarchy ? (
+    factorization_key = FactorizationKey(
             cc.topology, cc.parameters.matrix_identity, Float64(α), mode, Float64(gmin),
             linear_solver,
-        ) : nothing
+        )
     for it in 1:maxiters
         r, J = _step_residual_jacobian!(workspace, cc, z, qhistory, t, α; mode, source_scale, gmin, temperature)
         forcing === nothing||(r .-= forcing)
@@ -127,7 +129,8 @@ function _newton(
                     workspace.factorization_key == factorization_key &&
                     isequal(workspace.factorization_scales,variable_scales)
                 if !reuse_numeric
-                    factorization = factorization === nothing ? _new_factorization(system, linear_solver) :
+                    factorization = (factorization === nothing || workspace.factorization_key === nothing ||
+                        workspace.factorization_key.solver != linear_solver) ? _new_factorization(system, linear_solver) :
                         lu!(factorization, system; reuse_symbolic = true)
                     workspace.factorization = factorization
                     workspace.factorization_key = factorization_key
