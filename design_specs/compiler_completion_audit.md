@@ -26,12 +26,16 @@ analysis, serialization, result and diagnostic regressions. The initial four-thr
 failed two obsolete capacitor-update rejection expectations (13m14.4s). The
 replacement checks compare updated loss/absorption models against freshly
 rebuilt circuits across three frequencies; all 69 device keyword assertions
-then passed. A clean full-suite rerun is in progress.
+then passed. The clean rerun of `julia --threads=4 --project=. test/runtests.jl`
+completed successfully: **3,577/3,577 assertions**, Julia 1.13.1, 8m28.5s.
+No implementation source changed between that run and this final documentation
+checkpoint.
 
 The ownership/assembly overhead study is recorded in
 `compiled_solve_plans.md`, `parallel_assembly.md` and raw
 `measurements/solve_ownership.toml`. It measures scheduling overhead explicitly
-and keeps parallel execution opt-in.
+and keeps parallel execution opt-in. The chart is retained in
+`solve_ownership_benchmark.html` and was previewed and rendered in the thread.
 
 No SPICE compatibility was added. Default solver/device backends remain the
 existing Julia kernels and SuiteSparse LU. Template and specialization policies

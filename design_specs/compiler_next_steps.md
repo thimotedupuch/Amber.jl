@@ -39,7 +39,7 @@ parallel compiler implementations or default backend replacement are planned.
 11. Conflict-aware parallel assembly — opt-in ordered dependency waves,
     disjoint writes and serial callback barriers implemented.
 12. Symbolic solve plans and typed backend workspaces — shared topology/pattern/
-    scaling metadata and concrete task-owned LU cache implemented; final suite pending.
+    scaling metadata and concrete task-owned LU cache implemented and validated.
 
 ## Item 1: current implementation boundary
 
@@ -218,5 +218,9 @@ with four Julia threads; existing compiler and optimization regressions pass.
 ## Item 12: solve metadata and numerical ownership
 
 See [compiled solve plans](compiled_solve_plans.md) for ownership, typed cache
-fields, policy changes and structural-plan integration. Final validation is in
-progress.
+fields, policy changes and structural-plan integration. The full package suite
+passes 3,577/3,577 assertions with four Julia threads (Julia 1.13.1, 8m28.5s).
+
+All twelve sequential implementation checkpoints are complete. The
+[completion audit](compiler_completion_audit.md) maps each to source and tests;
+individual studies distinguish current contracts from future extensions.
