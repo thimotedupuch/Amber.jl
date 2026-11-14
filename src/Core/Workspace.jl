@@ -71,9 +71,12 @@ _assembly_view(workspace, ::Val{J}; residual = workspace.residual) where {J} =
     storage_jacobian = (nzval = J ? workspace.storage_jacobian.nzval : nothing,),
 )
 
+_assembly_indices(workspace, batch) = eachindex(batch.parameters)
+_assembly_indices(workspace::NamedTuple{N}, batch) where N = :device_range in N ? workspace.device_range : eachindex(batch.parameters)
+
 function _assemble_batch!(workspace, batch::ResistorBatch, state, derivative, t, α, mode, source_scale, temperature)
     residual = workspace.residual; nzval = workspace.jacobian.nzval
-    @inbounds for device in eachindex(batch.p)
+    @inbounds for device in _assembly_indices(workspace, batch)
         p = batch.p[device]; n = batch.n[device]; conductance = batch.conductance[device]
         current = conductance * (_workspace_value(state, p) - _workspace_value(state, n))
         _workspace_add!(residual, p, current); _workspace_add!(residual, n, -current)
@@ -97,7 +100,7 @@ end
 
 function _assemble_batch!(workspace, batch::PrimitiveBatch{Val{:conductance}}, state, derivative, t, α, mode, source_scale, temperature)
     residual = workspace.residual; nzval = workspace.jacobian.nzval
-    @inbounds for device in eachindex(batch.parameters)
+    @inbounds for device in _assembly_indices(workspace, batch)
         p = batch.terminals[1][device]; n = batch.terminals[2][device]
         conductance = batch.parameters[device].value
         current = conductance * (_workspace_value(state, p) - _workspace_value(state, n))
@@ -108,7 +111,7 @@ end
 
 function _assemble_batch!(workspace, batch::PrimitiveBatch{Val{:capacitor}}, state, derivative, t, α, mode, source_scale, temperature)
     residual = workspace.residual; nzval = workspace.jacobian.nzval
-    @inbounds for device in eachindex(batch.parameters)
+    @inbounds for device in _assembly_indices(workspace, batch)
         p = batch.terminals[1][device]; n = batch.terminals[2][device]; parameters = batch.parameters[device]
         capacitance = parameters.value
         leakage = hasproperty(parameters, :leakage_resistance) ? inv(parameters.leakage_resistance) : zero(capacitance)
@@ -121,7 +124,7 @@ end
 
 function _assemble_batch!(workspace, batch::PrimitiveBatch{Val{:current_source}}, state, derivative, t, α, mode, source_scale, temperature)
     residual = workspace.residual
-    @inbounds for device in eachindex(batch.parameters)
+    @inbounds for device in _assembly_indices(workspace, batch)
         p = batch.terminals[1][device]; n = batch.terminals[2][device]
         current = source_scale * _source_value(batch.parameters[device], t, mode)
         _workspace_add!(residual, p, current); _workspace_add!(residual, n, -current)
@@ -131,7 +134,7 @@ end
 
 function _assemble_batch!(workspace, batch::PrimitiveBatch{Val{:voltage_source}}, state, derivative, t, α, mode, source_scale, temperature)
     residual = workspace.residual; nzval = workspace.jacobian.nzval
-    @inbounds for device in eachindex(batch.parameters)
+    @inbounds for device in _assembly_indices(workspace, batch)
         p = batch.terminals[1][device]; n = batch.terminals[2][device]; branch = batch.branch_unknowns[device]
         parameters = batch.parameters[device]; current = state[Int(branch)]
         _workspace_add!(residual, p, current); _workspace_add!(residual, n, -current)
@@ -149,7 +152,7 @@ end
 
 function _assemble_batch!(workspace, batch::PrimitiveBatch{Val{:inductor}}, state, derivative, t, α, mode, source_scale, temperature)
     residual = workspace.residual; nzval = workspace.jacobian.nzval
-    @inbounds for device in eachindex(batch.parameters)
+    @inbounds for device in _assembly_indices(workspace, batch)
         p = batch.terminals[1][device]; n = batch.terminals[2][device]; branch = batch.branch_unknowns[device]
         current = state[Int(branch)]; inductance = batch.parameters[device].value
         _workspace_add!(residual, p, current); _workspace_add!(residual, n, -current)
@@ -170,7 +173,7 @@ end
 
 function _assemble_batch!(workspace, batch::PrimitiveBatch{Val{:vccs}}, state, derivative, t, α, mode, source_scale, temperature)
     residual = workspace.residual; nzval = workspace.jacobian.nzval
-    @inbounds for device in eachindex(batch.parameters)
+    @inbounds for device in _assembly_indices(workspace, batch)
         cp, cn, op, on = (batch.terminals[index][device] for index in 1:4)
         gm = batch.parameters[device].gm
         current = gm * (_workspace_value(state, cp) - _workspace_value(state, cn))
@@ -185,7 +188,7 @@ end
 
 function _assemble_batch!(workspace, batch::PrimitiveBatch{Val{:behavioral_current_source}}, state, derivative, t, α, mode, source_scale, temperature)
     residual = workspace.residual; nzval = workspace.jacobian.nzval
-    @inbounds for device in eachindex(batch.parameters)
+    @inbounds for device in _assembly_indices(workspace, batch)
         q = ntuple(index -> batch.terminals[index][device], 10)
         controls = ntuple(
             index -> _workspace_value(state, q[2index + 1]) -
@@ -211,7 +214,7 @@ end
 
 function _assemble_batch!(workspace, batch::PrimitiveBatch{Val{:behavioral_voltage_source}}, state, derivative, t, α, mode, source_scale, temperature)
     residual = workspace.residual; nzval = workspace.jacobian.nzval
-    @inbounds for device in eachindex(batch.parameters)
+    @inbounds for device in _assembly_indices(workspace, batch)
         q = ntuple(index -> batch.terminals[index][device], 10)
         branch = batch.branch_unknowns[device]
         controls = ntuple(
@@ -241,7 +244,7 @@ end
 
 function _assemble_batch!(workspace, batch::PrimitiveBatch{Val{:vcvs}}, state, derivative, t, α, mode, source_scale, temperature)
     residual = workspace.residual; nzval = workspace.jacobian.nzval
-    @inbounds for device in eachindex(batch.parameters)
+    @inbounds for device in _assembly_indices(workspace, batch)
         cp, cn, op, on = (batch.terminals[index][device] for index in 1:4)
         branch = batch.branch_unknowns[device]; gain = batch.parameters[device].gain; current = state[Int(branch)]
         _workspace_add!(residual, op, current); _workspace_add!(residual, on, -current)
@@ -257,7 +260,7 @@ end
 
 function _assemble_batch!(workspace, batch::PrimitiveBatch{Val{:cccs}}, state, derivative, t, α, mode, source_scale, temperature)
     residual = workspace.residual; nzval = workspace.jacobian.nzval
-    @inbounds for device in eachindex(batch.parameters)
+    @inbounds for device in _assembly_indices(workspace, batch)
         p = batch.terminals[1][device]; n = batch.terminals[2][device]
         control = batch.control_unknowns[device]; gain = batch.parameters[device].gain
         current = gain * state[Int(control)]
@@ -270,7 +273,7 @@ end
 
 function _assemble_batch!(workspace, batch::PrimitiveBatch{Val{:ccvs}}, state, derivative, t, α, mode, source_scale, temperature)
     residual = workspace.residual; nzval = workspace.jacobian.nzval
-    @inbounds for device in eachindex(batch.parameters)
+    @inbounds for device in _assembly_indices(workspace, batch)
         p = batch.terminals[1][device]; n = batch.terminals[2][device]
         branch = batch.branch_unknowns[device]; control = batch.control_unknowns[device]
         resistance = batch.parameters[device].transresistance; current = state[Int(branch)]
@@ -286,7 +289,7 @@ end
 
 function _assemble_batch!(workspace, batch::PrimitiveBatch{Val{:diode}}, state, derivative, t, α, mode, source_scale, temperature)
     residual = workspace.residual; nzval = workspace.jacobian.nzval
-    @inbounds for device in eachindex(batch.parameters)
+    @inbounds for device in _assembly_indices(workspace, batch)
         p = batch.terminals[1][device]; n = batch.terminals[2][device]; model = batch.parameters[device].model
         voltage = _workspace_value(state, p) - _workspace_value(state, n)
         current, conductance = _diode_conduction(model, voltage, temperature)
@@ -301,7 +304,7 @@ end
 
 function _assemble_batch!(workspace, batch::PrimitiveBatch{Val{:npn}}, state, derivative, t, α, mode, source_scale, temperature)
     residual = workspace.residual; nzval = workspace.jacobian.nzval; thermal_voltage = _thermal_voltage(temperature)
-    @inbounds for device in eachindex(batch.parameters)
+    @inbounds for device in _assembly_indices(workspace, batch)
         q = ntuple(index -> batch.terminals[index][device], 3); model = batch.parameters[device].model
         vc, vb, ve = (_workspace_value(state, q[index]) for index in 1:3)
         forward, forward_slope = _limited_exponential((vb - ve) / thermal_voltage)
@@ -339,7 +342,7 @@ end
 
 function _assemble_mosfet_batch!(workspace, batch, kind::Symbol, state, derivative, α, temperature)
     residual = workspace.residual; nzval = workspace.jacobian.nzval
-    @inbounds for device in eachindex(batch.parameters)
+    @inbounds for device in _assembly_indices(workspace, batch)
         q = ntuple(index -> batch.terminals[index][device], 4); model = batch.parameters[device].model
         vd, vg, vs, vb = (_workspace_value(state, q[index]) for index in 1:4)
         if model isa ChargeBasedMOSFET
@@ -388,7 +391,7 @@ _assemble_batch!(workspace, batch::PrimitiveBatch{Val{:pmos}}, state, derivative
 
 function _assemble_batch!(workspace, batch::PrimitiveBatch{Val{:switch}}, state, derivative, t, α, mode, source_scale, temperature)
     residual = workspace.residual; nzval = workspace.jacobian.nzval
-    @inbounds for device in eachindex(batch.parameters)
+    @inbounds for device in _assembly_indices(workspace, batch)
         q = ntuple(index -> batch.terminals[index][device], 4); model = batch.parameters[device].model
         control = _workspace_value(state, q[3]) - _workspace_value(state, q[4])
         voltage = _workspace_value(state, q[1]) - _workspace_value(state, q[2])
@@ -408,7 +411,7 @@ end
 
 function _assemble_batch!(workspace, batch::PrimitiveBatch{Val{:opamp}}, state, derivative, t, α, mode, source_scale, temperature)
     residual = workspace.residual; nzval = workspace.jacobian.nzval
-    @inbounds for device in eachindex(batch.parameters)
+    @inbounds for device in _assembly_indices(workspace, batch)
         q = ntuple(index -> batch.terminals[index][device], 5); model = batch.parameters[device].model
         branch = batch.branch_unknowns[device]; internal = first(batch.state_unknowns[device]); output_current = state[Int(branch)]
         target = model.dc_gain * (_workspace_value(state, q[1]) - _workspace_value(state, q[2]) + model.input_offset)

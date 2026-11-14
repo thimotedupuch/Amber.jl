@@ -35,7 +35,8 @@ parallel compiler implementations or default backend replacement are planned.
    integrated into numerical parameter updates.
 10. Numerical cache dependency identities — exact coefficient identities,
     declared matrix fields, topology binding and scale-aware factor reuse implemented.
-11. Conflict-aware parallel assembly — pending.
+11. Conflict-aware parallel assembly — opt-in ordered dependency waves,
+    disjoint writes and serial callback barriers implemented.
 12. Symbolic solve plans and typed backend workspaces — pending.
 
 ## Item 1: current implementation boundary
@@ -202,3 +203,9 @@ lineage, serialization compatibility, guard/coverage fixes and update costs.
 
 See [numerical cache identities](numerical_cache_identities.md) for dependency
 contracts, conservative invalidation and scale/topology regression coverage.
+
+## Item 11: ordered parallel assembly
+
+See [parallel assembly](parallel_assembly.md) for the dependency schedule,
+callback contract and opt-in execution boundary. Twenty-two new assertions pass
+with four Julia threads; existing compiler and optimization regressions pass.

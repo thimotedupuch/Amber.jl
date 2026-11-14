@@ -25,6 +25,7 @@ export KCLCurrentEquation, VoltageConstraintEquation, DynamicStateEquation, Devi
 export PrimitiveBatch, ResistorBatch, with_parameters, TopologyParameterError
 export ParameterUpdateError, model_parameters, with_model_parameter
 export ParameterHandle, parameter_handle, parameter_dependencies
+export ParallelAssemblyPlan, parallel_assembly_plan, parallel_residual_jacobian!
 export SimulationWorkspace, residual!, jacobian!, residual_jacobian!
 export invertermetrics, switchingmetrics
 export storage_jacobian!
@@ -133,6 +134,7 @@ include("Core/ParameterDependencies.jl")
 include("Core/MatrixDependencies.jl")
 include("Core/Workspace.jl")
 include("Core/Storage.jl")
+include("Core/ParallelAssembly.jl")
 include("Core/StructuralAnalysis.jl")
 include("Analysis/Analyses.jl")
 include("Results/Results.jl")
