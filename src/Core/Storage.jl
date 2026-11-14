@@ -104,6 +104,7 @@ end
 
 """Assemble stored charge/flux and its Jacobian in independent reusable buffers."""
 function storage_jacobian!(workspace::SimulationWorkspace, cc::CompiledCircuit, state; temperature = 300.0)
+    _validate_workspace(workspace,cc)
     length(state) == cc.n||throw(DimensionMismatch("state must match the compiled unknown count"))
     fill!(workspace.storage, 0); fill!(workspace.storage_jacobian.nzval, 0)
     _storage_batches!(workspace, cc.parameters.batches, state, temperature)
@@ -112,6 +113,8 @@ end
 
 function _storage(cc, state; temperature = 300.0, workspace = nothing)
     workspace === nothing&&(workspace = SimulationWorkspace(cc; scalar_type = eltype(state)))
+    _validate_workspace(workspace,cc)
+    length(state) == cc.n || throw(DimensionMismatch("storage state must match unknown count"))
     fill!(workspace.storage, 0)
     _storage_batches!(_assembly_view(workspace, Val(false)), cc.parameters.batches, state, temperature)
     return copy(workspace.storage)
@@ -184,8 +187,9 @@ function _constant_batches!(view, batches::Tuple, zero_state)
 end
 
 function _ensure_constant_matrices!(workspace, cc)
+    _validate_workspace(workspace,cc)
     if workspace.constant_topology === cc.topology &&
-            workspace.constant_fingerprint == cc.parameters.matrix_fingerprint
+            workspace.constant_identity === cc.parameters.matrix_identity
         return nothing
     end
     fill!(workspace.constant_jacobian.nzval, 0)
@@ -199,6 +203,7 @@ function _ensure_constant_matrices!(workspace, cc)
     _constant_batches!(view, cc.parameters.batches, workspace.derivative)
     workspace.constant_topology = cc.topology
     workspace.constant_fingerprint = cc.parameters.matrix_fingerprint
+    workspace.constant_identity = cc.parameters.matrix_identity
     workspace.constant_assemblies += 1
     return nothing
 end

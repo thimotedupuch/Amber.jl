@@ -23,7 +23,10 @@ mutable struct SimulationWorkspace{T}
     constant_storage_jacobian::SparseMatrixCSC{T, Int}
     constant_topology::Union{Nothing, HierarchicalCompiledTopology}
     constant_fingerprint::UInt128
+    constant_identity::Union{Nothing,MatrixCacheIdentity}
     constant_assemblies::Int
+    topology::HierarchicalCompiledTopology
+    factorization_scales::Vector{T}
 end
 
 function SimulationWorkspace(compiled::AbstractCompiledCircuit; scalar_type::Type{T} = Float64) where {T}
@@ -39,8 +42,13 @@ function SimulationWorkspace(compiled::AbstractCompiledCircuit; scalar_type::Typ
         zeros(T, n), zeros(T, n), zeros(T, n), zeros(T, n), zeros(T, n), jacobian,
         scaled_jacobian, system, zeros(T, n), zeros(T, n), zeros(T, n), variable_scales,
         zeros(T, n), zeros(T, n), nothing, nothing, 0, zeros(T, n), copy(jacobian),
-        copy(jacobian), copy(jacobian), nothing, zero(UInt128), 0
+        copy(jacobian), copy(jacobian), nothing, zero(UInt128), nothing, 0, compiled.topology, copy(variable_scales)
     )
+end
+
+function _validate_workspace(workspace::SimulationWorkspace,compiled)
+    workspace.topology === compiled.topology || throw(ArgumentError("workspace belongs to a different compiled topology"))
+    return nothing
 end
 
 @inline _workspace_value(values, index::Int32) = index == 0 ? zero(eltype(values)) : values[Int(index)]
@@ -484,6 +492,7 @@ function residual_jacobian!(
     t = _si_value(t, Unitful.s)
     α = _si_value(α, inv(Unitful.s))
     temperature = _si_value(temperature, Unitful.K)
+    _validate_workspace(workspace,compiled)
     _all_inplace_supported(compiled.parameters.batches) ||
         throw(ArgumentError("one or more compiled batches do not support in-place assembly"))
     length(state) == compiled.n == length(previous) || throw(DimensionMismatch("state vectors must match the compiled unknown count"))
@@ -509,6 +518,7 @@ function residual!(
     )
     t = _si_value(t, Unitful.s)
     temperature = _si_value(temperature, Unitful.K)
+    _validate_workspace(workspace,compiled)
     _all_inplace_supported(compiled.parameters.batches) ||
         throw(ArgumentError("one or more compiled batches do not support in-place assembly"))
     length(state) == compiled.n == length(derivative) || throw(DimensionMismatch("state vectors must match the compiled unknown count"))

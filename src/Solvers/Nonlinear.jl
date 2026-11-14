@@ -83,12 +83,15 @@ function _newton(
     α = _si_value(α, inv(Unitful.s))
     temperature = _si_value(temperature, Unitful.K)
     workspace === nothing && (workspace = SimulationWorkspace(cc))
+    _validate_workspace(workspace,cc)
+    length(workspace.variable_scales) == cc.n || throw(DimensionMismatch("variable scales must match unknown count"))
+    all(x -> isfinite(x) && !iszero(x),workspace.variable_scales) || throw(ArgumentError("variable scales must be finite and nonzero"))
     qhistory = iszero(α) ? nothing : storage_history === nothing ?
         _storage(cc, previous; temperature, workspace) : storage_history
     z = copy(z0); factorization = workspace.factorization
     linear_hierarchy = _all_linear(cc.parameters.batches)
     factorization_key = linear_hierarchy ? (
-            cc.topology, cc.parameters.matrix_fingerprint, Float64(α), mode, Float64(gmin),
+            cc.topology, cc.parameters.matrix_identity, Float64(α), mode, Float64(gmin),
             linear_solver,
         ) : nothing
     for it in 1:maxiters
@@ -121,12 +124,14 @@ function _newton(
             end
             if linear_plan === nothing
                 reuse_numeric = linear_hierarchy && factorization !== nothing &&
-                    workspace.factorization_key == factorization_key
+                    workspace.factorization_key == factorization_key &&
+                    isequal(workspace.factorization_scales,variable_scales)
                 if !reuse_numeric
                     factorization = factorization === nothing ? _new_factorization(system, linear_solver) :
                         lu!(factorization, system; reuse_symbolic = true)
                     workspace.factorization = factorization
                     workspace.factorization_key = factorization_key
+                    copyto!(workspace.factorization_scales,variable_scales)
                     workspace.numeric_factorizations += 1
                 end
                 ldiv!(workspace.update, factorization, rhs)

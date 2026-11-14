@@ -8,7 +8,9 @@ struct DeviceDependencies
     linear::Bool
     source::Bool
     storage::Bool
+    matrix_fields::Union{Nothing,Tuple{Vararg{Symbol}}}
 end
+DeviceDependencies(linear,source,storage) = DeviceDependencies(linear,source,storage,nothing)
 
 """Device topology, observables, and numerical evaluation dependencies."""
 struct DeviceContract
@@ -22,15 +24,15 @@ struct DeviceContract
 end
 _contract(
     terminals; branch = false, states = Symbol[], dc_path = false, noise = false, observables = (:voltage, :current, :power),
-    linear = false, source = false, storage = false
+    linear = false, source = false, storage = false, matrix_fields=nothing
 ) =
-    DeviceContract(terminals, branch, states, dc_path, noise, observables, DeviceDependencies(linear, source, storage))
+    DeviceContract(terminals, branch, states, dc_path, noise, observables, DeviceDependencies(linear, source, storage,matrix_fields))
 const _DEVICE_SPECS = Dict{Symbol, DeviceContract}(
-    :resistor => _contract(2; dc_path = true, noise = true, linear = true), :conductance => _contract(2; dc_path = true, noise = true, linear = true),
-    :capacitor => _contract(2; observables = (:voltage, :current, :power, :charge), linear = true, storage = true), :current_source => _contract(2; linear = true, source = true),
-    :voltage_source => _contract(2; branch = true, dc_path = true, noise = true, linear = true, source = true), :inductor => _contract(2; branch = true, dc_path = true, linear = true, storage = true),
-    :vccs => _contract(4; linear = true), :vcvs => _contract(4; branch = true, dc_path = true, linear = true), :cccs => _contract(2; linear = true),
-    :ccvs => _contract(2; branch = true, dc_path = true, linear = true), :diode => _contract(2; dc_path = true, noise = true, storage = true, observables = (:voltage, :current, :power, :charge)),
+    :resistor => _contract(2; dc_path = true, noise = true, linear = true,matrix_fields=(:value,)), :conductance => _contract(2; dc_path = true, noise = true, linear = true,matrix_fields=(:value,)),
+    :capacitor => _contract(2; observables = (:voltage, :current, :power, :charge), linear = true, storage = true,matrix_fields=(:value,:leakage_resistance)), :current_source => _contract(2; linear = true, source = true,matrix_fields=()),
+    :voltage_source => _contract(2; branch = true, dc_path = true, noise = true, linear = true, source = true,matrix_fields=(:series_resistance,)), :inductor => _contract(2; branch = true, dc_path = true, linear = true, storage = true,matrix_fields=(:value,)),
+    :vccs => _contract(4; linear = true,matrix_fields=(:gm,)), :vcvs => _contract(4; branch = true, dc_path = true, linear = true,matrix_fields=(:gain,)), :cccs => _contract(2; linear = true,matrix_fields=(:gain,)),
+    :ccvs => _contract(2; branch = true, dc_path = true, linear = true,matrix_fields=(:transresistance,)), :diode => _contract(2; dc_path = true, noise = true, storage = true, observables = (:voltage, :current, :power, :charge)),
     :npn => _contract(3; dc_path = true, noise = true, storage = true),
     :nmos => _contract(4; dc_path = true, noise = true, storage = true), :pmos => _contract(4; dc_path = true, noise = true, storage = true),
     :switch => _contract(4; dc_path = true, noise = true),

@@ -33,7 +33,8 @@ parallel compiler implementations or default backend replacement are planned.
 9. Parameter dependency graphs — explicit elaboration formulas, complete
    expansion roles, schema-4 persistence and affected-subgraph propagation
    integrated into numerical parameter updates.
-10. Numerical cache dependency identities — pending.
+10. Numerical cache dependency identities — exact coefficient identities,
+    declared matrix fields, topology binding and scale-aware factor reuse implemented.
 11. Conflict-aware parallel assembly — pending.
 12. Symbolic solve plans and typed backend workspaces — pending.
 
@@ -196,3 +197,8 @@ lazy request semantics, ownership/indexing fixes and measured interpreter costs.
 
 See [parameter dependency graphs](parameter_dependency_graphs.md) for formula
 lineage, serialization compatibility, guard/coverage fixes and update costs.
+
+## Item 10: numerical cache correctness
+
+See [numerical cache identities](numerical_cache_identities.md) for dependency
+contracts, conservative invalidation and scale/topology regression coverage.

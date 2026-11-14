@@ -103,6 +103,8 @@ struct ParameterDependencyGraph
     ranks::Vector{Int}
 end
 ParameterDependencyGraph() = ParameterDependencyGraph(CompiledParameterRule[],Int[],Set{ParameterLocation}(),Set{ParameterLocation}(),Set{ParameterLocation}(),Dict{ParameterLocation,Vector{Int}}(),Int[])
+mutable struct MatrixCacheIdentity end
+
 struct ParameterStore{B}
     batches::B
     fingerprint::UInt128
@@ -110,11 +112,12 @@ struct ParameterStore{B}
     batch_fingerprints::Vector{UInt128}
     matrix_batch_fingerprints::Vector{UInt128}
     dependency_graph::ParameterDependencyGraph
+    matrix_identity::MatrixCacheIdentity
 end
 function ParameterStore(batches::Union{Tuple,AbstractVector{<:AbstractCompiledBatch}}, fingerprint::UInt128;dependency_graph=ParameterDependencyGraph())
     hashes = UInt128[_parameter_store_fingerprint((batch,)) for batch in batches]
     matrix_hashes = UInt128[_matrix_parameter_fingerprint((batch,)) for batch in batches]
-    return ParameterStore(batches, fingerprint, _combine_parameter_fingerprints(matrix_hashes), hashes, matrix_hashes,dependency_graph)
+    return ParameterStore(batches, fingerprint, _combine_parameter_fingerprints(matrix_hashes), hashes, matrix_hashes,dependency_graph,MatrixCacheIdentity())
 end
 function _combine_parameter_fingerprints(hashes)
     digest = sha256(join(string.(hashes), ':')); value = zero(UInt128)
@@ -746,9 +749,10 @@ function with_parameters(compiled, updates::Pair...)
         touched[index] && (hashes[index] = _parameter_store_fingerprint((batches[index],)))
         matrix_changed[index] && (matrix_hashes[index] = _matrix_parameter_fingerprint((batches[index],)))
     end
+    matrix_identity=_updated_matrix_identity(compiled.parameters,batches,matrix_changed)
     store = ParameterStore(
         new_batches, _combine_parameter_fingerprints(hashes),
-        _combine_parameter_fingerprints(matrix_hashes), hashes, matrix_hashes,graph
+        _combine_parameter_fingerprints(matrix_hashes), hashes, matrix_hashes,graph,matrix_identity
     )
     fingerprint = bytes2hex(sha1(string(compiled.design.structural_fingerprint, ':', store.fingerprint)))
     return CompiledCircuit(compiled.design, compiled.topology, store, fingerprint)
