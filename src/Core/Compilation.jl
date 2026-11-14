@@ -29,14 +29,14 @@ function _materialize_parameter(value, values, netmap = nothing)
     return value
 end
 
-function compile(design::CircuitDesign)
-    all_diagnostics, topology, parameters = _check_and_compile(design)
+function compile(design::CircuitDesign;symbolic_cache=nothing)
+    all_diagnostics, topology, parameters = _check_and_compile(design;symbolic_cache)
     diagnostics = filter(diagnostic -> diagnostic.severity === :error, all_diagnostics)
     isempty(diagnostics)||throw(CircuitValidationError(diagnostics))
     fingerprint = bytes2hex(sha1(string(design.structural_fingerprint, ':', design.parameter_fingerprint)))
     return CompiledCircuit(design, topology, parameters, fingerprint)
 end
-compile(compiled::CompiledCircuit) = compiled
+compile(compiled::CompiledCircuit;symbolic_cache=nothing) = compiled
 
 _v(values, index) = index == 0 ? zero(eltype(values)) : values[index]
 _thermal_voltage(temperature) = 1.380649e-23 * Float64(_si_value(temperature, Unitful.K)) / 1.602176634e-19

@@ -80,7 +80,7 @@ function _net_labels(design, topology)
 end
 
 """Validate and compile a design in one hierarchy-elaboration pass."""
-function _check_and_compile(design::CircuitDesign)
+function _check_and_compile(design::CircuitDesign;symbolic_cache=nothing)
     diagnostics = Diagnostic[]
     design.root_ir.ground_net == 0 && push!(
         diagnostics, Diagnostic(
@@ -115,7 +115,7 @@ function _check_and_compile(design::CircuitDesign)
     end
     any(diagnostic -> diagnostic.severity === :error, diagnostics)&&return diagnostics, nothing, nothing
     topology, parameters = try
-        _compile_hierarchy(design)
+        _compile_hierarchy(design;symbolic_cache)
     catch error
         push!(diagnostics, Diagnostic(:error, sprint(showerror, error)))
         return diagnostics, nothing, nothing

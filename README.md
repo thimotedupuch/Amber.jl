@@ -1400,3 +1400,16 @@ The initializer preserves independent storage coordinates and satisfies algebrai
 constraints and the continuous equations. Higher-index, rank-ambiguous and
 nonlinear systems are explicitly declined. Numerical rank analysis is optional
 and size-bounded. See [DAE initialization](design_specs/dae_initialization.md).
+
+Compilation automatically reuses local template topology plans across instances.
+For repeated compilation, an optional bounded, caller-owned cache is available:
+
+```julia
+cache = SymbolicCompilationCache(max_entries=128)
+compiled = compile(circuit; symbolic_cache=cache)
+symbolic_cache_stats(cache)
+```
+
+Numerical parameters and controlled-source bindings are resolved afresh. See
+[template plan reuse](design_specs/template_plan_reuse.md) for ownership,
+regression measurements and limitations.

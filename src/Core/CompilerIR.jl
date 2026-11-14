@@ -198,26 +198,23 @@ end
     return internal_bases[instance_index] + local_net - Int32(port_count) - 1
 end
 
-function _foreach_hierarchical_primitive(f::F, design::CircuitDesign, root_mapping, internal_bases; materialize::Bool = true) where {F}
+function _foreach_hierarchical_primitive(f::F, design::CircuitDesign, root_mapping, internal_bases, plans; materialize::Bool = true) where {F}
     for (primitive_index, primitive) in enumerate(design.root_ir.primitives)
-        terminals = ntuple(i -> root_mapping[Int(design.root_ir.terminal_data[first(primitive.terminals) + i - 1])], length(primitive.terminals))
+        symbolic=plans.root.primitives[primitive_index]
+        terminals=ntuple(i -> root_mapping[Int(symbolic.terminals[i])],length(symbolic.terminals))
         parameters = materialize ? _materialize_parameter(primitive.parameters, _EmptyParameterValues(), nothing) : nothing
-        materialize && (parameters = _normalized_component_parameters(typeof(primitive.kernel).parameters[1], parameters))
-        f(primitive, terminals, parameters, DeviceLocator(InstanceId(0), TemplateId(0), Int32(primitive_index), PathId(0)))
+        materialize && (parameters = _normalized_component_parameters(symbolic.kind, parameters))
+        f(primitive, terminals, parameters, DeviceLocator(InstanceId(0), TemplateId(0), Int32(primitive_index), PathId(0)),symbolic)
     end
     for (instance_index, record) in enumerate(design.root.records)
         template = design.templates.templates[Int(record.template)]
         parameter_values = _InstanceParameterValues(template.parameters, design.root.parameter_data, Int(record.parameters.start))
         for (primitive_index, primitive) in enumerate(template.body.primitives)
-            terminals = ntuple(
-                i -> _instance_solver_net(
-                    design, root_mapping, internal_bases, instance_index, record,
-                    template.body.terminal_data[first(primitive.terminals) + i - 1]
-                ), length(primitive.terminals)
-            )
+            symbolic=plans.templates[Int(record.template)].primitives[primitive_index]
+            terminals=ntuple(i -> _instance_solver_net(design,root_mapping,internal_bases,instance_index,record,symbolic.terminals[i]),length(symbolic.terminals))
             parameters = materialize ? _materialize_parameter(primitive.parameters, parameter_values, nothing) : nothing
-            materialize && (parameters = _normalized_component_parameters(typeof(primitive.kernel).parameters[1], parameters))
-            f(primitive, terminals, parameters, DeviceLocator(InstanceId(instance_index), record.template, Int32(primitive_index), record.path))
+            materialize && (parameters = _normalized_component_parameters(symbolic.kind, parameters))
+            f(primitive, terminals, parameters, DeviceLocator(InstanceId(instance_index), record.template, Int32(primitive_index), record.path),symbolic)
         end
     end
     return nothing
@@ -284,7 +281,8 @@ function _freeze_batch(builder::_BatchBuilder)
     )
 end
 
-function _compile_hierarchy(design::CircuitDesign)
+function _compile_hierarchy(design::CircuitDesign;symbolic_cache=nothing)
+    plans=_design_symbolic_plans(design,symbolic_cache)
     root_mapping, root_solver_count = _solver_root_nets(design)
     internal_bases, solver_net_count = _instance_internal_bases(design, root_solver_count)
     primitive_count = length(design.root_ir.primitives) + sum(record -> length(design.templates.templates[Int(record.template)].body.primitives), design.root.records; init = 0)
@@ -292,33 +290,26 @@ function _compile_hierarchy(design::CircuitDesign)
     batch_keys = Tuple{Symbol, DataType}[]; batch_lookup = Dict{Tuple{Symbol, DataType}, Int}(); counts = Int[]
     branch_count = 0; state_count = 0; cached_parameters = Any[]
     sizehint!(cached_parameters, primitive_count)
-    _foreach_hierarchical_primitive(design, root_mapping, internal_bases) do primitive, terminals, parameters, locator
-        kind = typeof(primitive.kernel).parameters[1]; contract = device_contract(kind)
+    _foreach_hierarchical_primitive(design, root_mapping, internal_bases, plans) do primitive, terminals, parameters, locator, symbolic
+        kind = symbolic.kind
         key = _batch_key(kind, parameters)
         batch = get!(batch_lookup, key) do
             push!(batch_keys, key); push!(counts, 0); length(batch_keys)
         end
         counts[batch] += 1
         push!(cached_parameters, parameters)
-        branch_count += contract.branch
-        state_count += length(contract.states)
+        branch_count += !iszero(symbolic.branch_offset)
+        state_count += length(symbolic.state_offsets)
     end
     unknown_count = Int(solver_net_count) + branch_count + state_count
     branch_by_primitive = zeros(Int32, primitive_count)
     states_by_primitive = Vector{Vector{Int32}}(undef, primitive_count)
     branch_lookup = Dict{Tuple{UInt32, UInt32, Int32}, Int32}()
-    next_unknown = Int32(solver_net_count); primitive_ordinal = 0
-    _foreach_hierarchical_primitive(design, root_mapping, internal_bases; materialize = false) do primitive, terminals, parameters, locator
-        primitive_ordinal += 1; contract = device_contract(typeof(primitive.kernel).parameters[1])
-        if contract.branch
-            next_unknown += Int32(1); branch_by_primitive[primitive_ordinal] = next_unknown
-            branch_lookup[(locator.instance.value, locator.template.value, locator.primitive)] = next_unknown
-        end
-        states = Int32[]
-        for _ in contract.states
-            next_unknown += Int32(1); push!(states, next_unknown)
-        end
-        states_by_primitive[primitive_ordinal] = states
+    primitive_ordinal,next_unknown=_instantiate_auxiliary_layout!(branch_by_primitive,states_by_primitive,
+        branch_lookup,plans.root,Int32(solver_net_count),0,UInt32(0),UInt32(0))
+    for (instance_index,record) in enumerate(design.root.records)
+        primitive_ordinal,next_unknown=_instantiate_auxiliary_layout!(branch_by_primitive,states_by_primitive,
+            branch_lookup,plans.templates[Int(record.template)],next_unknown,primitive_ordinal,UInt32(instance_index),record.template.value)
     end
     builders = [
         _new_batch_builder(
@@ -337,10 +328,10 @@ function _compile_hierarchy(design::CircuitDesign)
     contributions = _Contribution[]; sizehint!(contributions, 10 * primitive_count + unknown_count)
     batch_positions = zeros(Int, length(builders))
     primitive_ordinal = 0
-    _foreach_hierarchical_primitive(design, root_mapping, internal_bases; materialize = false) do primitive, terminals, ignored_parameters, locator
+    _foreach_hierarchical_primitive(design, root_mapping, internal_bases, plans; materialize = false) do primitive, terminals, ignored_parameters, locator, symbolic
         primitive_ordinal += 1
         parameters = cached_parameters[primitive_ordinal]
-        kind = typeof(primitive.kernel).parameters[1]; contract = device_contract(kind)
+        kind = symbolic.kind
         batch_index = batch_lookup[_batch_key(kind, parameters)]
         batch_positions[batch_index] += 1; device_index = batch_positions[batch_index]
         builder = builders[batch_index]
@@ -369,11 +360,11 @@ function _compile_hierarchy(design::CircuitDesign)
             control == 0 && throw(ArgumentError("controlled source refers to a primitive without a branch-current unknown"))
         end
         push!(builder.control_unknowns, control)
-        local_contribution = 0
-        _emit_stamp_positions!(kind, terminals, branch, states, control) do row, column
-            local_contribution += 1
-            (row == 0 || column == 0) && return
-            push!(contributions, _Contribution(Int32(column), Int32(row), Int32(batch_index), Int32(device_index), UInt8(local_contribution)))
+        for (ordinal,(local_row,local_column)) in enumerate(symbolic.stamp_positions)
+            row=_stamp_unknown(local_row,terminals,branch,states,control)
+            column=_stamp_unknown(local_column,terminals,branch,states,control)
+            (row == 0 || column == 0) && continue
+            push!(contributions,_Contribution(Int32(column),Int32(row),Int32(batch_index),Int32(device_index),UInt8(ordinal)))
         end
     end
     pattern = _pattern_from_contributions!(contributions, builders, unknown_count, Int(solver_net_count))

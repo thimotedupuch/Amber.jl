@@ -21,7 +21,9 @@ parallel compiler implementations or default backend replacement are planned.
    bounded numerical analysis implemented; opt-in linear initialization preserves
    dynamic coordinates and solves state/derivative constraints. Higher-index and
    rank-ambiguous systems are explicitly declined.
-6. Template symbolic compilation reuse — pending.
+6. Template symbolic compilation reuse — local connectivity/stamp/auxiliary
+   plans reused across instances; optional bounded caller-owned cache supports
+   repeated compilation without caching numerical bindings.
 7. Bounded specialization and diversity benchmarks — pending.
 8. Derivative requests and shared intermediates — pending.
 9. Parameter dependency graphs — pending.
@@ -168,3 +170,8 @@ costs are recorded in the study. This remains an opt-in numerical transformation
 
 See [DAE initialization](dae_initialization.md) for the mathematical contract,
 rank-ambiguity regression, descriptor integration and current boundaries.
+
+## Item 6: template plan reuse
+
+See [template plan reuse](template_plan_reuse.md) for key/ownership contracts,
+historical baseline measurements, small-design overhead and validation.
