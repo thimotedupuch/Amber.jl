@@ -27,7 +27,9 @@ parallel compiler implementations or default backend replacement are planned.
 7. Bounded specialization and diversity benchmarks — configurable tuple/erased
    batch boundary implemented across numerical paths; dispatch contexts avoid
    per-batch argument boxing. Diversity/JIT/warm regressions are measured.
-8. Derivative requests and shared intermediates — pending.
+8. Derivative requests and shared intermediates — shared instruction DAG,
+   requested derivative roots, lazy evaluation and task-owned epoch workspaces
+   implemented for constitutive IR; production kernels remain unchanged.
 9. Parameter dependency graphs — pending.
 10. Numerical cache dependency identities — pending.
 11. Conflict-aware parallel assembly — pending.
@@ -182,3 +184,8 @@ historical baseline measurements, small-design overhead and validation.
 
 See [bounded specialization](bounded_specialization.md) for policy, dispatch
 boundary design, inference/boxing regressions, measurements and validation.
+
+## Item 8: requested-output instruction programs
+
+See [constitutive programs](constitutive_programs.md) for shared lowering,
+lazy request semantics, ownership/indexing fixes and measured interpreter costs.

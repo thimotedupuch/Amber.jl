@@ -1,0 +1,29 @@
+cpu = "raptorlake"
+julia_version = "1.13.1"
+
+[diode]
+all_evaluated_nodes = 64
+construction_jit_seconds = 0.329996731
+construction_seconds = 0.334099055
+nodes = 75
+values_evaluated_nodes = 31
+
+    [diode.handwritten]
+    median_seconds = 1.9750000000000001e-7
+    minimum_bytes = 0
+    minimum_seconds = 1.91e-7
+
+    [diode.program_all]
+    median_seconds = 1.1265000000000001e-6
+    minimum_bytes = 0
+    minimum_seconds = 1.109e-6
+
+    [diode.program_values]
+    median_seconds = 4.825e-7
+    minimum_bytes = 0
+    minimum_seconds = 4.71e-7
+
+    [diode.tree]
+    median_seconds = 2.24e-7
+    minimum_bytes = 0
+    minimum_seconds = 2.18e-7
