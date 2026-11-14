@@ -24,7 +24,7 @@ export NodeVoltageUnknown, BranchCurrentUnknown, DeviceStateUnknown, PartitionIn
 export KCLCurrentEquation, VoltageConstraintEquation, DynamicStateEquation, DeviceAuxiliaryEquation
 export PrimitiveBatch, ResistorBatch, with_parameters, TopologyParameterError
 export ParameterUpdateError, model_parameters, with_model_parameter
-export ParameterHandle, parameter_handle
+export ParameterHandle, parameter_handle, parameter_dependencies
 export SimulationWorkspace, residual!, jacobian!, residual_jacobian!
 export invertermetrics, switchingmetrics
 export storage_jacobian!
@@ -129,6 +129,7 @@ include("Core/ConstitutivePrograms.jl")
 include("Core/CompilerIR.jl")
 include("Core/TemplatePlans.jl")
 include("Core/Compilation.jl")
+include("Core/ParameterDependencies.jl")
 include("Core/Workspace.jl")
 include("Core/Storage.jl")
 include("Core/StructuralAnalysis.jl")

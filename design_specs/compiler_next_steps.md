@@ -30,7 +30,9 @@ parallel compiler implementations or default backend replacement are planned.
 8. Derivative requests and shared intermediates — shared instruction DAG,
    requested derivative roots, lazy evaluation and task-owned epoch workspaces
    implemented for constitutive IR; production kernels remain unchanged.
-9. Parameter dependency graphs — pending.
+9. Parameter dependency graphs — explicit elaboration formulas, complete
+   expansion roles, schema-4 persistence and affected-subgraph propagation
+   integrated into numerical parameter updates.
 10. Numerical cache dependency identities — pending.
 11. Conflict-aware parallel assembly — pending.
 12. Symbolic solve plans and typed backend workspaces — pending.
@@ -189,3 +191,8 @@ boundary design, inference/boxing regressions, measurements and validation.
 
 See [constitutive programs](constitutive_programs.md) for shared lowering,
 lazy request semantics, ownership/indexing fixes and measured interpreter costs.
+
+## Item 9: retained parameter dependencies
+
+See [parameter dependency graphs](parameter_dependency_graphs.md) for formula
+lineage, serialization compatibility, guard/coverage fixes and update costs.

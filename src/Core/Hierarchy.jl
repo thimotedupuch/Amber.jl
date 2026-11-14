@@ -100,6 +100,20 @@ struct ParameterSpec
     structural::Bool
 end
 
+"""Serializable local parameter dependency retained through physical elaboration."""
+struct DerivedParameterSpec
+    source::Int32
+    source_field::Symbol
+    target::Int32
+    target_field::Symbol
+    operation::Symbol
+    scale::Float64
+    offset::Float64
+    divisor::Float64
+    role::Symbol
+end
+DerivedParameterSpec(source,source_field,target,target_field,operation,scale,offset,divisor) =
+    DerivedParameterSpec(source,source_field,target,target_field,operation,scale,offset,divisor,:generic)
 abstract type AbstractParameterExpression end
 struct ParameterReference <: AbstractParameterExpression
     name::NameId
@@ -206,7 +220,10 @@ struct TemplateIR
     terminal_data::Vector{Int32}
     primitives::Vector{Any}
     observations::Vector{Any}
+    parameter_relations::Vector{DerivedParameterSpec}
 end
+TemplateIR(nets,ground,terminals,primitives,observations) =
+    TemplateIR(nets,ground,terminals,primitives,observations,DerivedParameterSpec[])
 
 """Immutable reusable circuit template with explicit ports and parameters."""
 struct SubcircuitTemplate <: AbstractCircuitDefinition
@@ -329,6 +346,7 @@ mutable struct CircuitBuilder
     connections::Vector{Int32}
     parameters::Vector{Any}
     path_nodes::Vector{_PathNode}
+    parameter_relations::Vector{DerivedParameterSpec}
     finished::Bool
 end
 
@@ -338,7 +356,7 @@ function CircuitBuilder(name::Union{Symbol, AbstractString} = :anonymous; _mode:
     owner = Threads.atomic_add!(_BUILDER_OWNER, UInt64(1)) + UInt64(1)
     return CircuitBuilder(
         owner, 0x00000001, _mode, name_id, names, NameSegment[], Int32(0), Int32[], Any[], Any[],
-        SubcircuitTemplate[], Dict{UInt128, TemplateId}(), InstanceRecord[], Int32[], Any[], _PathNode[], false
+        SubcircuitTemplate[], Dict{UInt128, TemplateId}(), InstanceRecord[], Int32[], Any[], _PathNode[], DerivedParameterSpec[], false
     )
 end
 
@@ -515,6 +533,7 @@ function add!(builder::CircuitBuilder, component::PrimitiveDraft; name = string(
         _check_package_fields(kind, package, (:series_inductance, :parallel_capacitance))
         esr = Float64(get(parameters, :esr, _model_value(package, :esr)))
         esl = Float64(get(parameters, :esl, _model_value(package, :esl)))
+        base_esr=esr; esr_handle=nothing
         dielectric = get(parameters, :dielectric, nothing)
         if dielectric isa AbstractCapacitorDielectric && dielectric.loss_tangent > 0
             # A constant series resistor calibrated at one frequency, usable in
@@ -531,7 +550,7 @@ function add!(builder::CircuitBuilder, component::PrimitiveDraft; name = string(
         terminal = terminals[1]
         if esr > 0
             following = node!(builder, _hidden_name(name, "__esr"))
-            _add_raw!(builder, resistor(terminal, following; value = esr), _hidden_name(name, "esr")); terminal = following
+            esr_handle=_add_raw!(builder, resistor(terminal, following; value = esr), _hidden_name(name, "esr")); terminal = following
         end
         if esl > 0
             following = node!(builder, _hidden_name(name, "__esl"))
@@ -539,6 +558,15 @@ function add!(builder::CircuitBuilder, component::PrimitiveDraft; name = string(
         end
         main_parameters = _without(parameters, (:esr, :esl, :leakage_resistance))
         main = _add_raw!(builder, _component(:capacitor, terminal, terminals[2]; main_parameters...), name)
+        if dielectric isa AbstractCapacitorDielectric && dielectric.loss_tangent > 0
+            if esr_handle === nothing
+                # A numerically absent expansion may appear after changing C.
+                push!(builder.parameter_relations,DerivedParameterSpec(main.id,:value,main.id,:value,:rebuild,0.0,0.0,1.0,:loss))
+            else
+                push!(builder.parameter_relations,DerivedParameterSpec(main.id,:value,esr_handle.id,:value,
+                    :calibrated_loss,dielectric.loss_tangent,base_esr,dielectric.reference_frequency,:loss))
+            end
+        end
         isfinite(leakage)&&leakage > 0&&_add_raw!(builder, resistor(terminal, terminals[2]; value = leakage), _hidden_name(name, "leakage_resistance"))
         absorption = get(parameters, :dielectric_absorption, nothing)
         if absorption isa DebyeBranches
@@ -547,8 +575,10 @@ function add!(builder::CircuitBuilder, component::PrimitiveDraft; name = string(
                 fraction > 0||continue
                 branch_capacitance = Float64(parameters.value) * fraction
                 branch_node = node!(builder, _hidden_name(name, "__da$(index)"))
-                _add_raw!(builder, resistor(terminal, branch_node; value = time_constant / branch_capacitance), _hidden_name(name, "da$(index)_resistor"))
-                _add_raw!(builder, capacitor(branch_node, terminals[2]; value = branch_capacitance), _hidden_name(name, "da$(index)_capacitor"))
+                resistance_handle=_add_raw!(builder, resistor(terminal, branch_node; value = time_constant / branch_capacitance), _hidden_name(name, "da$(index)_resistor"))
+                capacitance_handle=_add_raw!(builder, capacitor(branch_node, terminals[2]; value = branch_capacitance), _hidden_name(name, "da$(index)_capacitor"))
+                push!(builder.parameter_relations,DerivedParameterSpec(main.id,:value,resistance_handle.id,:value,:inverse,time_constant,0.0,fraction,Symbol(:da_resistor_,index)))
+                push!(builder.parameter_relations,DerivedParameterSpec(main.id,:value,capacitance_handle.id,:value,:affine,fraction,0.0,1.0,Symbol(:da_capacitor_,index)))
             end
         end
         return main
@@ -816,6 +846,7 @@ function _root_fingerprint(builder::CircuitBuilder, names::NameTable, body::Temp
         end
         print(io, repr(primitive.parameters), ';')
     end
+    isempty(body.parameter_relations) || print(io,repr(body.parameter_relations))
     digest = sha256(take!(io)); value = zero(UInt128)
     for byte in digest[1:16]
         value = (value << 8) | UInt128(byte)
@@ -828,7 +859,7 @@ function _template_signature(name, ports, parameters, body, names)
     return (
         name, [(_name(names, port.name), port.required, port.reference) for port in ports],
         [(_name(names, parameter.name), parameter.default, parameter.structural) for parameter in parameters],
-        [(segment.base.value, segment.index) for segment in body.net_names], primitive_signature,
+        [(segment.base.value, segment.index) for segment in body.net_names], primitive_signature,body.parameter_relations,
     )
 end
 
@@ -838,7 +869,7 @@ function finish(builder::CircuitBuilder)
     builder.finished = true
     builder.generation += 1
     names = NameTable(copy(builder.names.strings))
-    body = TemplateIR(copy(builder.net_names), builder.ground_net, copy(builder.terminal_data), copy(builder.primitives), copy(builder.observations))
+    body = TemplateIR(copy(builder.net_names), builder.ground_net, copy(builder.terminal_data), copy(builder.primitives), copy(builder.observations),copy(builder.parameter_relations))
     if builder.mode === :template
         error("internal template builder requires port and parameter specifications")
     end
@@ -857,7 +888,7 @@ function _finish_template(builder::CircuitBuilder, ports::Vector{PortSpec}, para
     builder.finished = true
     builder.generation += 1
     names = NameTable(copy(builder.names.strings))
-    body = TemplateIR(copy(builder.net_names), builder.ground_net, copy(builder.terminal_data), copy(builder.primitives), copy(builder.observations))
+    body = TemplateIR(copy(builder.net_names), builder.ground_net, copy(builder.terminal_data), copy(builder.primitives), copy(builder.observations),copy(builder.parameter_relations))
     signature = _template_signature(_name(names, builder.name), ports, parameters, body, names)
     return SubcircuitTemplate(builder.name, ports, parameters, body, _fingerprint128(signature), names)
 end

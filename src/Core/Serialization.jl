@@ -1,5 +1,5 @@
 const _CIRCUIT_SCHEMA = "amber-circuit"
-const _CIRCUIT_SCHEMA_VERSION = 3
+const _CIRCUIT_SCHEMA_VERSION = 4
 
 struct CircuitSerializationError <: Exception
     message::String
@@ -110,9 +110,9 @@ function deserialize_circuit(text::AbstractString; max_bytes::Integer = 16 * 102
         header = TOML.parse(text)
         get(header, "schema", nothing) == _CIRCUIT_SCHEMA || throw(ArgumentError("not an Amber circuit serialization"))
         version = get(header, "schema_version", nothing)
-        version == _CIRCUIT_SCHEMA_VERSION || throw(
+        version in (3,_CIRCUIT_SCHEMA_VERSION) || throw(
             CircuitSerializationError(
-                "unsupported Amber circuit schema version $(version); only immutable hierarchical schema 3 is supported"
+                "unsupported Amber circuit schema version $(version); immutable hierarchical schemas 3 and 4 are supported"
             )
         )
         _deserialize_design(header; max_nodes, max_components, max_depth)
@@ -224,6 +224,9 @@ function _body_snapshot(body::TemplateIR, names::NameTable)
         "ground_net" => Int(body.ground_net),
         "primitives" => [_primitive_snapshot(primitive, body, names) for primitive in body.primitives],
         "observations" => [_observation_snapshot(observation) for observation in body.observations],
+        "parameter_relations" => [Dict("source"=>Int(r.source),"source_field"=>String(r.source_field),
+            "target"=>Int(r.target),"target_field"=>String(r.target_field),"operation"=>String(r.operation),
+            "scale"=>r.scale,"offset"=>r.offset,"divisor"=>r.divisor,"role"=>String(r.role)) for r in body.parameter_relations],
     )
 end
 
@@ -237,11 +240,11 @@ function _template_snapshot(template::SubcircuitTemplate)
     )
 end
 
-"""Return deterministic schema-3 hierarchical data without flattening the design."""
+"""Return deterministic schema-4 hierarchical data without flattening the design."""
 function circuit_snapshot(design::CircuitDesign)
     return Dict{String, Any}(
         "schema" => _CIRCUIT_SCHEMA,
-        "schema_version" => 3,
+        "schema_version" => _CIRCUIT_SCHEMA_VERSION,
         "name" => _name(design.names, design.name),
         "templates" => [_template_snapshot(template) for template in design.templates.templates],
         "root_body" => _body_snapshot(design.root_ir, design.names),
@@ -289,7 +292,16 @@ function _restore_body(snapshot, names::_NameBuilder, owner::UInt64, generation:
         value = observation["kind"] == "raw" ? target : Observable(Symbol(observation["kind"]), target, extra)
         push!(observations, (name = isempty(observation["name"]) ? nothing : observation["name"], value = value))
     end
-    return TemplateIR(net_names, ground_net, terminal_data, primitives, observations)
+    raw_relations=get(snapshot,"parameter_relations",Any[])
+    length(raw_relations) <= 4length(primitives) || throw(CircuitSerializationError("too many parameter relations"))
+    relations=DerivedParameterSpec[]
+    for raw in raw_relations
+        spec=DerivedParameterSpec(Int32(raw["source"]),Symbol(raw["source_field"]),Int32(raw["target"]),
+            Symbol(raw["target_field"]),Symbol(raw["operation"]),Float64(raw["scale"]),Float64(raw["offset"]),Float64(raw["divisor"]),Symbol(get(raw,"role","generic")))
+        _validate_parameter_spec(spec,length(primitives))
+        push!(relations,spec)
+    end
+    return TemplateIR(net_names, ground_net, terminal_data, primitives, observations,relations)
 end
 
 function _restore_template(snapshot, max_depth)

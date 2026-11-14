@@ -81,17 +81,40 @@ end
 _batch_kind(::ResistorBatch) = :resistor
 _batch_kind(::PrimitiveBatch{Val{K}}) where {K} = K
 
+struct ParameterLocation
+    batch::Int
+    device::Int
+    field::Symbol
+end
+Base.:(==)(a::ParameterLocation,b::ParameterLocation) = (a.batch,a.device,a.field) == (b.batch,b.device,b.field)
+Base.hash(x::ParameterLocation,h::UInt) = hash((x.batch,x.device,x.field),h)
+struct CompiledParameterRule
+    source::ParameterLocation
+    target::ParameterLocation
+    specification::DerivedParameterSpec
+end
+struct ParameterDependencyGraph
+    rules::Vector{CompiledParameterRule}
+    order::Vector{Int}
+    sources::Set{ParameterLocation}
+    targets::Set{ParameterLocation}
+    rebuild_sources::Set{ParameterLocation}
+    outgoing::Dict{ParameterLocation,Vector{Int}}
+    ranks::Vector{Int}
+end
+ParameterDependencyGraph() = ParameterDependencyGraph(CompiledParameterRule[],Int[],Set{ParameterLocation}(),Set{ParameterLocation}(),Set{ParameterLocation}(),Dict{ParameterLocation,Vector{Int}}(),Int[])
 struct ParameterStore{B}
     batches::B
     fingerprint::UInt128
     matrix_fingerprint::UInt128
     batch_fingerprints::Vector{UInt128}
     matrix_batch_fingerprints::Vector{UInt128}
+    dependency_graph::ParameterDependencyGraph
 end
-function ParameterStore(batches::Union{Tuple,AbstractVector{<:AbstractCompiledBatch}}, fingerprint::UInt128)
+function ParameterStore(batches::Union{Tuple,AbstractVector{<:AbstractCompiledBatch}}, fingerprint::UInt128;dependency_graph=ParameterDependencyGraph())
     hashes = UInt128[_parameter_store_fingerprint((batch,)) for batch in batches]
     matrix_hashes = UInt128[_matrix_parameter_fingerprint((batch,)) for batch in batches]
-    return ParameterStore(batches, fingerprint, _combine_parameter_fingerprints(matrix_hashes), hashes, matrix_hashes)
+    return ParameterStore(batches, fingerprint, _combine_parameter_fingerprints(matrix_hashes), hashes, matrix_hashes,dependency_graph)
 end
 function _combine_parameter_fingerprints(hashes)
     digest = sha256(join(string.(hashes), ':')); value = zero(UInt128)
@@ -404,7 +427,7 @@ function _compile_hierarchy(design::CircuitDesign;symbolic_cache=nothing,special
         layout, equations, hierarchy, pattern, batch_kinds,
         design.structural_fingerprint
     )
-    parameters = ParameterStore(batches, design.parameter_fingerprint)
+    parameters = ParameterStore(batches, design.parameter_fingerprint;dependency_graph=_build_parameter_graph(design,batches))
     return topology, parameters
 end
 
@@ -457,7 +480,7 @@ function _parameter_device_path(design, locator)
     return isempty(instance_path) ? device_name : string(instance_path, '.', device_name)
 end
 
-function _updated_batch(batch::ResistorBatch, design, parameter, indices, value; owned = false)
+function _updated_batch(batch::ResistorBatch, design, parameter, indices, value; owned = false,allow_derived=false)
     value = _component_parameter(:resistor, parameter, value)
     parameter === :value || throw(ArgumentError("resistor batches expose the numerical parameter `value`"))
     conductance = owned ? batch.conductance : copy(batch.conductance)
@@ -505,7 +528,7 @@ function _check_model_update(kind, old, new, path)
     return
 end
 
-function _updated_batch(batch::PrimitiveBatch{K, N, P}, design, parameter, indices, value; owned = false) where {K, N, P}
+function _updated_batch(batch::PrimitiveBatch{K, N, P}, design, parameter, indices, value; owned = false,allow_derived=false) where {K, N, P}
     values = owned ? batch.parameters : copy(batch.parameters)
     for index in indices
         direct = hasproperty(values[index], parameter)
@@ -514,7 +537,7 @@ function _updated_batch(batch::PrimitiveBatch{K, N, P}, design, parameter, indic
         modeled = model_values !== nothing && hasproperty(model_values, parameter)
         path() = _parameter_device_path(design, batch.locators[index])
         (direct||modeled) || throw(ArgumentError("device $(path()) has no numerical parameter $(parameter)"))
-        K === Val{:capacitor} && parameter === :value && _capacitance_has_derived_elements(values[index]) &&
+        K === Val{:capacitor} && parameter === :value && _capacitance_has_derived_elements(values[index]) && !allow_derived &&
             throw(TopologyParameterError(path(), parameter))
         parameter in _elaborated_model_parameters(K) && throw(TopologyParameterError(path(), parameter))
         parameter in (:control, :control_count) && throw(TopologyParameterError(path(), parameter))
@@ -677,21 +700,35 @@ raise `KeyError`; incompatible numerical storage types raise
 `ParameterUpdateError`. Model parameters such as MOS geometry are supported
 where the model exposes them.
 
-Updating a capacitor's `value` does not rescale expanded loss/absorption elements.
-Rebuild if those should track the new capacitance. For a standalone model copy,
+Updating a capacitor's `value` also updates expanded loss/absorption elements
+when complete retained parameter formulas are available. Legacy or incomplete
+expansions require rebuilding rather than accepting stale child values. For a standalone model copy,
 see [`with_model_parameter`](@ref); for repeated analyses see [`sweep`](@ref).
 """
 function with_parameters(compiled, updates::Pair...)
     isempty(updates) && return compiled
     batches = collect(compiled.parameters.batches)
     touched = falses(length(batches)); matrix_changed = falses(length(batches))
+    graph=compiled.parameters.dependency_graph
+    has_graph=!isempty(graph.rules) || !isempty(graph.rebuild_sources)
+    changed=isempty(graph.rules) ? nothing : Set{ParameterLocation}()
     for (selector_text, value) in updates
         handle = selector_text isa ParameterHandle ? selector_text : parameter_handle(compiled, selector_text)
         handle.topology === compiled.topology || throw(ArgumentError("parameter handle belongs to a different compiled topology"))
         for (index, indices) in handle.locations
+            field=handle.selector[4]
+            if has_graph
+                for device in indices
+                    location=ParameterLocation(index,device,field)
+                    location in graph.rebuild_sources && throw(TopologyParameterError(_parameter_device_path(compiled.design,batches[index].locators[device]),field))
+                    location in graph.targets && throw(ArgumentError("derived parameters are read-only; update their source"))
+                    changed === nothing || push!(changed,location)
+                end
+            end
+            allow_derived=has_graph && all(device -> ParameterLocation(index,device,field) in graph.sources,indices)
             updated = _updated_batch(
                 batches[index], compiled.design, handle.selector[4], indices, value;
-                owned = touched[index]
+                owned = touched[index],allow_derived
             )
             batches[index] = updated; touched[index] = true
             kind = _batch_kind(updated)
@@ -701,6 +738,7 @@ function with_parameters(compiled, updates::Pair...)
             )
         end
     end
+    changed === nothing || _propagate_parameter_graph!(batches,compiled.design,graph,changed,touched,matrix_changed)
     new_batches = compiled.parameters.batches isa Tuple ? Tuple(batches) : AbstractCompiledBatch[batches...]
     hashes = copy(compiled.parameters.batch_fingerprints)
     matrix_hashes = copy(compiled.parameters.matrix_batch_fingerprints)
@@ -710,7 +748,7 @@ function with_parameters(compiled, updates::Pair...)
     end
     store = ParameterStore(
         new_batches, _combine_parameter_fingerprints(hashes),
-        _combine_parameter_fingerprints(matrix_hashes), hashes, matrix_hashes
+        _combine_parameter_fingerprints(matrix_hashes), hashes, matrix_hashes,graph
     )
     fingerprint = bytes2hex(sha1(string(compiled.design.structural_fingerprint, ':', store.fingerprint)))
     return CompiledCircuit(compiled.design, compiled.topology, store, fingerprint)

@@ -1,0 +1,42 @@
+cpu = "raptorlake"
+julia_version = "1.13.1"
+
+[[cases]]
+capacitors = 1
+rules = 3
+
+    [cases.derived_capacitance]
+    median_seconds = 4.0055e-5
+    minimum_bytes = 26304
+    minimum_seconds = 3.8581e-5
+
+    [cases.unrelated_forcing]
+    median_seconds = 1.0005e-5
+    minimum_bytes = 12368
+    minimum_seconds = 9.711e-6
+[[cases]]
+capacitors = 16
+rules = 48
+
+    [cases.derived_capacitance]
+    median_seconds = 0.00019471149999999998
+    minimum_bytes = 111632
+    minimum_seconds = 0.000178264
+
+    [cases.unrelated_forcing]
+    median_seconds = 1.3379e-5
+    minimum_bytes = 12368
+    minimum_seconds = 1.298e-5
+[[cases]]
+capacitors = 128
+rules = 384
+
+    [cases.derived_capacitance]
+    median_seconds = 0.001282144
+    minimum_bytes = 767736
+    minimum_seconds = 0.001262109
+
+    [cases.unrelated_forcing]
+    median_seconds = 1.3516e-5
+    minimum_bytes = 12320
+    minimum_seconds = 1.2852e-5

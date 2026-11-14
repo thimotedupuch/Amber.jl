@@ -1420,3 +1420,9 @@ batch kernels without encoding the entire collection in the compiled type.
 `batch_execution_plan(compiled)` reports the selected layout. The limit is
 configurable; [the specialization study](design_specs/bounded_specialization.md)
 records JIT, warm-time and allocation tradeoffs.
+
+`parameter_dependencies(compiled)` reports retained physical parameter formulas.
+For newly elaborated capacitors, changing `C.value` also updates calibrated loss
+and absorption children. Derived targets are read-only, and incomplete/legacy
+expansions require a rebuild. Circuit schema 4 preserves these relations; schema
+3 remains readable. See [parameter dependencies](design_specs/parameter_dependency_graphs.md).
