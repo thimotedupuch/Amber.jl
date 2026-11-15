@@ -44,8 +44,8 @@ illustrative. Reproduce the figure with the
 | Circuit construction | `@circuit`, reusable `@subcircuit` templates, programmatic `CircuitBuilder`, arrays, loops, conditionals, retained instance paths, named observations |
 | Devices | R, G, C, L, independent and controlled sources, diodes, NPN BJTs, NMOS/PMOS, switches, behavioral op-amps, nonlinear behavioral sources |
 | Extended devices | Zener, Schottky, LED, photodiode, solar cell, N/P JFET, thermistor, varistor, controlled resistor, potentiometer, multiplier, limiter, comparator, ideal transformer, diode bridge, crystal, lumped RLGC line |
-| Physical details | resistor excess noise and material families, passive package parasitics, calibrated capacitor loss and dielectric absorption, diode depletion/diffusion charge, BJT charge, MOS gate capacitances, matched devices |
-| Core analyses | operating point, BDF1/BDF2 transient, small-signal AC, parameter sweeps, periodic steady state |
+| Physical details | resistor excess noise and material families, passive package parasitics, calibrated capacitor loss and dielectric absorption, diode depletion/diffusion charge, fixed BJT junction capacitances, MOS gate capacitances, matched devices |
+| Core analyses | operating point, BDF1/BDF2/trapezoidal transient, small-signal AC, parameter sweeps, periodic steady state |
 | Noise | stationary frequency-domain noise, input-referred noise, contribution budgets, integrated noise, stochastic transient noise, cyclostationary periodic noise, oscillator phase noise |
 | RF and control | multiport Z/Y/S/ABCD/H parameters, descriptor-system linearization, poles, zeros, stability, root locus, step/impulse response, bias-preserving loop gain and margins |
 | Measurements | voltage/current/power/charge/state traces, transfer functions, bandwidth, delay, resonances, FFT spectra, THD, THD+N, SNR, SINAD, SFDR, ENOB, sampling and propagation metrics, CMOS inverter noise margins and switching energy |
@@ -154,8 +154,9 @@ vout = observation(tran, :output)   # the named observation
 iin  = current(tran, :Source)
 ```
 
-All result data is directly accessible. `result.axis` is time for transient
-results and `frequencies(result)` is the AC grid. Traces are vectors; no
+All result data is directly accessible. `result.axis` stores numeric SI seconds
+for transient results; use `tran.axis .* s` for unitful time calculations.
+`frequencies(result)` returns the AC grid in unitful Hz. Traces are vectors; no
 plotting package is required.
 
 ```julia
@@ -224,7 +225,7 @@ bias = operating_point(bridge)
 @assert bias.stats[:converged]
 vbridge = only(voltage(bias, :sense, :reference))
 expected = 5V * (1 / (2 + 2.0 * 500e-6) - 1 / 2)
-@assert isapprox(vbridge, expected; atol=1e-9)
+@assert isapprox(vbridge, expected; atol=1nV)
 
 # Change only the gauge resistance; retain the compiled topology.
 strains = range(-1000e-6, 1000e-6; length=21)
@@ -308,10 +309,11 @@ tr = transient(rectifier, 0s => 300ms; initial=:discharged,
 settled_window = 260ms => 300ms
 println(report(tr)) # full record, including startup stresses and validity warnings
 println(report(tr; window=settled_window)) # device metrics over the late window
-settled = (tr.axis .>= first(settled_window)) .& (tr.axis .<= last(settled_window))
+times = tr.axis .* s
+settled = (times .>= first(settled_window)) .& (times .<= last(settled_window))
 vdc = mean(voltage(tr, :output)[settled])
 ripple = peak_to_peak(voltage(:output); window=settled_window)(tr)
-ripple_estimate = (vdc / 1kΩ) / (50Hz * 470μF)
+ripple_estimate = uconvert(V, (vdc / 1kΩ) / (50Hz * 470μF))
 @assert 0V < vdc < 10V
 println((window_s=settled_window, dc_output_V=vdc, ripple_Vpp=ripple,
     estimated_ripple_Vpp=ripple_estimate))
@@ -357,7 +359,7 @@ inputs = range(0V, 5V; length=101)
 vtc = sweep(compile(inverter), "Input.dc" => inputs;
     analysis=OperatingPoint(), metric=r -> only(voltage(r, :output)))
 @assert failure_rate(vtc) == 0
-outputs = Float64.(vtc.metrics)
+outputs = vtc.metrics  # retain voltage quantities
 @assert outputs[1] > 4.9V       # low input gives high output
 @assert outputs[end] < 0.1V     # high input gives low output
 # Approximate switching point: the sampled point nearest Vout = Vin.
@@ -534,7 +536,9 @@ tolerances. Fixed stepping reports `nothing` for integration error estimates,
 rather than zeros that could be mistaken for measured accuracy. Local error
 control is not a global accuracy guarantee: refine important measurements.
 Dynamic currents reconstructed from sparse charge samples can miss peaks; choose
-output spacing appropriate to the measurements.
+output spacing appropriate to the measurements. See the
+[transient API migration guide](design_specs/transient_api_migration.md) for
+legacy scripts, analysis descriptors, and replay behavior.
 
 ```julia
 result = transient(
@@ -542,7 +546,9 @@ result = transient(
     0s => 5ms;
     method=:bdf2,
     max_step=1μs,
-    event_mode=:exact,
+    saveat=10μs,
+    integration=IntegrationOptions(reltol=1e-5),
+    solver=SolverOptions(reltol=1e-8),
 )
 
 peak_to_peak(voltage(:output); window=4ms => 5ms)(result)
@@ -900,8 +906,10 @@ Parameters that change circuit structure—such as a package parasitic that adds
 an internal element—are rejected and require rebuilding the design. This includes
 BJT base resistance, switch clock feedthrough, and op-amp input capacitance and
 bias current, even when changed by replacing the entire model. Capacitor value
-changes also require rebuilding when dielectric loss or absorption derives
-additional elements from that value.
+updates propagate to calibrated loss and absorption children when the retained
+parameter graph certifies a complete expansion. Legacy or incomplete expansions
+still require rebuilding; inspect `parameter_dependencies(compiled)` and the
+[dependency contract](design_specs/parameter_dependency_graphs.md).
 
 Use this mechanism directly, or through a failure-aware sweep:
 
@@ -932,9 +940,10 @@ mc = monte_carlo(
     parallel=true,
     variations=Dict(
         Symbol("First.R1.value") => Gaussian(1kΩ, 10Ω),
-        Symbol("Second.C1.value") => LogNormal(log(100nF), 0.03),
+        Symbol("Second.C1.value") => LogNormal(log(ustrip(uconvert(F, 100nF))), 0.03),
     ),
-    metric=r -> abs(voltage(r, :output)[1]),
+    metric=r -> abs(only(transfer(r;
+        input=voltage(:input), output=voltage(:output)))),
 )
 
 mean(mc)
@@ -1150,11 +1159,14 @@ custom_package = with_model_parameter(base_package, :esr, 50mΩ)
 model_parameters(custom_package)  # base_package is unchanged
 ```
 
-Rebuild a circuit after changing its package, dielectric, or absorption model;
-`with_parameters` rejects replacement of these structural options. Updating a
-compiled capacitor's `value` changes only its main capacitance: the expanded
-loss resistor and absorption branches stay fixed. Rebuild to preserve the loss
-tangent calibration or absorption fractions when changing nominal capacitance.
+Changing the package, dielectric, or absorption model requires rebuilding;
+`with_parameters` rejects replacement of these structural options. For
+capacitors with complete retained parameter formulas, updating `C.value` also
+updates the calibrated loss
+resistance and absorption R/C values through retained parameter formulas.
+Derived targets are read-only, and schema-4 serialization preserves those
+relations. Legacy/schema-3 or incomplete expansions require a rebuild rather
+than leaving stale children. See [parameter dependencies](design_specs/parameter_dependency_graphs.md).
 
 ## Technical architecture
 
@@ -1222,7 +1234,12 @@ factorization, and Newton buffers. It caches the linear current and storage
 matrices even in mixed nonlinear circuits. Linear circuits reuse numeric
 factorizations when matrix parameters and the integration coefficient allow it;
 changing independent source amplitudes does not invalidate those matrices.
-AC sweeps reuse symbolic analysis across frequencies. `residual!`, `jacobian!`, and
+Nonlinear solves can also reuse factors when the normalized matrix is
+bit-identical and its cache key and variable scales match. AC sweeps prune only
+slots exactly zero in both static and dynamic Jacobians, then reuse that shared
+pattern across frequencies. Automatic AC selection uses pivoted tridiagonal LU
+for connected path patterns; other patterns use SuiteSparse, as do explicit
+`SolverOptions` requests. `residual!`, `jacobian!`, and
 `residual_jacobian!` expose the in-place assembly layer for advanced users and
 model verification. Residual-only evaluations leave the Jacobian buffer intact
 and do not call behavioral-source gradients. Newton line searches use a separate
@@ -1276,8 +1293,9 @@ Amber is intentionally transparent about what it does not yet model:
   short-channel effects, and substrate networks. `ChargeBasedMOSFET` adds
   continuous inversion and optional junctions but omits short-channel and
   non-quasi-static effects; its noise model omits junction shot noise.
-- Temperature dependence is partial; there is no electrothermal or self-heating
-  solution.
+- Temperature support is model-dependent. Device models do not automatically
+  solve self-heating or a thermal network; coupled thermal dynamics can be
+  modeled explicitly with behavioral laws.
 - Behavioral op-amps enforce slew and symmetric output-current limits;
   saturation recovery and noise behavior at hard limit knees remain unqualified.
 - Stochastic transient noise uses a fixed grid. Power-law noise requires finite
@@ -1345,7 +1363,7 @@ Amber is licensed under the [MIT License](LICENSE).
 
 ## Experimental modeling and analysis extensions
 
-The latest development increments add `TemperaturePolicy` / `device_temperature`
+Experimental helpers include `TemperaturePolicy` / `device_temperature`
 for explicit temperature resolution, and `CompactModelCallback` /
 `compact_model_point` for validated current/charge characterization callbacks.
 These helpers do not yet provide per-instance thermal physics or external-model
@@ -1356,6 +1374,9 @@ Transient simulation accepts `method=:trapezoidal` and a
 steps. `save_checkpoint(path, result)` and `resume_transient(circuit, path, stop)`
 provide portable endpoint restart with matching topology and parameters; resume
 restarts integration at first order rather than preserving multistep history.
+These state-only checkpoints retain method and temperature; stepping, sampling,
+tolerances, and failure policy come from the resume call and current transient
+defaults. Pass `adaptive=false, max_step=...` to resume a prescribed-grid study.
 `DistributedLine` / `line_abcd` characterize exact uniform RLGC two-ports in the
 frequency domain; they are not yet transient circuit devices.
 

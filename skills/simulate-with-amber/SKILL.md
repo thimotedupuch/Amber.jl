@@ -121,7 +121,13 @@ For a long-lived result, pin a known repository revision with `Pkg.add(url=URL, 
 
 Amber is an equation-oriented analog and multiphysics simulator written in Julia. A circuit definition elaborates into an immutable hierarchical `CircuitDesign`; `compile` lowers it to typed device batches, sparse residual/Jacobian structure, and reusable numerical workspaces. Analyses operate on that compiled representation and return structured results with provenance and diagnostics.
 
-Use SI suffixes such as `10kΩ`, `47nF`, `3.3V`, `1MHz`, and `300K`. They are readable `Float64` scale multipliers, not dimension-checking quantities. Keep dimensional reasoning explicit and label reported values.
+Use SI suffixes such as `10kΩ`, `47nF`, `3.3V`, `1MHz`, and `300K` as
+Unitful quantities. Physical inputs are dimensionally checked and converted to
+numeric SI values at the simulation boundary; bare numbers mean SI units.
+Voltage/current/power/charge accessors and `frequencies(result)` carry units,
+while `result.axis` and solver arrays are numeric SI data. Use `tr.axis .* s`
+for unitful time comparisons and `ustrip(uconvert(V, value))` for numeric volts.
+Normalize dimensionful values before logarithms or dimensionless thresholds.
 
 Amber provides:
 
@@ -155,6 +161,9 @@ and `resolve` before choosing parameter-update paths or interpreting a wrapper's
 current. Built-in catalog laws support serialization; arbitrary user closures do
 not gain that support automatically.
 
+The BJT model supports fixed junction capacitances; nonzero `transit_time` is
+rejected rather than providing diffusion charge.
+
 Use `Level1MOSFET` for simple strong-inversion experiments. Choose
 `ChargeBasedMOSFET` for continuous weak-to-strong inversion, geometry studies,
 conserving terminal charges, and optional body junctions. Both work with
@@ -184,7 +193,8 @@ omits short-channel effects, self-heating, non-quasi-static transport, and
 junction shot noise. Read `src/Devices/ChargeBasedMOSFET.jl` and
 `test/Devices/charge_based_mosfet.jl` for equations, temperature laws, and
 conservation checks. Refine the timestep when measuring nonlinear charge transfer;
-BDF integrates terminal voltages rather than finite differences of charge.
+BDF applies discrete differences to stored terminal charges and flux; its
+nonlinear charge history participates directly in the discrete equations.
 
 ## Choose passive materials and packages
 
@@ -206,8 +216,8 @@ across family names.
 
 - Resistor packages use `series_inductance` and terminal
   `parallel_capacitance`; capacitor packages use series `esr` and `esl`.
-  Fields for the other component kind are unused. Component-level capacitor
-  `esr`/`esl` override package values, including explicit zero. `Wirewound`
+  Nonzero fields for the other component kind are rejected. Component-level
+  capacitor `esr`/`esl` override package values, including explicit zero. `Wirewound`
   needs an explicit package inductance when that effect matters.
 - Resistor materials provide excess current-noise PSD
   `coefficient * abs(I)^current_exponent * (reference_frequency/f)^frequency_exponent`
@@ -230,10 +240,13 @@ across family names.
 
 All these model types support `model_parameters`, `with_model_parameter`,
 serialization, and result provenance. Use `with_model_parameter` to create a
-standalone model copy, then rebuild the circuit. `with_parameters` rejects
-package/dielectric/absorption replacement. Changing only a compiled capacitor's
-`value` leaves expanded loss and absorption elements fixed; rebuild to retain
-the specified loss calibration or absorption fractions.
+standalone model copy. Rebuild when changing structural options; `with_parameters` rejects
+package/dielectric/absorption replacement. For newly elaborated capacitors,
+changing `C.value` propagates to calibrated loss and absorption children through
+retained parameter formulas; inspect `parameter_dependencies(compiled)`. Derived
+targets are read-only. Legacy/incomplete expansions or changes that add/remove
+internal elements still require rebuilding. See
+[parameter dependencies](../../design_specs/parameter_dependency_graphs.md).
 
 For examples and the full inventory, read the checkout's
 [README passive-model reference](../../README.md#resistor-materials-passive-packages-and-capacitor-dielectrics).
@@ -294,29 +307,55 @@ An operating-point call can return a result carrying nonconvergence information.
 
 ### Transient
 
-Use implicit `:bdf1` or `:bdf2` integration. Resolve the fastest edge, pole, or switching interval with `max_step`; use `event_mode=:exact` for `Step`, `Pulse`, and switch discontinuities. Specify `saveat` when a uniform output grid is needed for spectra or comparison.
-
-`saveat` controls output spacing independently of internal steps. The final
-time is always included, so choose an interval divisible by `saveat` for a
-uniform grid. Supplying `saveat` or `max_step` selects fixed stepping by default;
-set `adaptive=true` explicitly for adaptive integration. Solver `reltol`/`abstol`
-control Newton convergence; `IntegrationOptions` controls adaptive time error.
+Use `:bdf1`, `:bdf2` (default), or `:trapezoidal`. Adaptive local error control
+and exact `Step`/`Pulse`/switch event handling are enabled by default. Resolve
+finite edges with `max_step` even when landing exactly on their corners.
+`saveat` requests retained output timestamps; the integrator lands on them and
+may shorten steps. It does not interpolate dense output, change the configured
+step ceiling, or select fixed stepping. Both endpoints are included; choose a
+duration divisible by `saveat` for a uniform grid.
 
 ```julia
 tr = transient(circuit, 0s => 5ms;
     initial=:discharged,
-    method=:bdf2,
     max_step=1μs,
     saveat=1μs,
-    event_mode=:exact,
-    reltol=1e-6,
-    abstol=1e-9)
+    solver=SolverOptions(reltol=1e-8),
+    integration=IntegrationOptions(reltol=1e-5, voltage_abstol=10nV))
 @assert tr.stats[:converged]
-t = tr.axis
-y = voltage(tr, :out)
+t = tr.axis .* s
+vout = voltage(tr, :out)
 ```
 
-Use `initial_voltage(capacitor, value)` in the design for known capacitor precharge. There is no exported `initial_current` helper; inspect the installed transient API before prescribing other initial states. Avoid `initial=:discharged` when real bias or precharge matters. Repeat a key measurement with a smaller `max_step` or tighter tolerances.
+`solver` controls Newton convergence; `integration` controls adaptive local
+integration error. Top-level `reltol`, `abstol`, and `maxiters` are rejected.
+For deliberate fixed-grid refinement, pass `adaptive=false, max_step=...`;
+`saveat` alone is not a solver step. Fixed mode rejects custom integration
+tolerances and nonzero `min_step`; `max_steps` still applies. Adaptive `min_step`
+must not exceed the effective `max_step`. Output times, events, and the final
+stop can split steps.
+
+Failed integration throws by default. Request `failure_policy=:return_partial`
+only when an incomplete record is useful, and check convergence and actual stop
+before measuring it. Inspect `stats[:stepping_mode]`, `:local_error_control`,
+`:nonlinear_tolerances`, and `:integration_tolerances`. Fixed runs report
+`nothing` for integration tolerances and error estimates, not measured zero
+error. Local error estimates are not global accuracy bounds. See the
+[transient API migration guide](../../design_specs/transient_api_migration.md).
+
+Use `initial_voltage(capacitor, value)` for known precharge. Avoid
+`initial=:discharged` when real bias matters; the default initializes from a
+converged operating point. Explicit state vectors and validated
+`consistent_initial_conditions` results are supported; there is no exported
+`initial_current` helper. Refine a key measurement with smaller steps or tighter
+integration tolerances, keeping Newton settings separate. Dynamic currents
+reconstructed from sparsely saved charge traces can miss peaks.
+
+For runtime comparisons, separate circuit construction, circuit compilation,
+first-call Julia compilation, and repeated exact-shape warmed solves. Amortize
+external-process startup where appropriate. Compare both simulators against a
+refined reference: matched tolerance flags, maximum steps, or mutual waveform
+agreement do not establish equal accuracy.
 
 ### Small signal and control
 
@@ -369,7 +408,10 @@ Use `replay_sample` to reproduce an outlier and `save_monte_carlo` for a version
 
 ## Read results as data
 
-Use `voltage`, `current`, `power`, `charge`, `state`, and `observation`. `result.axis` is the primary time/frequency axis; `frequencies(result)` is explicit for frequency results. The accessors return vectors, including one-element vectors for operating points.
+Use `voltage`, `current`, `power`, `charge`, `state`, and `observation`. These
+return vectors, including one-element vectors for operating points. Physical
+voltage/current/power/charge traces retain their units. `result.axis` is numeric SI time/frequency data; `frequencies(result)`
+returns unitful Hz. `result_table` retains physical units in its columns.
 
 Use `result_table(result)` for dependency-free rows, `provenance(result)` for inputs and solver metadata, `report(result)` for a concise summary, and `validity_report(result)` for model-domain warnings. Store important raw numbers in CSV/TOML or a Julia data artifact; a screenshot is not a result.
 
@@ -387,14 +429,16 @@ Select and label table columns with a named tuple:
 ```julia
 rows = result_table(tr; signals=(output_V=voltage(:out), source_A=current(:Source)))
 open("transient.csv", "w") do io
-    println(io, join(string.(keys(first(rows))), ','))
+    println(io, "time_s,output_V,source_A")
     for row in rows
-        println(io, join(values(row), ','))
+        println(io, join((ustrip(uconvert(s, row.time)),
+            ustrip(uconvert(V, row.output_V)), ustrip(uconvert(A, row.source_A))), ','))
     end
 end
 ```
 
-This simple numeric CSV recipe uses caller-chosen column labels without commas.
+This numeric CSV recipe converts columns to explicit SI units before stripping
+them. Use caller-chosen column labels without commas.
 Named observations can also be selected, e.g. `signals=(output_V=:output,)`.
 
 Validate every important answer with at least one of:
@@ -531,21 +575,22 @@ circuit = RCLowPass(; R, C)
 isempty(check(circuit)) || error(explain(circuit))
 
 ac = small_signal(circuit, 10Hz => 1MHz; source=:Source, points=301)
-# Resolve the 1 us source rise with ten internal steps; save every 2 us.
+# Bound internal steps to at most 0.1 us across the 1 us rise; save every 2 us.
 tr = transient(circuit, 0s => 700μs; max_step=0.1μs, saveat=2μs,
     event_mode=:exact)
 @assert ac.stats[:converged] && tr.stats[:converged]
 
-expected_fc = 1 / (2π * R * C)
+expected_fc = uconvert(Hz, 1 / (2π * R * C))
 measured_fc = only(cutoff_frequencies(ac;
     input=voltage(:vin), output=voltage(:out)))
 @assert isapprox(measured_fc, expected_fc; rtol=0.03)
 
 # Exact response after a linear ramp, including its finite rise time.
 τ, rise, start = R * C, 1μs, 100μs
-after_rise = tr.axis .>= start + rise
-expected = 1 .- (τ / rise) * (-expm1(-rise / τ)) .*
-    exp.(-(tr.axis[after_rise] .- start .- rise) ./ τ)
+times = tr.axis .* s
+after_rise = times .>= start + rise
+expected = 1V .* (1 .- (τ / rise) * (-expm1(-rise / τ)) .*
+    exp.(-(times[after_rise] .- start .- rise) ./ τ))
 @assert maximum(abs.(voltage(tr, :out)[after_rise] .- expected)) < 0.2mV
 
 println((expected_corner_Hz=expected_fc,
@@ -580,7 +625,7 @@ mc = monte_carlo(circuit; samples=2000, seed=42,
     analysis=SmallSignal([1kHz]; source=:Source),
     variations=Dict(
         Symbol("First.R1.value") => Gaussian(1kΩ, 10Ω),
-        Symbol("Second.C1.value") => LogNormal(log(47nF), 0.03)),
+        Symbol("Second.C1.value") => LogNormal(log(ustrip(uconvert(F, 47nF))), 0.03)),
     metric=r -> abs(only(transfer(r;
         input=voltage(:input), output=voltage(:output)))))
 
@@ -626,7 +671,7 @@ bias = operating_point(bridge)
 @assert bias.stats[:converged]
 vbridge = only(voltage(bias, :sense, :reference))
 expected = 5V * (1 / (2 + 2.0 * 500e-6) - 1 / 2)
-@assert isapprox(vbridge, expected; atol=1e-9)
+@assert isapprox(vbridge, expected; atol=1nV)
 
 # Change only the gauge resistance; retain the compiled topology.
 strains = range(-1000e-6, 1000e-6; length=21)
@@ -705,15 +750,16 @@ end
 rectifier = SmoothingRectifier()
 @assert isempty(check(rectifier))
 tr = transient(rectifier, 0s => 300ms; initial=:discharged,
-    max_step=50μs, saveat=50μs, reltol=1e-6)
+    max_step=50μs, saveat=50μs, integration=IntegrationOptions(reltol=1e-6))
 @assert tr.stats[:converged]
 settled_window = 260ms => 300ms
 println(report(tr)) # full record, including startup stresses and validity warnings
 println(report(tr; window=settled_window)) # device metrics over the late window
-settled = (tr.axis .>= first(settled_window)) .& (tr.axis .<= last(settled_window))
+times = tr.axis .* s
+settled = (times .>= first(settled_window)) .& (times .<= last(settled_window))
 vdc = mean(voltage(tr, :output)[settled])
 ripple = peak_to_peak(voltage(:output); window=settled_window)(tr)
-ripple_estimate = (vdc / 1kΩ) / (50Hz * 470μF)
+ripple_estimate = uconvert(V, (vdc / 1kΩ) / (50Hz * 470μF))
 @assert 0V < vdc < 10V
 println((window_s=settled_window, dc_output_V=vdc, ripple_Vpp=ripple,
     estimated_ripple_Vpp=ripple_estimate))
@@ -759,7 +805,7 @@ inputs = range(0V, 5V; length=101)
 vtc = sweep(compile(inverter), "Input.dc" => inputs;
     analysis=OperatingPoint(), metric=r -> only(voltage(r, :output)))
 @assert failure_rate(vtc) == 0
-outputs = Float64.(vtc.metrics)
+outputs = vtc.metrics  # retain voltage quantities
 @assert outputs[1] > 4.9V       # low input gives high output
 @assert outputs[end] < 0.1V     # high input gives low output
 # Approximate switching point: the sampled point nearest Vout = Vin.
