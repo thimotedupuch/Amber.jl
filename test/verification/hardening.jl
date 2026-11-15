@@ -62,7 +62,7 @@ end
     @test abs(current(refined, :L1)[end] - exact) < abs(current(first_run, :L1)[end] - exact)
     @test current(refined, :L1)[end] ≈ exact rtol = 2.0e-3
     limit = IntegrationOptions(max_steps = 1)
-    partial = transient(LowPass(), 0.0 => 1.0e-3; integration = limit)
+    partial = transient(LowPass(), 0.0 => 1.0e-3; integration = limit, failure_policy=:return_partial)
     @test partial.stats[:partial]&&!partial.stats[:converged]
     @test last(partial.axis) < 1.0e-3
     @test_throws ConvergenceError transient(LowPass(), 0.0 => 1.0e-3; integration = limit, failure_policy = :throw)
@@ -79,7 +79,8 @@ end
         C2 = capacitor(other, gnd; value = 1.0e-3)
         R1 = resistor(held, gnd; value = 1.0e12); R2 = resistor(other, gnd; value = 1.0e12)
     end
-    result = transient(CoupledInjection(), 0.0 => 1.0; initial = :discharged, max_step = 0.2, event_mode = :exact)
+    # Inspect restart orders on a prescribed grid, independently of error control.
+    result = transient(CoupledInjection(), 0.0 => 1.0; initial = :discharged, max_step = 0.2, adaptive=false, event_mode = :exact)
     @test result.stats[:converged]
     @test length(result.stats[:event_times]) == 1
     @test only(result.stats[:event_times]) ≈ 0.5 atol = 1.0e-8
@@ -126,7 +127,7 @@ end
     end
     direct = transient(
         LowPass(), 0.0 => 1.0e-4; saveat = 1.0e-5, initial = :discharged, event_mode = :exact,
-        reltol = 2.0e-6, abstol = 3.0e-9, maxiters = 71,
+        solver=SolverOptions(reltol=2e-6,current_abstol=3e-9,voltage_abstol=3e-9,state_abstol=3e-9,max_newton_iterations=71),
         overrides = Dict(Symbol("R1.value") => 20kΩ)
     )
     repeated = simulate(LowPass(), direct.analysis)

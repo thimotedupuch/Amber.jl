@@ -303,7 +303,7 @@ end
 rectifier = SmoothingRectifier()
 @assert isempty(check(rectifier))
 tr = transient(rectifier, 0s => 300ms; initial=:discharged,
-    max_step=50μs, saveat=50μs, reltol=1e-6)
+    max_step=50μs, saveat=50μs, integration=IntegrationOptions(reltol=1e-6))
 @assert tr.stats[:converged]
 settled_window = 260ms => 300ms
 println(report(tr)) # full record, including startup stresses and validity warnings
@@ -512,14 +512,29 @@ It supports fixed or adaptive stepping, operating-point or discharged initial
 states, capacitor initial voltage, and exact insertion of `Step`/`Pulse`
 waveform boundaries.
 
-Set `saveat` to choose output spacing independently of internal steps. Both
-endpoints are retained; the last interval is shorter when the duration is not
-divisible by `saveat`. Without `saveat`, all accepted steps are returned.
-Supplying `saveat` or `max_step` selects fixed stepping unless `adaptive=true`
-is explicit. Resolve finite source edges with several internal steps even in
-exact-event mode. When output omits internal steps, dynamic currents are
-reconstructed from the saved charge traces; use sufficiently fine `saveat`
-when measuring current peaks.
+Adaptive local error control is enabled by default, including when `saveat`
+or `max_step` is supplied. `max_step` is an integration-step ceiling. `saveat`
+requests output timestamps; the integrator lands on them and may shorten steps,
+but sampling never chooses the stepping mode or changes the configured ceiling.
+Both endpoints are returned. Without `saveat`, all accepted steps are retained.
+No dense-output interpolation is performed.
+
+Use `integration=IntegrationOptions(...)` for local integration tolerances and
+`solver=SolverOptions(...)` for nonlinear Newton tolerances. Ambiguous top-level
+`reltol`, `abstol`, and `maxiters` keywords are rejected by `transient`.
+To run a fixed-grid refinement experiment, explicitly choose
+`adaptive=false, max_step=...`; custom integration tolerances are rejected in
+that mode. Exact source/switch event handling is enabled by default, and events,
+output times and the final stop may split either kind of step.
+
+Failed integration throws by default. Explicitly opt into
+`failure_policy=:return_partial` to inspect an incomplete record. Results report
+`stats[:stepping_mode]`, `stats[:local_error_control]`, and both sets of actual
+tolerances. Fixed stepping reports `nothing` for integration error estimates,
+rather than zeros that could be mistaken for measured accuracy. Local error
+control is not a global accuracy guarantee: refine important measurements.
+Dynamic currents reconstructed from sparse charge samples can miss peaks; choose
+output spacing appropriate to the measurements.
 
 ```julia
 result = transient(

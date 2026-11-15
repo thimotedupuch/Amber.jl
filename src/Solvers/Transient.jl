@@ -113,6 +113,19 @@ function _initial_transient_state(cc, initial; temperature = 300.0, workspace = 
     return _apply_initial_conditions!(z, cc)
 end
 
+# Prescribed waveform corners only need grid boundaries. A bracketing solve is
+# necessary solely for state-controlled switches with an actual event to locate.
+function _has_state_switch_events(cc)
+    for batch in cc.parameters.batches
+        batch isa PrimitiveBatch{Val{:switch}} || continue
+        for p in batch.parameters
+            p.model isa SmoothSwitch && iszero(p.model.charge_injection) && continue
+            return true
+        end
+    end
+    return false
+end
+
 function _switch_crossings(cc, before, after)
     crossings = Tuple{Any, Int, Bool}[]
     for batch in cc.parameters.batches
@@ -162,17 +175,20 @@ function _error_norm(high, low, previous, cc, options::IntegrationOptions, indic
 end
 
 function _transient(
-        c, p::Pair; saveat = nothing, max_step = nothing, method = :bdf2, adaptive = nothing,
-        reltol = nothing, abstol = nothing, maxiters = nothing, initial = nothing, event_mode = nothing,
+        c, p::Pair; saveat = nothing, max_step = nothing, method = :bdf2, adaptive = true,
+        reltol = nothing, abstol = nothing, maxiters = nothing, initial = nothing, event_mode = :exact,
         temperature = 300.0, solver = SolverOptions(), integration = IntegrationOptions(),
-        failure_policy = :return_partial, overrides = nothing, recorder = nothing
+        failure_policy = :throw, overrides = nothing, recorder = nothing
     )
     p = _si_value(first(p), Unitful.s) => _si_value(last(p), Unitful.s)
     saveat = _si_value(saveat, Unitful.s)
     max_step = _si_value(max_step, Unitful.s)
-    solver = _effective_solver(solver; reltol, abstol, maxiters)
+    if reltol !== nothing || abstol !== nothing || maxiters !== nothing
+        throw(AnalysisValidationError("transient no longer accepts ambiguous reltol/abstol/maxiters keywords; use solver=SolverOptions(...) for Newton convergence and integration=IntegrationOptions(...) for adaptive integration error"))
+    end
+    solver = _effective_solver(solver)
     reltol, abstol, maxiters, _ = _solver_values(solver)
-    _validate_transient(p; saveat, max_step, method, event_mode, reltol, abstol, maxiters)
+    _validate_transient(p; saveat, max_step, method, event_mode, adaptive, integration, reltol, abstol, maxiters)
     _validate_integration(integration)
     failure_policy in (:throw, :return_partial)||throw(AnalysisValidationError("failure_policy must be :throw or :return_partial"))
     temperature = _si_value(temperature, Unitful.K)
@@ -180,12 +196,12 @@ function _transient(
     cc = compile(c); workspace = SimulationWorkspace(cc)
     integration_indices = _integration_indices(cc)
     t0, t1 = Float64(first(p)), Float64(last(p)); span = t1 - t0
-    use_adaptive = adaptive === nothing ? saveat === nothing&&max_step === nothing : Bool(adaptive)
-    maximum_step = something(max_step, saveat, use_adaptive ? span / 10 : span / 1000)
-    saveat === nothing||(maximum_step = min(maximum_step, saveat))
-    dt = use_adaptive ? min(maximum_step, span / 100) : maximum_step
+    use_adaptive = adaptive
+    maximum_step = something(max_step, span / 10)
+    dt = use_adaptive ? min(maximum_step, max(integration.min_step, span / 100)) : maximum_step
     minimum_step = max(integration.min_step, eps(max(abs(t0), abs(t1))) * 32)
     waveform_events = event_mode === :exact ? _waveform_events(cc, t0, t1) : Float64[]
+    state_switch_events = event_mode === :exact && _has_state_switch_events(cc)
     output_targets = saveat === nothing ? Set{Float64}() : Set(vcat(t0, collect((t0 + saveat):saveat:t1), t1))
     grid = use_adaptive ? Float64[t1] : vcat(collect((t0 + dt):dt:t1), t1)
     saveat === nothing||append!(grid, filter(>(t0), collect(output_targets)))
@@ -234,7 +250,7 @@ function _transient(
         crossings = Tuple{Any, Int, Bool}[]; full = nothing; full_good = true
         # Bracket the first state-controlled threshold crossing on the actual
         # backward-Euler trajectory. Prescribed waveform corners also bound h.
-        if event_mode === :exact
+        if state_switch_events
             full, it, full_good = step(previous, endpoint, h, qprevious); total_iterations += it
             crossings = full_good ? _switch_crossings(cc, previous, full) : crossings
             if !isempty(crossings)
@@ -320,7 +336,7 @@ function _transient(
                 end
             end
         end
-        push!(accepted_step_sizes, h); push!(error_estimates, error)
+        push!(accepted_step_sizes, h); use_adaptive && push!(error_estimates, error)
         event&&push!(event_times, endpoint)
         z = candidate; recorder === nothing || recorder(endpoint, copy(z))
         push!(times, endpoint); push!(states, copy(z)); push!(orders, order)
@@ -344,9 +360,18 @@ function _transient(
     )
     stats = Dict{Symbol, Any}(
         :converged => failure_reason === nothing, :iterations => total_iterations,
+        :stepping_mode => use_adaptive ? :adaptive : :fixed,
+        :local_error_control => use_adaptive,
+        :integration_tolerances => use_adaptive ? (reltol=integration.reltol,
+            voltage_abstol=integration.voltage_abstol,current_abstol=integration.current_abstol,
+            state_abstol=integration.state_abstol) : nothing,
+        :nonlinear_tolerances => (reltol=solver.reltol,voltage_abstol=solver.voltage_abstol,
+            current_abstol=solver.current_abstol,state_abstol=solver.state_abstol),
+        :maximum_step => maximum_step,
+        :sampling_policy => saveat === nothing ? :accepted_steps : :integration_boundaries,
         :failed_steps => failed_steps, :failed_residuals => failed_residuals, :bdf_orders => orders,
         :event_times => event_times, :rejected_steps => rejected, :temperature => Float64(temperature),
-        :accepted_step_sizes => accepted_step_sizes, :error_estimates => error_estimates,
+        :accepted_step_sizes => accepted_step_sizes, :error_estimates => use_adaptive ? error_estimates : nothing,
         :rejected_step_sizes => rejected_step_sizes, :integration_method => method,
         :warnings => failure_reason === nothing ? String[] : [failure_reason]
     )

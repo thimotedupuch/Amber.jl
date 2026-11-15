@@ -389,9 +389,18 @@ function _decode_analysis(encoded)
     kind == "operating_point"&&return OperatingPoint(temperature = get(encoded, "temperature", 300.0), solver = _decode_setting(encoded, "solver", SolverOptions()))
     if kind == "transient"
         interval = Float64(encoded["interval"][1]) => Float64(encoded["interval"][2])
+        saveat = _decode_value(encoded["saveat"], Dict(), Dict())
+        max_step = _decode_value(encoded["max_step"], Dict(), Dict())
+        adaptive = _decode_setting(encoded,"adaptive",nothing)
+        # Preserve historical inference only while reading legacy descriptors;
+        # new direct calls and descriptors always have an explicit Boolean.
+        adaptive === nothing && (adaptive = saveat === nothing && max_step === nothing)
+        if adaptive === false && max_step === nothing
+            max_step = something(saveat,(last(interval)-first(interval))/1000)
+        end
         return Transient(
-            interval; saveat = _decode_value(encoded["saveat"], Dict(), Dict()), max_step = _decode_value(encoded["max_step"], Dict(), Dict()),
-            method = Symbol(encoded["method"]), adaptive = _decode_value(encoded["adaptive"], Dict(), Dict()), temperature = Float64(encoded["temperature"]),
+            interval; saveat, max_step,
+            method = Symbol(encoded["method"]), adaptive, temperature = Float64(encoded["temperature"]),
             overrides = _decode_value(encoded["overrides"], Dict(), Dict()),
             solver = _decode_setting(encoded, "solver", SolverOptions()), initial = _decode_setting(encoded, "initial", nothing),
             event_mode = _decode_setting(encoded, "event_mode", nothing), integration = _decode_setting(encoded, "integration", IntegrationOptions()),

@@ -1,0 +1,24 @@
+julia_version = "1.13.1"
+
+[[cases]]
+amber_first_seconds = 7.448293609
+amber_retained_bytes = 3537116
+amber_steps_or_points = 4001
+amber_warm_seconds = 0.14468929
+cells = 100
+endpoint_error = 2.0755276175510318e-7
+kind = "transient"
+ngspice_process_seconds = 0.08724105
+trajectory_max_error = 0.000357987317775435
+transient_max_step = 2.5e-8
+[[cases]]
+amber_first_seconds = 1.263195601
+amber_retained_bytes = 33014447
+amber_steps_or_points = 4001
+amber_warm_seconds = 1.24987748
+cells = 1000
+endpoint_error = 2.0755276175510318e-7
+kind = "transient"
+ngspice_process_seconds = 0.905398197
+trajectory_max_error = 0.000357987317775435
+transient_max_step = 2.5e-8

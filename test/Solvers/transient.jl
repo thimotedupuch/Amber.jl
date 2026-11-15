@@ -31,16 +31,14 @@
     sampler_result = transient(getfield(sampler_module, :SampleAndHold)(), 0s => 3μs; max_step = 50ns, event_mode = :exact)
     @test sampler_result.stats[:converged]
     @test all(isfinite, voltage(sampler_result, :hold))
-    adaptive_result = transient(LowPass(), 0s => 1ms; adaptive = true, reltol = 1.0e-4, abstol = 1.0e-8, event_mode = :exact)
+    adaptive_result = transient(LowPass(), 0s => 1ms; adaptive = true, integration=IntegrationOptions(reltol=1e-4,voltage_abstol=1e-8), event_mode = :exact)
     @test adaptive_result.stats[:converged]
 
-    # The analysis object preserves the same automatic policy as the direct
-    # API: an explicit output/maximum step selects the deterministic grid,
-    # while an unconstrained transient selects adaptive stepping.
-    fixed_from_analysis = simulate(LowPass(), Transient(0s => 100μs; max_step = 10μs))
-    automatic_from_analysis = simulate(LowPass(), Transient(0s => 100μs))
-    @test fixed_from_analysis.analysis.adaptive === false
-    @test automatic_from_analysis.analysis.adaptive === true
+    # Sampling and a maximum step never disable local error control.
+    bounded = simulate(LowPass(), Transient(0s => 100μs; max_step = 10μs))
+    automatic = simulate(LowPass(), Transient(0s => 100μs))
+    @test bounded.analysis.adaptive === true
+    @test automatic.analysis.adaptive === true
     @test adaptive_result.stats[:rejected_steps] >= 0
     @test length(unique(round.(diff(adaptive_result.axis); sigdigits = 6))) > 1
     @test voltage(adaptive_result, :vout)[end] > 0.9V
@@ -93,7 +91,7 @@ end
     stops = (500.0e-9, 500ns, prevfloat(500.0e-9), 501ns)
     for saveat in (nothing, 1ns)
         results = [
-            transient(c, 0s => stop; max_step = 1ns, saveat, event_mode = :exact)
+            transient(c, 0s => stop; adaptive=false, max_step = 1ns, saveat, event_mode = :exact)
                 for stop in stops
         ]
         for (r, stop) in zip(results, stops)
@@ -111,4 +109,16 @@ end
         )
         @test m.tphl > 0 && m.tplh > 0 && m.energy > 0
     end
+end
+
+@testset "exact waveform events without state switch bracketing" begin
+    # A source step at t=0 needs no interior event localization. Exact event
+    # handling must produce the same solves as ordinary fixed-grid BDF2.
+    cc = with_parameters(compile(LowPass()), "V1.waveform" => Step(at=0.0))
+    @test !Amber._has_state_switch_events(cc)
+    plain = transient(cc, 0.0 => 1e-4; adaptive=false, max_step=1e-6,saveat=1e-6)
+    exact = transient(cc, 0.0 => 1e-4; adaptive=false, max_step=1e-6,saveat=1e-6,event_mode=:exact)
+    @test exact.axis == plain.axis
+    @test exact.values ≈ plain.values
+    @test exact.stats[:iterations] == plain.stats[:iterations]
 end

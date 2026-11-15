@@ -1,0 +1,18 @@
+[[cases]]
+dense_prototype_seconds = 0.039138472
+inverters = 1
+max_difference = 1.3322676295501878e-15
+sparse_seconds = 0.102579584
+topology = "bank"
+[[cases]]
+dense_prototype_seconds = 0.110237354
+inverters = 10
+max_difference = 1.8207657603852567e-14
+sparse_seconds = 0.285936719
+topology = "chain"
+[[cases]]
+dense_prototype_seconds = 1.030060244
+inverters = 100
+max_difference = 1.3322676295501878e-14
+sparse_seconds = 0.756129219
+topology = "bank"

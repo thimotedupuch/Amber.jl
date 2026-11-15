@@ -1,6 +1,17 @@
 function _continuation_step(cc, z, start, target, temperature, depth, maxdepth; kw...)
     source_scale, gmin = target
-    candidate, iterations, ok = _newton(cc, z, z, 0.0, 0.0; mode = :dc, source_scale, gmin, temperature, kw...)
+    history = get(kw, :history, nothing)
+    history_start = history === nothing ? 0 : length(history)
+    candidate, iterations, ok = try
+        _newton(cc, z, z, 0.0, 0.0; mode = :dc, source_scale, gmin, temperature, kw...)
+    catch error
+        error isa LinearSolveError || rethrow()
+        # A singular intermediate Newton matrix is a rejected continuation
+        # step, not proof that the final DC problem is singular. Let the
+        # existing subdivision and pseudo-transient fallback attempt recovery.
+        attempted = history === nothing ? 1 : length(history) - history_start + 1
+        (z, attempted, false)
+    end
     ok&&return candidate, iterations, true, 0
     depth >= maxdepth&&return z, iterations, false, 1
 

@@ -18,7 +18,7 @@
 
     partial = transient(
         LowPass(), 0s => 1ms; max_step = 1μs, saveat = 10μs,
-        integration = IntegrationOptions(max_steps = 1)
+        integration = IntegrationOptions(max_steps = 1), failure_policy=:return_partial
     )
     shown = plain(partial)
     @test occursin("PARTIAL", shown)

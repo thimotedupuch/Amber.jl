@@ -26,7 +26,7 @@ function measure(cells, steps)
     dc = @timed operating_point(compiled)
     dc.value.stats[:converged]||error("benchmark operating point failed")
     transient_run = @timed transient(
-        compiled, 0.0 => 1.0e-4; initial = :discharged,
+        compiled, 0.0 => 1.0e-4; adaptive=false, initial = :discharged,
         saveat = 1.0e-4 / steps, max_step = 1.0e-4 / steps
     )
     transient_run.value.stats[:converged]||error("benchmark transient failed")
@@ -48,6 +48,6 @@ end
 
 cells = parse(Int, get(ENV, "AMBER_BENCH_CELLS", "100"))
 steps = parse(Int, get(ENV, "AMBER_BENCH_STEPS", "100"))
-measure(2, 2) # Compile the execution paths before timing.
+measure(cells, steps) # Warm the measured shape: size-dependent paths can compile lazily.
 Base.GC.gc()
 TOML.print(stdout, measure(cells, steps); sorted = true)

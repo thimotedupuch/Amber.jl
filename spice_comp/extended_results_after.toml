@@ -1,0 +1,101 @@
+julia_version = "1.13.1"
+
+[[cases]]
+amber_first_seconds = 2.733001826
+amber_retained_bytes = 15403
+amber_steps_or_points = 1
+amber_warm_seconds = 0.000270159
+cells = 10
+endpoint_error = 2.076028473574354e-7
+kind = "dc"
+ngspice_process_seconds = 0.00461163
+trajectory_max_error = 0.0
+transient_max_step = 0.0
+[[cases]]
+amber_first_seconds = 0.001289129
+amber_retained_bytes = 84828
+amber_steps_or_points = 1
+amber_warm_seconds = 0.001101751
+cells = 100
+endpoint_error = 2.076028473574354e-7
+kind = "dc"
+ngspice_process_seconds = 0.005207913
+trajectory_max_error = 0.0
+transient_max_step = 0.0
+[[cases]]
+amber_first_seconds = 0.009197069
+amber_retained_bytes = 761903
+amber_steps_or_points = 1
+amber_warm_seconds = 0.009140404
+cells = 1000
+endpoint_error = 2.076028473574354e-7
+kind = "dc"
+ngspice_process_seconds = 0.015692796
+trajectory_max_error = 0.0
+transient_max_step = 0.0
+[[cases]]
+amber_first_seconds = 2.709445921
+amber_retained_bytes = 151411
+amber_steps_or_points = 1001
+amber_warm_seconds = 0.010748833
+cells = 10
+endpoint_error = 2.076039656850881e-7
+kind = "transient"
+ngspice_process_seconds = 0.007699996
+trajectory_max_error = 0.005099557970498492
+transient_max_step = 1.0e-7
+[[cases]]
+amber_first_seconds = 0.059688903
+amber_retained_bytes = 940844
+amber_steps_or_points = 1001
+amber_warm_seconds = 0.052084031
+cells = 100
+endpoint_error = 2.076039656850881e-7
+kind = "transient"
+ngspice_process_seconds = 0.0268016
+trajectory_max_error = 0.005099557970498492
+transient_max_step = 1.0e-7
+[[cases]]
+amber_first_seconds = 0.446967121
+amber_retained_bytes = 8818175
+amber_steps_or_points = 1001
+amber_warm_seconds = 0.435268013
+cells = 1000
+endpoint_error = 2.076039656850881e-7
+kind = "transient"
+ngspice_process_seconds = 0.241871648
+trajectory_max_error = 0.005099557970498492
+transient_max_step = 1.0e-7
+[[cases]]
+amber_first_seconds = 2.114018248
+amber_retained_bytes = 113793
+amber_steps_or_points = 501
+amber_warm_seconds = 0.000341024
+cells = 10
+endpoint_error = 4.992407144029446e-7
+kind = "ac"
+ngspice_process_seconds = 0.00463713
+trajectory_max_error = 0.0
+transient_max_step = 0.0
+[[cases]]
+amber_first_seconds = 0.002939827
+amber_retained_bytes = 873255
+amber_steps_or_points = 501
+amber_warm_seconds = 0.002777951
+cells = 100
+endpoint_error = 4.992407144027128e-7
+kind = "ac"
+ngspice_process_seconds = 0.008850622
+trajectory_max_error = 0.0
+transient_max_step = 0.0
+[[cases]]
+amber_first_seconds = 0.048378264
+amber_retained_bytes = 8449977
+amber_steps_or_points = 501
+amber_warm_seconds = 0.030561144
+cells = 1000
+endpoint_error = 4.992407144027128e-7
+kind = "ac"
+ngspice_process_seconds = 0.03046899
+trajectory_max_error = 0.0
+transient_max_step = 0.0

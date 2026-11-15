@@ -7,8 +7,8 @@ using Amber, Test, LinearAlgebra
         C = capacitor(out, gnd; value = 1.0)
     end
     circuit = DecayForExtensions()
-    coarse = transient(circuit, 0.0 => 1.0; initial = [1.0], max_step = 0.1, method = :trapezoidal)
-    fine = transient(circuit, 0.0 => 1.0; initial = [1.0], max_step = 0.05, method = :trapezoidal)
+    coarse = transient(circuit, 0.0 => 1.0; adaptive=false, initial = [1.0], max_step = 0.1, method = :trapezoidal)
+    fine = transient(circuit, 0.0 => 1.0; adaptive=false, initial = [1.0], max_step = 0.05, method = :trapezoidal)
     @test coarse.stats[:converged] && fine.stats[:converged]
     @test abs(fine.values[1,end] - exp(-1)) < abs(coarse.values[1,end] - exp(-1)) / 3
     @test length(coarse.stats[:accepted_step_sizes]) == length(coarse.axis) - 1
@@ -16,12 +16,12 @@ using Amber, Test, LinearAlgebra
     adaptive = transient(circuit, 0.0 => 1.0; initial = [1.0], method = :trapezoidal, adaptive = true)
     @test adaptive.stats[:converged]
     @test adaptive.values[1,end] ≈ exp(-1) rtol=1e-3
-    sparse = transient(circuit, 0.0 => 1.0; initial = [1.0], max_step = 0.01, saveat = 0.1, method = :trapezoidal)
+    sparse = transient(circuit, 0.0 => 1.0; adaptive=false, initial = [1.0], max_step = 0.01, saveat = 0.1, method = :trapezoidal)
     @test length(sparse.axis) == 11
     @test sparse.values[1,end] ≈ exp(-1) rtol=1e-4
     @test haskey(sparse.stats, :integration_orders)
     recorded = Tuple{Float64,Float64}[]
-    streamed = transient(circuit, 0.0 => 1.0; initial = [1.0], max_step = 0.01, saveat = 0.5,
+    streamed = transient(circuit, 0.0 => 1.0; adaptive=false, initial = [1.0], max_step = 0.01, saveat = 0.5,
         recorder = (t, state) -> push!(recorded, (t, state[1])))
     @test length(streamed.axis) == 3
     @test length(recorded) == length(streamed.stats[:accepted_step_sizes]) + 1

@@ -693,9 +693,9 @@ See [`operating_point`](@ref) for bias behavior and status checks.
 """ OperatingPoint
 @doc """
     Transient(start => stop; saveat=nothing, max_step=nothing, method=:bdf2,
-              adaptive=nothing, initial=nothing, event_mode=nothing,
+              adaptive=true, initial=nothing, event_mode=:exact,
               temperature=300.0, solver=SolverOptions(),
-              integration=IntegrationOptions(), failure_policy=:return_partial,
+              integration=IntegrationOptions(), failure_policy=:throw,
               overrides=nothing)
 
 Store transient-analysis settings for `simulate`, sweeps, or Monte Carlo. Times
@@ -713,7 +713,7 @@ See [`transient`](@ref) for output-grid, initialization, and partial-result rule
 """ Transient
 @doc """
     SmallSignal(low => high; points=100, scale=:log, source=nothing,
-                temperature=300.0, solver=SolverOptions())
+                temperature=300.0, solver=nothing)
     SmallSignal(frequencies::AbstractVector; source=nothing, ...)
 
 Store a small-signal analysis for `simulate`, sweeps, or Monte Carlo. Frequency
@@ -753,26 +753,54 @@ Use `explain_failure(op)` for solver diagnostics. A converged bias is required
 for small-signal and stationary noise analyses.
 """ operating_point
 @doc """    transient(circuit, start => stop; saveat=nothing, max_step=nothing,
-        method=:bdf2, adaptive=nothing, initial=nothing, event_mode=nothing, ...)
+        method=:bdf2, adaptive=true, initial=nothing, event_mode=:exact, ...)
 
-Integrate a circuit in seconds using implicit `:bdf1` or `:bdf2` methods.
-`saveat` specifies output spacing independently of internal integration steps;
-the start and stop are always included. If the span is not divisible by `saveat`,
-the last output interval is shorter. Without `saveat`, retain internal steps.
-`max_step` bounds integration steps; resolve finite source edges with several
-steps even when using `event_mode=:exact` to land on corners and switch events.
+Integrate a circuit in seconds using implicit `:bdf1`, `:bdf2`, or
+`:trapezoidal` methods. Adaptive local error control is enabled by default.
+Neither `saveat` nor `max_step` changes this mode. `solver=SolverOptions(...)`
+controls Newton convergence; `integration=IntegrationOptions(...)` controls
+adaptive local integration error. Top-level `reltol`, `abstol`, and `maxiters`
+are rejected to avoid silently selecting the wrong tolerance domain.
 
-By default, supplying `saveat` or `max_step` selects fixed stepping. Set
-`adaptive=true` explicitly to use error-controlled stepping with a saved grid.
+`saveat` requests output spacing, with both endpoints included. The integrator
+lands on output timestamps; they may shorten individual integration steps, but
+do not change the configured maximum step or disable local error control.
+There is no dense-output interpolation. Without `saveat`, return all accepted
+steps. Currents reconstructed from sparsely saved charge traces can miss peaks;
+choose sufficiently fine output sampling for the quantities being measured.
+
+For a prescribed grid, explicitly supply `adaptive=false, max_step=...`.
+Output times, waveform corners, switch events and the stop may split that grid.
+Fixed stepping does not estimate integration error: its `stats[:error_estimates]`
+and `stats[:integration_tolerances]` are `nothing`. Nondefault integration
+error tolerances are rejected in fixed mode; Newton tolerances and step limits
+still apply. Inspect `stats[:stepping_mode]`, `stats[:local_error_control]`,
+`stats[:nonlinear_tolerances]`, and `stats[:integration_tolerances]` to see what
+was actually applied.
+
+Exact event handling is enabled by default (`event_mode=:exact`). Resolve finite
+source edges with appropriate steps even when landing on corners. Local error
+control and Newton convergence do not guarantee a global error bound; verify
+important measurements by independent refinement.
+
 `initial=nothing` starts from a converged operating point; `:discharged` starts
 from zero before applying capacitor initial voltages. A state vector is also
-accepted. `reltol`/`abstol` control the nonlinear solver; `integration` controls
-adaptive integration error. Inspect `result.stats[:converged]` and
-`validity_report(result)` before trusting the result. Partial runs may end early;
-use `failure_policy=:throw` to throw instead of returning a partial result.""" transient
+accepted. Failed integration throws `ConvergenceError` by default. To inspect a
+partial record, explicitly use `failure_policy=:return_partial`, then check
+`stats[:converged]`, the actual stop time, and `validity_report(result)`.
+
+```julia
+# Error-controlled integration with separately configured Newton convergence.
+r = transient(circuit, 0s => 1ms; saveat=10μs, max_step=20μs,
+    integration=IntegrationOptions(reltol=1e-5),
+    solver=SolverOptions(reltol=1e-8))
+# Deliberate fixed-grid refinement experiment.
+fixed = transient(circuit, 0s => 1ms; adaptive=false, max_step=1μs)
+```
+""" transient
 @doc """
     small_signal(circuit, low => high; points=100, scale=:log,
-                 source=nothing, temperature=300.0, solver=SolverOptions(), ...)
+                 source=nothing, temperature=300.0, solver=nothing, ...)
     small_signal(circuit, frequencies::AbstractVector; source=nothing, ...)
 
 Solve the linearized AC response about a converged DC operating point. Frequency
@@ -785,6 +813,10 @@ qualified string path. With no explicit selection, multiple active AC sources
 are rejected; a missing/zero excitation produces a warning and zero response.
 AC excitation does not replace the source's DC bias. Temperature is in kelvin;
 additional operating-point keywords are forwarded to the bias solve.
+
+With `solver=nothing`, connected path sparsity uses a pivoted tridiagonal
+factorization; other patterns use SuiteSparse LU. Passing `SolverOptions()`
+explicitly always uses its requested sparse solver policy.
 
 ```julia
 ac = small_signal(circuit, 10Hz => 1MHz; source=:Source, points=301)

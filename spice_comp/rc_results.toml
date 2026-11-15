@@ -1,0 +1,36 @@
+julia_version = "1.13.1"
+threads = 1
+
+[[cases]]
+amber_accepted_steps = 100
+amber_build_seconds = 1.772562624
+amber_dc_warm_seconds = 0.000212437
+amber_final_first_node = 0.9436167234684902
+amber_first_solve_seconds = 2.150295019
+amber_warm_seconds = 0.003359804
+cells = 100
+ngspice_dc_process_seconds = 0.004071475
+ngspice_final_first_node = 0.9436172
+ngspice_process_seconds = 0.006771071
+[[cases]]
+amber_accepted_steps = 100
+amber_build_seconds = 0.022798113
+amber_dc_warm_seconds = 0.001979198
+amber_final_first_node = 0.9436167234684902
+amber_first_solve_seconds = 0.044681277
+amber_warm_seconds = 0.037979702
+cells = 1000
+ngspice_dc_process_seconds = 0.011765844
+ngspice_final_first_node = 0.9436172
+ngspice_process_seconds = 0.025405116
+[[cases]]
+amber_accepted_steps = 100
+amber_build_seconds = 0.084141194
+amber_dc_warm_seconds = 0.024299556
+amber_final_first_node = 0.9436167234684902
+amber_first_solve_seconds = 0.352352412
+amber_warm_seconds = 0.319641792
+cells = 10000
+ngspice_dc_process_seconds = 0.076112109
+ngspice_final_first_node = 0.9436172
+ngspice_process_seconds = 0.253052119

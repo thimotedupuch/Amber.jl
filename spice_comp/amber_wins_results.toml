@@ -1,0 +1,56 @@
+julia_version = "1.13.1"
+
+[[cases]]
+amber_batch_seconds = 0.038713972
+amber_first_seconds = 4.029093324
+amber_speedup = 1.5115761823664078
+cells = 10
+kind = "ac"
+ngspice_batch_process_seconds = 0.058519118
+points = 501
+repeats = 100
+[[cases]]
+amber_batch_seconds = 0.299696528
+amber_first_seconds = 0.010730077
+amber_speedup = 1.1154276335159945
+cells = 100
+kind = "ac"
+ngspice_batch_process_seconds = 0.334289789
+points = 501
+repeats = 100
+[[cases]]
+amber_batch_seconds = 3.505942021
+amber_first_seconds = 0.034352665
+amber_speedup = 0.9860673565884962
+cells = 1000
+kind = "ac"
+ngspice_batch_process_seconds = 3.457094981
+points = 501
+repeats = 100
+[[cases]]
+amber_batch_seconds = 0.02252564
+amber_first_seconds = 1.080950311
+amber_speedup = 0.31426960565826323
+cells = 10
+kind = "dc"
+ngspice_batch_process_seconds = 0.007079124
+points = 1
+repeats = 100
+[[cases]]
+amber_batch_seconds = 0.125105687
+amber_first_seconds = 0.007287723
+amber_speedup = 0.15140107899331548
+cells = 100
+kind = "dc"
+ngspice_batch_process_seconds = 0.018941136
+points = 1
+repeats = 100
+[[cases]]
+amber_batch_seconds = 1.030575768
+amber_first_seconds = 0.009448052
+amber_speedup = 0.2134534702158842
+cells = 1000
+kind = "dc"
+ngspice_batch_process_seconds = 0.219979974
+points = 1
+repeats = 100

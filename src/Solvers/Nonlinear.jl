@@ -115,19 +115,24 @@ function _newton(
             inverse_row_norms[index] = inv(max(row_norms[index], eps(Float64)))
         end
         system = workspace.system
-        copyto!(system.nzval, scaled_matrix.nzval)
-        for value_index in eachindex(system.nzval)
-            system.nzval[value_index] *= inverse_row_norms[system.rowval[value_index]]
+        for value_index in eachindex(scaled_matrix.nzval)
+            scaled_matrix.nzval[value_index] *= inverse_row_norms[scaled_matrix.rowval[value_index]]
         end
+        # A nonlinear device's Jacobian can become exactly constant after
+        # settling. Reuse only an identical scaled matrix, never an approximate
+        # coefficient match, so this does not change Newton's linear system.
+        identical_system = isequal(system.nzval, scaled_matrix.nzval)
+        copyto!(system.nzval, scaled_matrix.nzval)
         Δ = try
             rhs = workspace.rhs
             @inbounds @simd for index in eachindex(rhs)
                 rhs[index] = inverse_row_norms[index] * r[index]
             end
             if linear_plan === nothing
-                reuse_numeric = linear_hierarchy && factorization !== nothing &&
+                reuse_numeric = factorization !== nothing &&
                     workspace.factorization_key == factorization_key &&
-                    isequal(workspace.factorization_scales,variable_scales)
+                    isequal(workspace.factorization_scales,variable_scales) &&
+                    (linear_hierarchy || identical_system)
                 if !reuse_numeric
                     factorization = (factorization === nothing || workspace.factorization_key === nothing ||
                         workspace.factorization_key.solver != linear_solver) ? _new_factorization(system, linear_solver) :

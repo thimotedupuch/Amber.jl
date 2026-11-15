@@ -6,8 +6,8 @@
     end
     reference(t) = (1 - exp(-(t * s) / 100μs)) * V; stop = 500μs
     steps = (20μs, 10μs, 5μs)
-    first_order = [final_error(transient(ConvergenceRC(), 0s => stop; initial = :discharged, saveat = step, method = :bdf1), :output, reference) for step in steps]
-    second_order = [final_error(transient(ConvergenceRC(), 0s => stop; initial = :discharged, saveat = step, method = :bdf2), :output, reference) for step in steps]
+    first_order = [final_error(transient(ConvergenceRC(), 0s => stop; adaptive=false, initial = :discharged, saveat = step, max_step=step, method = :bdf1), :output, reference) for step in steps]
+    second_order = [final_error(transient(ConvergenceRC(), 0s => stop; adaptive=false, initial = :discharged, saveat = step, max_step=step, method = :bdf2), :output, reference) for step in steps]
     @test observed_order(first_order[2], first_order[3]) > 0.8
     @test observed_order(second_order[2], second_order[3]) > 1.7
     @test second_order[end] < first_order[end]

@@ -46,6 +46,7 @@
     @test only(result_table(named_result; signals = (measured_V = :measured_output,))).measured_V ≈ 3V
     @test_throws ArgumentError result_table(transient_result; signals = (time = voltage(:vout),))
     @test_throws ArgumentError result_table(transient_result; signals = [:vout])
+    original_statistics = deepcopy(rectifier_result.stats)
     compact = report(rectifier_result)
     @test !haskey(compact[:statistics], :bdf_orders)
     @test compact[:warnings] == validity[:warnings]
@@ -53,7 +54,7 @@
     @test compact[:samples] == length(rectifier_result.axis)
     @test compact[:interval] == (first(rectifier_result.axis) => last(rectifier_result.axis))
     @test report(rectifier_result; detailed = true)[:statistics] == rectifier_result.stats
-    @test haskey(rectifier_result.stats, :bdf_orders) # Reporting must not mutate the result.
+    @test rectifier_result.stats == original_statistics # Reporting must not mutate either stepping mode.
 
     builder = CircuitBuilder(:UnsupportedValue); ground!(builder, :gnd)
     @test_throws MethodError add!(builder, "not a primitive")

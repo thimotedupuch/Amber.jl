@@ -72,7 +72,7 @@ end
 
 oscillator = transient(
     WienOscillator(), 0s => 4ms;
-    saveat = 1μs, max_step = 1μs, reltol = 1.0e-6
+    saveat = 1μs, max_step = 1μs, integration = IntegrationOptions(reltol = 1.0e-6)
 )
 @assert get(oscillator.stats, :converged, false)
 spectrogram_times = collect(range(0.3ms, 3.7ms; length = 44))

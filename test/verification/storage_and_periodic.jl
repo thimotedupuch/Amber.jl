@@ -51,7 +51,7 @@ end
     for method in (:bdf1, :bdf2), adaptive in (false, true)
         result = transient(
             ChargeInjection(), 0.0 => 1.0e-4; initial = [0.1], max_step = 3.0e-5,
-            method, adaptive, reltol = 1.0e-10, abstol = 1.0e-15
+            method, adaptive, solver=SolverOptions(reltol=1e-10,current_abstol=1e-15,voltage_abstol=1e-15,state_abstol=1e-15)
         )
         @test result.stats[:converged]
         charges = charge.(Ref(model), voltage(result, :x))
@@ -182,7 +182,7 @@ end
         M = nmos(drain, gate, gnd, gnd; model = ChargeBasedMOSFET(width = 8.0e-6, length = 2.0e-6))
     end
     for method in (:bdf1, :bdf2)
-        result = transient(StorageMOS(), 0.0 => 1.0e-6; max_step = 7.0e-8, method, reltol = 1.0e-10, abstol = 1.0e-15)
+        result = transient(StorageMOS(), 0.0 => 1.0e-6; max_step = 7.0e-8, method, adaptive=false, solver=SolverOptions(reltol=1e-10,current_abstol=1e-15,voltage_abstol=1e-15,state_abstol=1e-15))
         @test result.stats[:converged]
         @test current(result, :VG)[2:end] ≈ -current(result, :M, :gate)[2:end] rtol = 1.0e-8 atol = 1.0e-15A
         @test current(result, :VD)[2:end] ≈ -current(result, :M, :drain)[2:end] rtol = 1.0e-8 atol = 1.0e-15A

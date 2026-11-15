@@ -1,0 +1,37 @@
+julia_version = "1.13.1"
+threads = 1
+
+[[cases]]
+amber_batch_allocated_bytes = 418426320
+amber_first_analysis_seconds = 2.641539627
+amber_result_retained_bytes = 4267872
+amber_speedup = 0.39717954007330414
+amber_warm_batch_seconds = 0.269184679
+cells = 10000
+compilation_seconds = 1.361219895
+construction_seconds = 0.810605824
+kind = "dc"
+max_response_error = 0.0
+ngspice_batch_process_seconds = 0.106914647
+points = 101
+primitive_devices = 20001
+repeats = 10
+topology = "path"
+unknowns = 10002
+[[cases]]
+amber_batch_allocated_bytes = 459363104
+amber_first_analysis_seconds = 0.051286441
+amber_result_retained_bytes = 4267936
+amber_speedup = 1.7894833018512086
+amber_warm_batch_seconds = 0.501999689
+cells = 10000
+compilation_seconds = 0.075877246
+construction_seconds = 0.111359651
+kind = "dc"
+max_response_error = 0.0
+ngspice_batch_process_seconds = 0.898320061
+points = 101
+primitive_devices = 20001
+repeats = 10
+topology = "bank"
+unknowns = 10002

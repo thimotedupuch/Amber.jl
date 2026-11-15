@@ -1,0 +1,32 @@
+julia_version = "1.13.1"
+
+[[cases]]
+amber_batch_seconds = 0.028833983
+amber_first_seconds = 3.770476865
+amber_speedup = 4.652374491585155
+cells = 1
+full_response_max_error = 5.017763512091086e-7
+kind = "ac"
+ngspice_batch_process_seconds = 0.134146487
+points = 10001
+repeats = 20
+[[cases]]
+amber_batch_seconds = 0.039433045
+amber_first_seconds = 0.002145631
+amber_speedup = 3.7053088849719824
+cells = 2
+full_response_max_error = 5.019090685936726e-7
+kind = "ac"
+ngspice_batch_process_seconds = 0.146111612
+points = 10001
+repeats = 20
+[[cases]]
+amber_batch_seconds = 0.077855426
+amber_first_seconds = 0.003613713
+amber_speedup = 2.068941437684767
+cells = 5
+full_response_max_error = 5.019606191909557e-7
+kind = "ac"
+ngspice_batch_process_seconds = 0.161078317
+points = 10001
+repeats = 20

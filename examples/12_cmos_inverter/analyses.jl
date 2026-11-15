@@ -21,7 +21,7 @@ switching = CMOSInverter(
 window = 100ns => 200ns  # one settled cycle; energy includes leakage
 function measure_switching(step)
     result = transient(
-        switching, 0s => 210ns; event_mode = :exact, max_step = step,
+        switching, 0s => 210ns; adaptive=false, event_mode = :exact, max_step = step,
         method = :bdf2, failure_policy = :throw
     )
     metrics = switchingmetrics(result; input = :input, output = :output, supply = :VDD, vdd = 5V, window)

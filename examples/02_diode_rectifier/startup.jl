@@ -1,7 +1,7 @@
 include("circuit.jl")
 
 rectifier = HalfWaveRectifier()
-result = transient(rectifier, 0s => 500ms; reltol = 1.0e-6, max_step = 100μs)
+result = transient(rectifier, 0s => 500ms; integration = IntegrationOptions(reltol = 1.0e-6), max_step = 100μs)
 println(report(result)) # full saved record, including startup stresses
 settled_window = 460ms => 500ms
 println(report(result; window = settled_window))

@@ -174,3 +174,28 @@ end
     @test eq == [2, 1]
     @test unknown == [2, 1]
 end
+
+@testset "exact nonlinear matrix factorization reuse" begin
+    b = CircuitBuilder(:SettledDiode)
+    g = ground!(b, :gnd); supply = node!(b, :supply); output = node!(b, :output)
+    add!(b, voltage_source(supply,g;dc=1.0);name=:V)
+    add!(b, resistor(supply,output;value=1000.0);name=:R)
+    add!(b, diode(output,g;model=JunctionDiode(saturation_current=1e-12));name=:D)
+    cc = compile(finish(b)); ws = SimulationWorkspace(cc)
+    z = operating_point(cc).values[:,1]
+    answer, _, good = Amber._newton(cc,z,z,0.0,0.0;workspace=ws,mode=:dc)
+    @test good
+    count = ws.numeric_factorizations
+    answer2, _, good = Amber._newton(cc,z,z,0.0,0.0;workspace=ws,mode=:dc)
+    @test good
+    @test answer2 ≈ answer
+    @test ws.numeric_factorizations == count
+    # Temperature changes nonlinear derivatives without changing the circuit's
+    # matrix identity. Exact matrix comparison must invalidate numeric reuse.
+    hot, _, good = Amber._newton(cc,z,z,0.0,0.0;workspace=ws,mode=:dc,temperature=330.0)
+    @test good
+    @test ws.numeric_factorizations > count
+    reference, _, good = Amber._newton(cc,z,z,0.0,0.0;mode=:dc,temperature=330.0)
+    @test good
+    @test hot ≈ reference
+end

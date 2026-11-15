@@ -1,0 +1,65 @@
+julia_version = "1.13.1"
+
+[[cases]]
+amber_first_seconds = 2.737369225
+amber_warm_seconds = 0.000238423
+cells = 10
+endpoint_error = 2.076028473574354e-7
+kind = "dc"
+ngspice_process_seconds = 0.003848227
+[[cases]]
+amber_first_seconds = 0.001346004
+amber_warm_seconds = 0.001131265
+cells = 100
+endpoint_error = 2.076028473574354e-7
+kind = "dc"
+ngspice_process_seconds = 0.004877205
+[[cases]]
+amber_first_seconds = 0.009315485
+amber_warm_seconds = 0.00941099
+cells = 1000
+endpoint_error = 2.076028473574354e-7
+kind = "dc"
+ngspice_process_seconds = 0.015812664
+[[cases]]
+amber_first_seconds = 2.76723538
+amber_warm_seconds = 0.013086736
+cells = 10
+endpoint_error = 2.076039656850881e-7
+kind = "transient"
+ngspice_process_seconds = 0.010181372
+[[cases]]
+amber_first_seconds = 0.075765488
+amber_warm_seconds = 0.055894697
+cells = 100
+endpoint_error = 2.076039656850881e-7
+kind = "transient"
+ngspice_process_seconds = 0.026983533
+[[cases]]
+amber_first_seconds = 0.526556521
+amber_warm_seconds = 0.516942551
+cells = 1000
+endpoint_error = 2.076039656850881e-7
+kind = "transient"
+ngspice_process_seconds = 0.246052177
+[[cases]]
+amber_first_seconds = 1.997667485
+amber_warm_seconds = 0.002812794
+cells = 10
+endpoint_error = 4.992407144306413e-7
+kind = "ac"
+ngspice_process_seconds = 0.004719209
+[[cases]]
+amber_first_seconds = 0.026928941
+amber_warm_seconds = 0.019942469
+cells = 100
+endpoint_error = 4.992407144304674e-7
+kind = "ac"
+ngspice_process_seconds = 0.00805119
+[[cases]]
+amber_first_seconds = 0.184087623
+amber_warm_seconds = 0.164288365
+cells = 1000
+endpoint_error = 4.992407144304674e-7
+kind = "ac"
+ngspice_process_seconds = 0.030849297

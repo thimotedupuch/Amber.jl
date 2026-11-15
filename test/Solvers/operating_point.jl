@@ -90,3 +90,31 @@ end
     @test result.stats[:dominant_residual].norm ≈ expected
     @test !isapprox(maximum(abs, cold), expected; rtol = 1e-3)
 end
+
+@testset "CMOS chain singular intermediate continuation recovery" begin
+    b = CircuitBuilder(:LongCMOSChain)
+    g = ground!(b,:gnd); supply=node!(b,:supply); input=node!(b,:input)
+    outputs=node_array!(b,:out,1:100)
+    add!(b,voltage_source(supply,g;dc=5.0);name=:VDD)
+    add!(b,voltage_source(input,g;dc=0.0);name=:Input)
+    nm=Level1MOSFET(transconductance=.002,channel_length_modulation=.03)
+    pm=Level1MOSFET(transconductance=.001,channel_length_modulation=.03)
+    for i in 1:100
+        gate=i==1 ? input : outputs[i-1]
+        add!(b,nmos(outputs[i],gate,g,g;model=nm);name=(:N,i))
+        add!(b,pmos(outputs[i],gate,supply,supply;model=pm);name=(:P,i))
+        add!(b,capacitor(outputs[i],g;value=1e-11);name=(:C,i))
+    end
+    cc=compile(finish(b))
+    result=operating_point(cc;solver=SolverOptions(reltol=1e-6,current_abstol=1e-12,voltage_abstol=1e-9))
+    @test result.stats[:converged]
+    @test result.values[3:102,1] ≈ [isodd(i) ? 5.0 : 0.0 for i in 1:100] atol=1e-8
+    @test maximum(abs.(Amber.residual(cc,result.values[:,1],zeros(cc.n),0.0;mode=:dc)))<1e-10
+
+    # A genuinely floating ideal source must still fail; recovery must never
+    # turn an unsolved DC system into a reported success.
+    floating=CircuitBuilder(:FloatingDCSource)
+    ground!(floating,:gnd);p=node!(floating,:p);n=node!(floating,:n)
+    add!(floating,voltage_source(p,n;dc=1.0);name=:V)
+    @test_throws Amber.CircuitValidationError operating_point(finish(floating))
+end

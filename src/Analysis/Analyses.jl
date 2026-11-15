@@ -22,7 +22,8 @@ Pass options directly to an analysis function or store them in an analysis
 descriptor, e.g. `OperatingPoint(; solver)`. Direct `reltol`, `abstol`, and
 `maxiters` keywords override corresponding fields where supported. A scalar
 `abstol` overrides voltage/current/state absolute tolerances together; use this
-type when you need different absolute scales.
+type when you need different absolute scales. Transient analyses require these
+options objects instead of the ambiguous direct tolerance shortcuts.
 """
 Base.@kwdef struct SolverOptions
     reltol::Float64 = 1.0e-7
@@ -114,19 +115,22 @@ end
 
 Control local error in adaptive transient integration, independently of nonlinear
 [`SolverOptions`](@ref). Absolute tolerances use V, A, or internal-state units;
-relative tolerance is dimensionless. These tolerances do not make fixed stepping
-adaptive: request `adaptive=true` when also specifying `max_step` or `saveat`.
+relative tolerance is dimensionless. Adaptive stepping is the transient default,
+including with `max_step` and `saveat`. These are local error estimates, not a global accuracy guarantee.
+Custom integration tolerances are rejected with `adaptive=false`; limits such
+as `max_steps` still apply in fixed mode.
 
 ```julia
 integration = IntegrationOptions(reltol=1e-5, voltage_abstol=10nV)
-tr = transient(circuit, 0s => 1ms; adaptive=true, saveat=10μs, integration)
+tr = transient(circuit, 0s => 1ms; saveat=10μs, integration)
 ```
 
 `max_steps` limits attempted steps, including rejected attempts, in either
-stepping mode. `min_step` is in seconds; zero allows the numerical minimum.
-Exhausting a limit may return a partial result; inspect `tr.stats[:converged]`
-or use `failure_policy=:throw`. Refine steps/tolerances against an independent
-estimate rather than treating Newton convergence as an accuracy guarantee.
+stepping mode. `min_step` is an adaptive lower-step bound in seconds; zero allows
+the numerical minimum.
+Exhausting a limit throws by default. To retain a partial record, explicitly
+request `failure_policy=:return_partial` and inspect `tr.stats[:converged]`.
+Refine steps/tolerances against an independent estimate rather than treating Newton convergence as an accuracy guarantee.
 """
 Base.@kwdef struct IntegrationOptions
     reltol::Float64 = 1.0e-4
@@ -206,18 +210,19 @@ Base.@kwdef struct Transient <: AbstractAnalysis
     saveat::Union{Nothing, Float64} = nothing
     max_step::Union{Nothing, Float64} = nothing
     method::Symbol = :bdf2
-    adaptive::Union{Nothing, Bool} = nothing
+    adaptive::Bool = true
     temperature::Float64 = 300.0
     overrides::Any = nothing
     solver::SolverOptions = SolverOptions()
     initial::Union{Nothing, Symbol, Vector{Float64}, AbstractInitialCondition} = nothing
-    event_mode::Union{Nothing, Symbol} = nothing
+    event_mode::Union{Nothing, Symbol} = :exact
     integration::IntegrationOptions = IntegrationOptions()
-    failure_policy::Symbol = :return_partial
+    failure_policy::Symbol = :throw
     function Transient(
             interval, saveat, max_step, method, adaptive, temperature, overrides, solver, initial, event_mode, integration, failure_policy
         )
-        return new(
+        adaptive isa Bool || throw(AnalysisValidationError("adaptive must be true or false; sampling never selects the stepping mode"))
+        analysis = new(
             _analysis_parameter(:interval, interval),
             _analysis_parameter(:saveat, saveat),
             _analysis_parameter(:max_step, max_step),
@@ -231,15 +236,36 @@ Base.@kwdef struct Transient <: AbstractAnalysis
             _analysis_parameter(:integration, integration),
             _analysis_parameter(:failure_policy, failure_policy)
         )
+        _validate_solver_options(analysis.solver)
+        _validate_transient(analysis.interval; saveat=analysis.saveat, max_step=analysis.max_step,
+            method=analysis.method, event_mode=analysis.event_mode, adaptive=analysis.adaptive,
+            integration=analysis.integration, reltol=analysis.solver.reltol,
+            abstol=analysis.solver.current_abstol, maxiters=analysis.solver.max_newton_iterations)
+        analysis.failure_policy in (:throw,:return_partial) || throw(AnalysisValidationError("failure_policy must be :throw or :return_partial"))
+        return analysis
     end
 end
 Transient(p::Pair; kw...) = Transient(interval = Float64(_si_value(first(p), Unitful.s)) => Float64(_si_value(last(p), Unitful.s)); kw...)
 
-function _validate_transient(interval; saveat = nothing, max_step = nothing, method = :bdf2, event_mode = nothing, reltol = 1.0e-6, abstol = 1.0e-9, maxiters = 120)
+function _validate_transient(interval; saveat = nothing, max_step = nothing, method = :bdf2, event_mode = :exact, adaptive = true, integration = IntegrationOptions(), reltol = 1.0e-6, abstol = 1.0e-9, maxiters = 120)
+    adaptive isa Bool || throw(AnalysisValidationError("adaptive must be true or false; sampling never selects the stepping mode"))
+    _validate_integration(integration)
+    if !adaptive
+        max_step === nothing && throw(AnalysisValidationError("fixed stepping requires adaptive=false and an explicit max_step; saveat only requests output times"))
+        iszero(integration.min_step) || throw(AnalysisValidationError("integration min_step requires adaptive=true"))
+        defaults=IntegrationOptions()
+        any(field -> getfield(integration,field) != getfield(defaults,field),
+            (:reltol,:voltage_abstol,:current_abstol,:state_abstol)) &&
+            throw(AnalysisValidationError("IntegrationOptions tolerances require adaptive=true; fixed stepping does not estimate local integration error"))
+    end
     t0, t1 = Float64(_si_value(first(interval), Unitful.s)), Float64(_si_value(last(interval), Unitful.s))
     isfinite(t0)&&isfinite(t1)&&t1 > t0||throw(AnalysisValidationError("transient interval must be finite and increasing"))
     saveat === nothing||(isfinite(saveat)&&saveat > 0)||throw(AnalysisValidationError("saveat must be finite and positive"))
     max_step === nothing||(isfinite(max_step)&&max_step > 0)||throw(AnalysisValidationError("max_step must be finite and positive"))
+    if adaptive
+        integration.min_step <= something(max_step,(t1-t0)/10) ||
+            throw(AnalysisValidationError("integration min_step must not exceed the effective max_step"))
+    end
     method in (:bdf1, :bdf2, :trapezoidal)||throw(AnalysisValidationError("method must be :bdf1, :bdf2, or :trapezoidal"))
     event_mode in (nothing, :exact)||throw(AnalysisValidationError("event_mode must be nothing or :exact"))
     isfinite(reltol)&&reltol > 0||throw(AnalysisValidationError("reltol must be finite and positive"))
@@ -271,7 +297,7 @@ Base.@kwdef struct SmallSignal <: AbstractAnalysis
     frequencies::Vector{Float64}
     source::Union{Nothing, Symbol, String} = nothing
     temperature::Float64 = 300.0
-    solver::SolverOptions = SolverOptions()
+    solver::Union{Nothing, SolverOptions} = nothing
     function SmallSignal(
             frequencies, source, temperature, solver
         )
@@ -279,7 +305,7 @@ Base.@kwdef struct SmallSignal <: AbstractAnalysis
             _analysis_parameter(:frequencies, frequencies),
             _analysis_parameter(:source, source),
             _analysis_parameter(:temperature, temperature),
-            _analysis_parameter(:solver, solver)
+            solver === nothing ? nothing : _analysis_parameter(:solver, solver)
         )
     end
 end

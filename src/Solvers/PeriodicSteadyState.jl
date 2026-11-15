@@ -30,7 +30,10 @@ end
 floquet_multipliers(result::PSSResult) = result.floquet_multipliers
 
 function _pss_cycle(cc, start, period, state; saveat, max_step, method, event_mode, temperature, reltol = nothing, abstol = nothing, maxiters = nothing, solver = SolverOptions())
-    result = transient(cc, start => (start + period); initial = state, saveat, max_step, method, event_mode, temperature, reltol, abstol, maxiters, solver, adaptive = false)
+    nonlinear = _effective_solver(solver; reltol, abstol, maxiters)
+    result = transient(cc, start => (start + period); initial = state, saveat,
+        max_step=max_step === nothing ? saveat : min(max_step,saveat), method, event_mode, temperature,
+        solver=nonlinear, adaptive=false)
     return _require_converged(result, "PSS shooting trajectory")
 end
 

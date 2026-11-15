@@ -1,0 +1,30 @@
+julia_version = "1.13.1"
+threads = 1
+
+[[cases]]
+amber_accepted_steps = 3360
+amber_adaptive = false
+amber_batch_allocated_bytes = 494040904
+amber_first_seconds = 12.929254761
+amber_newton_iterations = 10016
+amber_newton_reltol = 1.0e-6
+amber_retained_values_bytes = 376432
+amber_saved_points = 3361
+amber_speedup = 0.24547663700663483
+amber_warm_batch_seconds = 0.280984414
+checked_nodes = [1, 10]
+compilation_seconds = 2.951943423
+construction_seconds = 1.826906289
+inverters = 10
+kind = "transient"
+max_response_error = 0.009815308508231979
+mosfets = 20
+ngspice_batch_process_seconds = 0.068975109
+ngspice_points_per_analysis = 4592
+ngspice_reltol = 1.0e-6
+repeats = 1
+response_error_grid = "Amber saved times; ngspice linearly interpolated"
+step = 6.25e-11
+stop = 2.1e-7
+topology = "chain"
+unknowns = 14

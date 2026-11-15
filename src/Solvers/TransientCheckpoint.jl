@@ -12,7 +12,13 @@ function save_checkpoint(path::AbstractString, result::SimulationResult{<:Any,<:
     return path
 end
 
-"""Resume a checkpoint against exactly matching circuit parameters. BDF history is restarted."""
+"""
+Resume a checkpoint against exactly matching circuit parameters. State, method,
+and temperature are retained; BDF history is restarted. Stepping, sampling,
+tolerances, and failure policy come from the supplied keywords and the normal
+transient defaults, not from the state-only checkpoint. Supply `adaptive=false`
+and an explicit `max_step` when resuming a prescribed-grid experiment.
+"""
 function resume_transient(c, path::AbstractString, stop; kwargs...)
     data = TOML.parsefile(path)
     get(data, "schema", 0) == 1 || throw(ArgumentError("unsupported checkpoint schema"))

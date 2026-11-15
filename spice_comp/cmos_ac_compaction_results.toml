@@ -1,0 +1,21 @@
+[[cases]]
+baseline_seconds = 0.005628633
+compact_nnz = 406
+compact_seconds = 0.002297251
+inverters = 100
+speedup = 2.4501602132287674
+union_nnz = 510
+[[cases]]
+baseline_seconds = 0.054349053
+compact_nnz = 4006
+compact_seconds = 0.020587222
+inverters = 1000
+speedup = 2.6399410760713615
+union_nnz = 5010
+[[cases]]
+baseline_seconds = 0.639946626
+compact_nnz = 40006
+compact_seconds = 0.222222504
+inverters = 10000
+speedup = 2.8797561654691823
+union_nnz = 50010

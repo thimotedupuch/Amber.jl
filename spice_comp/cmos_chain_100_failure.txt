@@ -1,0 +1,18 @@
+100-inverter chain transient, 1 us stop, 62.5 ps maximum step.
+Matched Level-1 benchmark, ordinary operating-point initialization.
+Original Amber fails before transient begins: LinearSolveError: Newton matrix is singular at iteration 3.
+Stack trace confirms _initial_transient_state -> operating_point -> _continuation_step -> _newton.
+No timing result or waveform comparison is claimed for this case.
+
+Source inspection: _continuation_step calls _newton directly and only handles a
+returned nonconverged flag. LinearSolveError escapes before continuation step
+subdivision or pseudo-transient fallback. This identifies an error-handling gap;
+the underlying numerical singularity/conditioning cause was not established.
+The chain was not seeded with different initial conditions to obtain timings.
+
+Recovery implemented after investigation: treating an intermediate linear-solve
+error as a rejected continuation step lets the existing pseudo-transient fallback
+converge the 100-stage operating point without altered initial states. The probe
+reports converged=true and alternating 5/0 V output rails. Regression additionally
+checks the full DC residual and a genuinely floating source still failing.
+The 100-stage transient waveform has not been validated and has no timing claim.
