@@ -3,3 +3,6 @@
 *.mem
 /coverage/
 /ngspice-47-manual.pdf
+# pixi environments
+.pixi/*
+!.pixi/config.toml

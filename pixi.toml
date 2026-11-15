@@ -1,0 +1,13 @@
+[workspace]
+channels = ["conda-forge"]
+name = "Amber.jl"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
+schematics = "python docs/schematics/draw.py"
+
+[dependencies]
+python = "3.12.*"
+schemdraw = ">=0.19,<0.20"
+matplotlib = ">=3.11.2,<4"

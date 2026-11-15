@@ -100,6 +100,8 @@ end
 filter = LowPass()
 ```
 
+![Low-pass RC circuit](docs/schematics/low_pass.svg)
+
 Values such as `10kΩ`, `1V`, and `100μs` are Unitful.jl quantities.
 Physical inputs are dimensionally checked and converted to SI values at the
 simulation boundary. Use `uconvert` and `ustrip` for explicit conversions.
@@ -201,6 +203,8 @@ or [rectifier startup, ripple, and device warnings](#rectifier-startup-and-smoot
 
 ### Strain-gauge bridge: DC sensitivity
 
+![Strain-gauge bridge: DC sensitivity](docs/schematics/strain_bridge.svg)
+
 A quarter-bridge uses one active 350 Ω strain gauge and three fixed resistors.
 With gauge factor 2 and 500 microstrain, its fractional resistance change is
 0.001. The differential output is negative for the terminal order below:
@@ -238,6 +242,8 @@ println((bridge_output_V=vbridge, strains=strains,
 ```
 
 ### Op-amp voltage follower and noise measurement
+
+![Op-amp voltage follower and noise measurement](docs/schematics/follower.svg)
 
 The five `opamp` terminals are **positive input, negative input, output,
 positive supply, negative supply**. A follower connects its negative input to
@@ -281,6 +287,8 @@ square root. The behavioral model is illustrative; choose noise parameters
 appropriate to the device being modeled.
 
 ### Rectifier: startup and smoothing-capacitor ripple
+
+![Rectifier: startup and smoothing-capacitor ripple](docs/schematics/rectifier.svg)
 
 This half-wave rectifier converts a 10 V peak, 50 Hz sine into a DC output.
 Measure the last two cycles after startup, then compare the ripple with the
@@ -331,6 +339,8 @@ before relying on a ripple measurement. Increase `C` to explore the tradeoff
 between ripple and charging-current peaks, using `current(tr, :D1)`.
 
 ### CMOS inverter: DC transfer characteristic
+
+![CMOS inverter: DC transfer characteristic](docs/schematics/cmos_inverter.svg)
 
 Sweep the input of a complementary MOS inverter from ground to its 5 V supply.
 The NMOS bulk connects to ground and the PMOS bulk to the supply; transistor
@@ -1346,6 +1356,21 @@ julia --project=. examples/11_precision_bridge/monte_carlo.jl
 ```
 
 ## Development
+
+Generate the README circuit schematics in an isolated Python environment with
+[Pixi](https://pixi.sh):
+
+```sh
+pixi run schematics
+```
+
+Pixi installs the locked Python, Schemdraw, and Matplotlib dependencies locally
+in `.pixi/`. The [drawing script](docs/schematics/draw.py) writes SVG images for
+this README and PNG copies for display. These are hand-authored illustrations
+of the tour and four electrical engineering examples, not an automatic Julia
+netlist renderer. The CMOS bulk ties are to the corresponding source rails;
+the follower supply labels denote the VDD and VSS sources to ground.
+
 
 Run the complete test suite with:
 
