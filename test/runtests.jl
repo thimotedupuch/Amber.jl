@@ -1,6 +1,8 @@
 using Test
 using Amber
 
+include("aqua.jl")
+
 include("fixtures/circuits.jl")
 
 @testset "Amber.jl" begin

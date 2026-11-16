@@ -136,8 +136,15 @@ _parameter_expression(value) = ParameterLiteral(value)
 _parameter_call(operation::Symbol, args...) = ParameterCall(_PARAMETER_OPERATIONS[operation], AbstractParameterExpression[_parameter_expression(arg) for arg in args])
 for operation in (:+, :-, :*, :/, :^, :min, :max)
     @eval begin
+        Base.$operation(a::AbstractParameterExpression, b::AbstractParameterExpression) = _parameter_call($(QuoteNode(operation)), a, b)
         Base.$operation(a::AbstractParameterExpression, b) = _parameter_call($(QuoteNode(operation)), a, b)
         Base.$operation(a, b::AbstractParameterExpression) = _parameter_call($(QuoteNode(operation)), a, b)
+    end
+end
+for operation in (:min, :max)
+    @eval begin
+        Base.$operation(a::AbstractParameterExpression, b::Missing) = _parameter_call($(QuoteNode(operation)), a, b)
+        Base.$operation(a::Missing, b::AbstractParameterExpression) = _parameter_call($(QuoteNode(operation)), a, b)
     end
 end
 Base.:-(a::AbstractParameterExpression) = _parameter_call(:-, 0, a)
