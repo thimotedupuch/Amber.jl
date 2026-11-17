@@ -189,6 +189,8 @@ simulation's recorded reason and next steps, or `result.failures` for study
 failures. Use `report(result)` or `validity_report(result)` for simulation model checks.
 Display does not run a simulation or compute model-validity metrics.
 
+Use [AmberSchematics](AmberSchematics/) to export circuit diagrams from an Amber design.
+
 Use [AmberMakie](AmberMakie/) when interactive Makie workbenches, Bode plots,
 Smith charts, spectra, noise budgets, or publication figures are wanted. It is
 a separate package so the simulation core does not depend on a graphics stack.
@@ -1357,19 +1359,18 @@ julia --project=. examples/11_precision_bridge/monte_carlo.jl
 
 ## Development
 
-Generate the README circuit schematics in an isolated Python environment with
-[Pixi](https://pixi.sh):
+Generate the README circuit schematics from the repository root with Julia:
 
 ```sh
-pixi run schematics
+julia --project=AmberSchematics -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+julia --project=AmberSchematics docs/schematics/draw.jl
 ```
 
-Pixi installs the locked Python, Schemdraw, and Matplotlib dependencies locally
-in `.pixi/`. The [drawing script](docs/schematics/draw.py) writes SVG images for
-this README and PNG copies for display. These are hand-authored illustrations
-of the tour and four electrical engineering examples, not an automatic Julia
-netlist renderer. The CMOS bulk ties are to the corresponding source rails;
-the follower supply labels denote the VDD and VSS sources to ground.
+The [drawing script](docs/schematics/draw.jl) uses the circuit declarations
+in this README and exports dark SVG and PNG assets. The layouts and routes are
+specified in Julia and validated against the Amber circuit nets. The inverter
+uses compact MOS symbols because its bulk terminals are tied to their source
+rails.
 
 
 Run the complete test suite with:

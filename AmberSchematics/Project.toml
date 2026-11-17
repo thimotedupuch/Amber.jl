@@ -1,0 +1,22 @@
+name = "AmberSchematics"
+uuid = "faf33015-2bd0-4c4b-bfcf-f7b3cf605ada"
+version = "0.1.0"
+authors = ["Amber contributors"]
+
+[deps]
+Amber = "2c7a1e4c-6de2-4e12-9714-7d38608cb52a"
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+
+[sources]
+Amber = {path = ".."}
+
+[compat]
+Amber = "0.1"
+CairoMakie = "0.15"
+julia = "1.10"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]

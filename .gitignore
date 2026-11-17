@@ -6,3 +6,7 @@
 # pixi environments
 .pixi/*
 !.pixi/config.toml
+
+# Local reference checkout
+/schemdraw/
+/AmberSchematics/Manifest.toml
