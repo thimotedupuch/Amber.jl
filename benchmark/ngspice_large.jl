@@ -1,4 +1,4 @@
-# Run: julia --project=. benchmark/ngspice_large.jl
+# Run: julia --project=Amber benchmark/ngspice_large.jl
 using Amber, TOML
 const NGSPICE=abspath(joinpath(@__DIR__,"../spice_comp/.pixi/envs/default/bin/ngspice"))
 function large_design(topology,n)

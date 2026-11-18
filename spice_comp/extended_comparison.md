@@ -4,7 +4,7 @@ Reproduce from the repository root:
 
 ```sh
 pixi install --manifest-path spice_comp/pixi.toml
-julia --project=. benchmark/ngspice_extended.jl
+julia --project=Amber benchmark/ngspice_extended.jl
 ```
 
 Julia 1.13.1, one thread, ngspice 41. Each circuit is compiled before its first
@@ -86,7 +86,7 @@ At 25 ns it drops to 0.358 mV (about 14x smaller). The refined 1,000-load run co
 Reproduce refinement with:
 
 ```sh
-AMBER_SPICE_KINDS=transient AMBER_SPICE_CELLS=100,1000 AMBER_SPICE_STEP=2.5e-8 julia --project=. benchmark/ngspice_extended.jl
+AMBER_SPICE_KINDS=transient AMBER_SPICE_CELLS=100,1000 AMBER_SPICE_STEP=2.5e-8 julia --project=Amber benchmark/ngspice_extended.jl
 ```
 
 ngspice's adaptive steps, Amber's fixed-step integration, and output retention
@@ -97,6 +97,6 @@ checks the complete first-node frequency response against ngspice; regression
 tests additionally compare all states with the original SuiteSparse solve.
 
 Focused compiler, operating-point, transient and small-signal tests pass.
-The full `julia --project=. test/runtests.jl` suite also passes: 3,599/3,599
+The full `julia --project=Amber Amber/test/runtests.jl` suite also passes: 3,599/3,599
 tests, 9 minutes 46.5 seconds (excluding the timing pause).
 Raw after data: `extended_results_after.toml`.

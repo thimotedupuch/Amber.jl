@@ -43,7 +43,7 @@ parallel compiler implementations or default backend replacement are planned.
 
 ## Item 1: current implementation boundary
 
-`src/Core/ConstitutiveIR.jl` provides internal, tuple-typed expression nodes,
+`Amber/src/Core/ConstitutiveIR.jl` provides internal, tuple-typed expression nodes,
 lazy piecewise branches, symbolic first derivatives (also differentiable again
 for supported expressions), local zero/one derivative simplification, input
 incidence inspection, and a local current/charge kernel. No runtime `eval`,

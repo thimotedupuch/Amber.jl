@@ -60,15 +60,18 @@ from GitHub:
 
 ```julia
 using Pkg
-Pkg.add(url="https://github.com/thimotedupuch/Amber.jl")
+Pkg.add(url="https://github.com/thimotedupuch/Amber.jl", subdir="Amber")
 ```
 
-For development, clone the repository and instantiate it:
+The repository contains three sibling packages: [Amber](Amber/),
+[AmberMakie](AmberMakie/), and [AmberSchematics](AmberSchematics/).
+
+For development, clone the repository and instantiate Amber:
 
 ```sh
 git clone https://github.com/thimotedupuch/Amber.jl
 cd Amber.jl
-julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
+julia --project=Amber -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
 ```
 
 ## A five-minute tour
@@ -385,9 +388,9 @@ The capacitor is open at DC; switching delay requires a transient analysis
 with a pulse input and resolved rise/fall times. Use `ChargeBasedMOSFET` when
 continuous weak-inversion behavior and conserving terminal charges matter.
 
-For more detailed models, see the [precision bridge](examples/11_precision_bridge/circuit.jl),
-[rectifier startup](examples/02_diode_rectifier/startup.jl), and
-[CMOS inverter switching](examples/12_cmos_inverter/analyses.jl) examples.
+For more detailed models, see the [precision bridge](Amber/examples/11_precision_bridge/circuit.jl),
+[rectifier startup](Amber/examples/02_diode_rectifier/startup.jl), and
+[CMOS inverter switching](Amber/examples/12_cmos_inverter/analyses.jl) examples.
 
 ## Building circuits
 
@@ -796,7 +799,7 @@ unequal logic levels. Automatic edge selection rejects ambiguous periodic
 records; missing responses or recrossings return `NaN`. Both timing helpers
 reject nonconverged results. Refine the timestep and compare delays **and**
 energy; a converged solver is not an accuracy guarantee. The
-[Amber-only inverter example](examples/12_cmos_inverter/analyses.jl) demonstrates
+[Amber-only inverter example](Amber/examples/12_cmos_inverter/analyses.jl) demonstrates
 this check.
 
 ## Charge-based CMOS characterization
@@ -813,8 +816,8 @@ point.capacitance_matrix           # signed dQi/dVj: drain, gate, source, bulk
 ```
 
 The same model works with `nmos`/`pmos`, compiled parameter updates, AC,
-transient and noise. See the [model implementation](src/Devices/ChargeBasedMOSFET.jl) and
-[verification tests](test/Devices/charge_based_mosfet.jl) for equations,
+transient and noise. See the [model implementation](Amber/src/Devices/ChargeBasedMOSFET.jl) and
+[verification tests](Amber/test/Devices/charge_based_mosfet.jl) for equations,
 characterization sweeps, and conservation checks.
 
 Instance geometry can be set at construction or updated on a compiled circuit:
@@ -1046,8 +1049,8 @@ Catalog defaults are illustrative: the comparator is smooth and memoryless
 (no delay or hysteresis), the thermistor uses a fixed supplied temperature, and
 the LED models an electrical junction without optical output. The transmission
 line is a lumped pi-section RLGC approximation whose R/L/G/C parameters are total
-line values. See the [catalog example](examples/18_device_catalog/circuit.jl)
-and [constructor docstrings](src/Devices/Catalog.jl) for terminal order and limits.
+line values. See the [catalog example](Amber/examples/18_device_catalog/circuit.jl)
+and [constructor docstrings](Amber/src/Devices/Catalog.jl) for terminal order and limits.
 
 ### Resistor materials, passive packages, and capacitor dielectrics
 
@@ -1329,7 +1332,7 @@ results against theory or an independent implementation.
 
 ## Examples
 
-The [example gallery](examples/) is executable and covers:
+The [example gallery](Amber/examples/) is executable and covers:
 
 - a practical RC filter with package and material effects;
 - diode rectification and startup;
@@ -1342,19 +1345,19 @@ The [example gallery](examples/) is executable and covers:
 - correlated Monte Carlo on a precision bridge;
 - CMOS transfer and propagation delay;
 - conductance-crossbar matrix multiplication;
-- a [light detector and transformer divider](examples/18_device_catalog/circuit.jl)
+- a [light detector and transformer divider](Amber/examples/18_device_catalog/circuit.jl)
   using the extended device catalog;
 - difficult nonlinear convergence and regenerative circuits; and
-- [systems beyond electronics](examples/17_beyond_electronics/), including
+- [systems beyond electronics](Amber/examples/17_beyond_electronics/), including
   thermal, SIR epidemic, Hodgkin-Huxley, Josephson-junction, and acoustic
   waveguide models built from behavioral constitutive laws.
 
 Run an example from the repository root:
 
 ```sh
-julia --project=. examples/03_common_emitter/noise.jl
-julia --project=. examples/07_rlgc_line/step_response.jl
-julia --project=. examples/11_precision_bridge/monte_carlo.jl
+julia --project=Amber Amber/examples/03_common_emitter/noise.jl
+julia --project=Amber Amber/examples/07_rlgc_line/step_response.jl
+julia --project=Amber Amber/examples/11_precision_bridge/monte_carlo.jl
 ```
 
 ## Development
@@ -1362,7 +1365,7 @@ julia --project=. examples/11_precision_bridge/monte_carlo.jl
 Generate the README circuit schematics from the repository root with Julia:
 
 ```sh
-julia --project=AmberSchematics -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+julia --project=AmberSchematics -e 'using Pkg; Pkg.develop(path="Amber"); Pkg.instantiate()'
 julia --project=AmberSchematics docs/schematics/draw.jl
 ```
 

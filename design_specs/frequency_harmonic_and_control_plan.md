@@ -8,7 +8,7 @@
   (G+j\omega C)\hat{x}=\hat{b}.
   ]
 
-  It computes a DC operating point, extracts the static and dynamic Jacobians, and solves the sparse complex system at each frequency (src/Solvers/SmallSignal.jl:1).
+  It computes a DC operating point, extracts the static and dynamic Jacobians, and solves the sparse complex system at each frequency (Amber/src/Solvers/SmallSignal.jl:1).
 
   Consequently, it already supports:
 
@@ -42,7 +42,7 @@
 
   ### Noise analysis
 
-  Amber also has a valuable frequency-domain noise solver. It uses an adjoint solve per output and frequency, allowing multiple independent physical noise sources to be accumulated efficiently (src/Solvers/Noise.jl:58).
+  Amber also has a valuable frequency-domain noise solver. It uses an adjoint solve per output and frequency, allowing multiple independent physical noise sources to be accumulated efficiently (Amber/src/Solvers/Noise.jl:58).
 
   Currently represented are:
 
@@ -74,7 +74,7 @@
   - Peak-based amplitude.
   - THD from harmonics 2 through 5.
 
-  That implementation is deliberately elementary (src/Analysis/Metrics.jl:28). It uses zero crossings to estimate frequency and evaluates five Fourier components directly.
+  That implementation is deliberately elementary (Amber/src/Analysis/Metrics.jl:28). It uses zero crossings to estimate frequency and evaluates five Fourier components directly.
 
   ### Control-adjacent functionality
 
@@ -108,7 +108,7 @@
   - Consistent complex AC amplitude and phase specification.
   - Integrated-noise calculations over arbitrary bands.
 
-  At present source=nothing means all nonzero AC sources are combined, which is mathematically legitimate but easy to invoke accidentally (src/Core/Compilation.jl:219).
+  At present source=nothing means all nonzero AC sources are combined, which is mathematically legitimate but easy to invoke accidentally (Amber/src/Core/Compilation.jl:219).
 
   ### 2. Make impedance and port analysis first-class
 

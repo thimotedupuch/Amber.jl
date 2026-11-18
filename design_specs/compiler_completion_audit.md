@@ -21,12 +21,12 @@ identified in the individual studies.
 | 12 Typed ownership | Core/CompiledSolvePlan.jl, Workspace.jl | Core/compiled_solve_plan.jl |
 
 All test paths are relative to `test/`; implementation paths are relative to
-`src/`. `test/runtests.jl` includes these checks together with device, solver,
+`Amber/src/`. `Amber/test/runtests.jl` includes these checks together with device, solver,
 analysis, serialization, result and diagnostic regressions. The initial four-thread full run completed 3,575 assertions successfully and
 failed two obsolete capacitor-update rejection expectations (13m14.4s). The
 replacement checks compare updated loss/absorption models against freshly
 rebuilt circuits across three frequencies; all 69 device keyword assertions
-then passed. The clean rerun of `julia --threads=4 --project=. test/runtests.jl`
+then passed. The clean rerun of `julia --threads=4 --project=Amber Amber/test/runtests.jl`
 completed successfully: **3,577/3,577 assertions**, Julia 1.13.1, 8m28.5s.
 No implementation source changed between that run and this final documentation
 checkpoint.

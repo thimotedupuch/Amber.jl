@@ -1,4 +1,4 @@
-# Run with julia --project=. benchmark/constitutive_ir.jl
+# Run with julia --project=Amber benchmark/constitutive_ir.jl
 # Compare equal outputs: I, q, dI/dV, dq/dV, d²q/dV².
 using Amber, TOML
 function reference(model, inputs)

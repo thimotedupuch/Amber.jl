@@ -1,4 +1,4 @@
-# julia --project=. benchmark/linear_reduction.jl > measurements.toml
+# julia --project=Amber benchmark/linear_reduction.jl > measurements.toml
 using Amber, SparseArrays, LinearAlgebra, TOML
 function sample(f,args...)
     f(args...)

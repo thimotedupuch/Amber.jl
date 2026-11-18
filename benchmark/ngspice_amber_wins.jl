@@ -1,4 +1,4 @@
-# Run: julia --project=. benchmark/ngspice_amber_wins.jl
+# Run: julia --project=Amber benchmark/ngspice_amber_wins.jl
 # Batch analyses in one ngspice process to amortize process startup and parsing.
 include("ngspice_extended.jl")
 function batch_comparison(kind, n, points, repeats)

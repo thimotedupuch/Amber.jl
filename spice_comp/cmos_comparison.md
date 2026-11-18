@@ -111,10 +111,10 @@ analyses. No claim of a cold end-to-end win is made.
 
 ```sh
 pixi install --manifest-path spice_comp/pixi.toml
-AMBER_SPICE_KINDS=dc,ac AMBER_SPICE_CELLS=1000,10000 AMBER_SPICE_REPEATS=10 julia --project=. benchmark/ngspice_cmos.jl
-AMBER_SPICE_KINDS=transient AMBER_SPICE_CELLS=1,100 julia --project=. benchmark/ngspice_cmos.jl
-AMBER_SPICE_KINDS=transient AMBER_SPICE_CELLS=1 AMBER_SPICE_STEP=1.5625e-11 AMBER_SPICE_REPEATS=1 julia --project=. benchmark/ngspice_cmos.jl
-AMBER_SPICE_KINDS=transient AMBER_SPICE_TOPOLOGY=chain AMBER_SPICE_CELLS=10 AMBER_SPICE_REPEATS=1 julia --project=. benchmark/ngspice_cmos.jl
+AMBER_SPICE_KINDS=dc,ac AMBER_SPICE_CELLS=1000,10000 AMBER_SPICE_REPEATS=10 julia --project=Amber benchmark/ngspice_cmos.jl
+AMBER_SPICE_KINDS=transient AMBER_SPICE_CELLS=1,100 julia --project=Amber benchmark/ngspice_cmos.jl
+AMBER_SPICE_KINDS=transient AMBER_SPICE_CELLS=1 AMBER_SPICE_STEP=1.5625e-11 AMBER_SPICE_REPEATS=1 julia --project=Amber benchmark/ngspice_cmos.jl
+AMBER_SPICE_KINDS=transient AMBER_SPICE_TOPOLOGY=chain AMBER_SPICE_CELLS=10 AMBER_SPICE_REPEATS=1 julia --project=Amber benchmark/ngspice_cmos.jl
 ```
 
 Raw files: `cmos_dc_ac_results.toml` (original bank baseline),

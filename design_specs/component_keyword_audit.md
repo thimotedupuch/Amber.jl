@@ -1,7 +1,7 @@
 # Component keyword audit
 
 Component keywords are checked against the implemented primitive contracts in
-`src/Devices/Ideal.jl`. Model constructors separately check their named parameters.
+`Amber/src/Devices/Ideal.jl`. Model constructors separately check their named parameters.
 A parameter can legitimately affect only one analysis, or require another effect
 to be enabled (for example, a flicker exponent with nonzero flicker coefficient).
 

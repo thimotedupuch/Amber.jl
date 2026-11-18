@@ -1,4 +1,4 @@
-# Run: julia --project=. benchmark/ngspice_cmos_audit.jl
+# Run: julia --project=Amber benchmark/ngspice_cmos_audit.jl
 # Accuracy audit only; this script does not benchmark runtime.
 include("ngspice_cmos.jl")
 

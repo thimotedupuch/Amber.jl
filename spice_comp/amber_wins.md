@@ -43,7 +43,7 @@ Reproduce:
 
 ```sh
 pixi install --manifest-path spice_comp/pixi.toml
-AMBER_SPICE_CELLS=1,2,5 AMBER_SPICE_POINTS=10001 AMBER_SPICE_REPEATS=20 AMBER_SPICE_KINDS=ac julia --project=. benchmark/ngspice_amber_wins.jl
+AMBER_SPICE_CELLS=1,2,5 AMBER_SPICE_POINTS=10001 AMBER_SPICE_REPEATS=20 AMBER_SPICE_KINDS=ac julia --project=Amber benchmark/ngspice_amber_wins.jl
 ```
 
 ## Where the win disappears
@@ -64,7 +64,7 @@ ngspice may benefit from previous operating points in repeated DC commands, wher
 Amber's `operating_point` API starts afresh here. This is a useful workflow result,
 not evidence that Amber's nonlinear solver is faster. At 1,000 RC cells, AC batch
 performance is approximately equal. The default batch experiment is reproduced by
-`julia --project=. benchmark/ngspice_amber_wins.jl`.
+`julia --project=Amber benchmark/ngspice_amber_wins.jl`.
 
 Likely favorable workloads (inferences, not all benchmarked here): long-lived Julia
 sessions running many small structured frequency sweeps; parameter exploration

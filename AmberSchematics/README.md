@@ -6,7 +6,7 @@ From the Amber repository root, install the companion package into your active J
 
 ```julia
 using Pkg
-Pkg.develop(path = ".")
+Pkg.develop(path = "Amber")
 Pkg.develop(path = "AmberSchematics")
 ```
 

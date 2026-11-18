@@ -10,9 +10,9 @@ CairoMakie.activate!()
 
 # Reuse the repository examples so every panel can be traced to a runnable
 # circuit definition. Only the plotted analysis parameters are selected here.
-include(joinpath(@__DIR__, "..", "..", "examples", "12_cmos_inverter", "circuit.jl"))
-include(joinpath(@__DIR__, "..", "..", "examples", "11_precision_bridge", "circuit.jl"))
-include(joinpath(@__DIR__, "..", "..", "examples", "05_wien_oscillator", "circuit.jl"))
+include(joinpath(@__DIR__, "..", "..", "Amber", "examples", "12_cmos_inverter", "circuit.jl"))
+include(joinpath(@__DIR__, "..", "..", "Amber", "examples", "11_precision_bridge", "circuit.jl"))
+include(joinpath(@__DIR__, "..", "..", "Amber", "examples", "05_wien_oscillator", "circuit.jl"))
 
 inverter_sweep = sweep(
     CMOSInverter(), "Input.dc" => range(0V, 5V; length = 201);

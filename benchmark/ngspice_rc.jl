@@ -1,4 +1,4 @@
-# Run from the repository root: julia --project=. benchmark/ngspice_rc.jl
+# Run from the repository root: julia --project=Amber benchmark/ngspice_rc.jl
 using Amber, TOML
 @subcircuit SpiceComparisonCell(input, output, reference) begin
     R = resistor(input, output; value = 1e3)

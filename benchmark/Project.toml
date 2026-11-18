@@ -3,7 +3,7 @@ Amber = "2c7a1e4c-6de2-4e12-9714-7d38608cb52a"
 TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 
 [sources]
-Amber = {path = ".."}
+Amber = {path = "../Amber"}
 
 [compat]
 julia = "1.10"

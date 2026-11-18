@@ -19,7 +19,7 @@ Implemented for roadmap items 1, 2, and 4:
   behavior at these knees is not qualified, and noise injection clipping is
   not yet modeled.
 
-Validation: standalone `julia --project=. test/Devices/model_extensions.jl`
+Validation: standalone `julia --project=Amber Amber/test/Devices/model_extensions.jl`
 checks callback conservation/errors, temperature precedence, loaded-follower
 current limiting and transient slew bounds. Existing hardening expectations
 were updated for newly supported parameters. All 13 extension assertions and

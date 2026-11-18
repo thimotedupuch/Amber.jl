@@ -5,7 +5,7 @@ Reproduce from the repository root:
 
 ```
 pixi install --manifest-path spice_comp/pixi.toml
-julia --project=. benchmark/ngspice_rc.jl
+julia --project=Amber benchmark/ngspice_rc.jl
 ```
 
 Seconds, minimum of five warmed runs:

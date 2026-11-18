@@ -1,4 +1,4 @@
-# Run: julia --project=. benchmark/ngspice_extended.jl
+# Run: julia --project=Amber benchmark/ngspice_extended.jl
 using Amber, TOML
 const SPICE = abspath(joinpath(@__DIR__, "../spice_comp/.pixi/envs/default/bin/ngspice"))
 function build_case(kind, n)

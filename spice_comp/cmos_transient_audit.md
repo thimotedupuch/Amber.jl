@@ -86,12 +86,12 @@ all-node and fine-reference checks.
 
 ```sh
 # Original workflow with corrected metadata and all-bank symmetry assertion:
-AMBER_SPICE_KINDS=transient AMBER_SPICE_CELLS=1,100 AMBER_SPICE_REPEATS=1 julia --project=. benchmark/ngspice_cmos.jl
-AMBER_SPICE_KINDS=transient AMBER_SPICE_TOPOLOGY=chain AMBER_SPICE_CELLS=10 AMBER_SPICE_REPEATS=1 julia --project=. benchmark/ngspice_cmos.jl
+AMBER_SPICE_KINDS=transient AMBER_SPICE_CELLS=1,100 AMBER_SPICE_REPEATS=1 julia --project=Amber benchmark/ngspice_cmos.jl
+AMBER_SPICE_KINDS=transient AMBER_SPICE_TOPOLOGY=chain AMBER_SPICE_CELLS=10 AMBER_SPICE_REPEATS=1 julia --project=Amber benchmark/ngspice_cmos.jl
 # Independent all-node, high-precision reference accuracy audit:
-julia --project=. benchmark/ngspice_cmos_audit.jl
+julia --project=Amber benchmark/ngspice_cmos_audit.jl
 # Diagnostic only, in its own Julia process:
-julia --project=. benchmark/cmos_linear_solver_diagnostic.jl
+julia --project=Amber benchmark/cmos_linear_solver_diagnostic.jl
 ```
 
 Raw metadata rechecks: `cmos_transient_audit_recheck.toml`,

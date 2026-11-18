@@ -42,7 +42,7 @@ heterogeneous behavioral circuits. It reports elaboration and Julia compilation
 separately from warm evaluation, parameter updates, structural analysis, and AC
 sweeps. These are workload measurements, not tests of Julia's language behavior.
 
-Validation on Julia 1.12.6: the complete `test/runtests.jl` suite passed all
+Validation on Julia 1.12.6: the complete `Amber/test/runtests.jl` suite passed all
 2,363 tests. A separate two-thread run of `test/Analysis/monte_carlo.jl` passed
 all 32 checks. Both benchmark drivers completed successfully during development.
 

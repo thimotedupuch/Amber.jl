@@ -8,7 +8,7 @@ Amber = "2c7a1e4c-6de2-4e12-9714-7d38608cb52a"
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 
 [sources]
-Amber = {path = ".."}
+Amber = {path = "../Amber"}
 
 [compat]
 Amber = "0.1"

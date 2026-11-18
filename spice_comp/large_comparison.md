@@ -67,8 +67,8 @@ dense meshes, or parasitic networks with different connectivity.
 
 ```sh
 pixi install --manifest-path spice_comp/pixi.toml
-AMBER_SPICE_TOPOLOGIES=path AMBER_SPICE_REPEATS=10 julia --project=. benchmark/ngspice_large.jl
-AMBER_SPICE_TOPOLOGIES=bank AMBER_SPICE_CELLS=10000 AMBER_SPICE_REPEATS=10 julia --project=. benchmark/ngspice_large.jl
+AMBER_SPICE_TOPOLOGIES=path AMBER_SPICE_REPEATS=10 julia --project=Amber benchmark/ngspice_large.jl
+AMBER_SPICE_TOPOLOGIES=bank AMBER_SPICE_CELLS=10000 AMBER_SPICE_REPEATS=10 julia --project=Amber benchmark/ngspice_large.jl
 ```
 
 Raw data: `large_path_results.toml`, `large_bank_results.toml`, and

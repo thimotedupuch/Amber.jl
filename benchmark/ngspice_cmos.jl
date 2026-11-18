@@ -1,4 +1,4 @@
-# Run: julia --project=. benchmark/ngspice_cmos.jl
+# Run: julia --project=Amber benchmark/ngspice_cmos.jl
 using Amber,TOML
 const CMOS_SPICE=abspath(joinpath(@__DIR__,"../spice_comp/.pixi/envs/default/bin/ngspice"))
 function cmos_design(n,kind; topology="bank")

@@ -24,7 +24,7 @@ and [rectifier startup, ripple, and device warnings](#rectifier-startup-and-smoo
 
 ## Set up the environment safely
 
-Amber and AmberMakie are not registered Julia packages. Install them from `https://github.com/thimotedupuch/Amber.jl`; Amber is the root package and AmberMakie is the optional `AmberMakie` subpackage. Amber is always required: it constructs and simulates circuits and owns the result types. AmberMakie only visualizes results produced by Amber; it is neither a standalone simulator nor an alternative to Amber. Always install Amber first, and install AmberMakie only when the task needs graphs or an interactive workbench.
+Amber and AmberMakie are not registered Julia packages. Install them from `https://github.com/thimotedupuch/Amber.jl`; Amber is in the `Amber` directory and the optional AmberMakie package is in `AmberMakie`. Amber is always required: it constructs and simulates circuits and owns the result types. AmberMakie only visualizes results produced by Amber; it is neither a standalone simulator nor an alternative to Amber. Always install Amber first, and install AmberMakie only when the task needs graphs or an interactive workbench.
 
 ### Choose the launcher
 
@@ -81,7 +81,7 @@ Always invoke Julia and Juliaup through these tasks so their depots stay under `
 Add Amber to the active Julia project:
 
 ```sh
-pixi run julia --project=. -e 'using Pkg; Pkg.add(url="https://github.com/thimotedupuch/Amber.jl"); Pkg.instantiate()'
+pixi run julia --project=. -e 'using Pkg; Pkg.add(url="https://github.com/thimotedupuch/Amber.jl", subdir="Amber"); Pkg.instantiate()'
 ```
 
 Only after Amber has been added, add AmberMakie when graphs are requested. Add CairoMakie as the rendering backend for headless or file-based plots:
@@ -105,7 +105,7 @@ export JULIA_DEPOT_PATH="$PWD/.pixi/julia-depot"
 The existing system Julia runtime remains outside the directory, but Amber and its Julia dependencies are installed locally:
 
 ```sh
-julia --project=. -e 'using Pkg; Pkg.add(url="https://github.com/thimotedupuch/Amber.jl"); Pkg.instantiate()'
+julia --project=. -e 'using Pkg; Pkg.add(url="https://github.com/thimotedupuch/Amber.jl", subdir="Amber"); Pkg.instantiate()'
 julia --project=. simulate.jl
 ```
 
@@ -115,7 +115,7 @@ Add plotting only when needed and only after the preceding Amber installation:
 julia --project=. -e 'using Pkg; Pkg.add(url="https://github.com/thimotedupuch/Amber.jl", subdir="AmberMakie"); Pkg.add("CairoMakie"); Pkg.instantiate()'
 ```
 
-For a long-lived result, pin a known repository revision with `Pkg.add(url=URL, rev="commit-or-tag")`. If already working in an Amber checkout, do not fetch another copy: use `julia --project=.` for Amber itself, or develop the local paths into a separate simulation environment with `Pkg.develop(path="/path/to/Amber.jl")` and `Pkg.develop(path="/path/to/Amber.jl/AmberMakie")`.
+For a long-lived result, pin a known repository revision with `Pkg.add(url=URL, subdir="Amber", rev="commit-or-tag")`. If already working in an Amber checkout, do not fetch another copy: use `julia --project=Amber` from the repository root, or develop the local paths into a separate simulation environment with `Pkg.develop(path="/path/to/Amber.jl/Amber")` and `Pkg.develop(path="/path/to/Amber.jl/AmberMakie")`.
 
 ## Understand Amber's model
 
@@ -149,8 +149,8 @@ constructors include `zener`, `schottky`, `led`, `photodiode`, `solar_cell`,
 `njfet`, `pjfet`, `analog_multiplier`, `voltage_limiter`, `comparator`,
 `voltage_controlled_resistor`, `varistor`, `thermistor`, `potentiometer`,
 `ideal_transformer`, `bridge_rectifier`, `crystal`, and `transmission_line`.
-Read `src/Devices/Catalog.jl` in the Amber checkout for signatures and terminal
-order; `examples/18_device_catalog/circuit.jl` demonstrates their composition.
+Read `Amber/src/Devices/Catalog.jl` in the Amber checkout for signatures and terminal
+order; `Amber/examples/18_device_catalog/circuit.jl` demonstrates their composition.
 
 Catalog models have specific limits: comparators have no delay or hysteresis;
 JFETs omit gate junctions and noise; thermistors evaluate a fixed supplied
@@ -190,7 +190,7 @@ positive pairwise capacitors. `id` is channel current, whereas `currents.drain`
 includes the body junction. Supply junction areas/perimeters explicitly; W/L
 does not infer them. Defaults do not describe a fabrication process. The model
 omits short-channel effects, self-heating, non-quasi-static transport, and
-junction shot noise. Read `src/Devices/ChargeBasedMOSFET.jl` and
+junction shot noise. Read `Amber/src/Devices/ChargeBasedMOSFET.jl` and
 `test/Devices/charge_based_mosfet.jl` for equations, temperature laws, and
 conservation checks. Refine the timestep when measuring nonlinear charge transfer;
 BDF applies discrete differences to stored terminal charges and flux; its
@@ -476,7 +476,7 @@ Use `occurrence` to select an input edge within the window, or separate
 `input_threshold`/`output_threshold` for unequal logic levels. Automatic edge
 selection rejects multiple crossings rather than guessing on periodic records.
 
-See `examples/12_cmos_inverter/analyses.jl` for an Amber-only study with
+See `Amber/examples/12_cmos_inverter/analyses.jl` for an Amber-only study with
 refinement checks. Add AmberMakie only for displays or visual study helpers.
 
 ## Use AmberMakie for visualization
@@ -820,9 +820,9 @@ with a pulse input and resolved rise/fall times. Use `ChargeBasedMOSFET` when
 continuous weak-inversion behavior and conserving terminal charges matter.
 
 For bridge offset and tolerance studies, use
-`examples/11_precision_bridge/monte_carlo.jl`; for a rectifier with diode charge,
-leakage, and dielectric absorption, use `examples/02_diode_rectifier/circuit.jl`
-in an Amber checkout. See `examples/12_cmos_inverter/analyses.jl` for
+`Amber/examples/11_precision_bridge/monte_carlo.jl`; for a rectifier with diode charge,
+leakage, and dielectric absorption, use `Amber/examples/02_diode_rectifier/circuit.jl`
+in an Amber checkout. See `Amber/examples/12_cmos_inverter/analyses.jl` for
 pulse-driven CMOS switching and propagation-delay measurements.
 
 ## Write arbitrary Julia around Amber
@@ -887,14 +887,14 @@ Modify Amber's core only if the user requested a reusable package feature or com
 
 Implement the device through the complete compiler contract:
 
-1. Add the public constructor/model in `src/Devices/` and export/include it from `src/Amber.jl`.
-2. Register the primitive for hierarchy elaboration in `src/Core/Hierarchy.jl`.
-3. Define its `DeviceContract` in `src/Core/EquationGraph.jl`: terminal count, branch unknowns, dynamic states, DC paths, noise sources, and observables.
-4. Add its residual/Jacobian sparsity shape and stamp-position emission in `src/Core/CompilerIR.jl`.
-5. Implement its typed batch assembly and `_inplace_batch_supported`/`_linear_batch` traits in `src/Core/Workspace.jl`, using precomputed slots. Stamp residuals, exact Jacobians, and dynamic terms with consistent signs.
+1. Add the public constructor/model in `Amber/src/Devices/` and export/include it from `Amber/src/Amber.jl`.
+2. Register the primitive for hierarchy elaboration in `Amber/src/Core/Hierarchy.jl`.
+3. Define its `DeviceContract` in `Amber/src/Core/EquationGraph.jl`: terminal count, branch unknowns, dynamic states, DC paths, noise sources, and observables.
+4. Add its residual/Jacobian sparsity shape and stamp-position emission in `Amber/src/Core/CompilerIR.jl`.
+5. Implement its typed batch assembly and `_inplace_batch_supported`/`_linear_batch` traits in `Amber/src/Core/Workspace.jl`, using precomputed slots. Stamp residuals, exact Jacobians, and dynamic terms with consistent signs.
 6. Extend result reconstruction for device current, power, charge, or state; model parameter replacement; noise inventory; diagnostics; and serialization wherever the device participates.
 7. Test terminal orientation, DC I-V behavior, analytic Jacobians against finite differences, transient state evolution, AC linearization, noise, KCL/power conservation, hierarchy paths, parameter updates, persistence, and relevant physical references.
-8. Run `julia --project=. -e 'using Pkg; Pkg.test()'` and targeted tests. Document model equations, parameter domains, temperature behavior, and limitations.
+8. Run `julia --project=Amber -e 'using Pkg; Pkg.test()'` and targeted tests. Document model equations, parameter domains, temperature behavior, and limitations.
 
 Read adjacent implementations before changing internals. Amber's performance comes from explicit device contracts, static sparse stamp shapes, batched assembly, and workspace reuse; bypassing one layer can produce plausible but wrong answers or silently disable an analysis.
 

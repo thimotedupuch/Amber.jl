@@ -1,5 +1,5 @@
 # Compiler and execution measurements on repeated CMOS, mixed passive networks,
-# and heterogeneous behavioral kernels. Run with --project=. from the repo root.
+# and heterogeneous behavioral kernels. Run with --project=Amber from the repo root.
 using Amber
 using LinearAlgebra
 using TOML

@@ -1,4 +1,4 @@
-# julia --project=. benchmark/structural_solve_plan.jl > results.toml
+# julia --project=Amber benchmark/structural_solve_plan.jl > results.toml
 # End-to-end linear solves, including extraction/validation in the experimental
 # executor. Neither path caches factors. Plan construction is measured separately.
 using Amber, SparseArrays, LinearAlgebra, TOML

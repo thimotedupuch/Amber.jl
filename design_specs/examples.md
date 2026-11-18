@@ -1251,7 +1251,7 @@ end
 # 13. Organisation recommandée des exemples
 
 ```text
-examples/
+Amber/examples/
 ├── 01_practical_rc/
 │   ├── circuit.jl
 │   ├── ac_analysis.jl
@@ -1364,7 +1364,7 @@ Le message est alors immédiatement compréhensible :
 
 # 15. Convertisseur buck asynchrone
 
-`examples/09_buck_converter` combine une source PWM, un interrupteur non idéal,
+`Amber/examples/09_buck_converter` combine une source PWM, un interrupteur non idéal,
 une diode de roue libre avec claquage inverse, une inductance résistive et un
 condensateur à ESR. Le même objet expose les tensions de commutation, le courant
 d'inductance et les puissances utiles :
@@ -1384,7 +1384,7 @@ la dynamique LC entre deux fronts.
 
 # 16. Filtre actif hiérarchique du quatrième ordre
 
-`examples/10_hierarchical_active_filter` définit une cellule Sallen–Key comme
+`Amber/examples/10_hierarchical_active_filter` définit une cellule Sallen–Key comme
 un véritable sous-circuit Julia, puis l'instancie deux fois avec des paramètres
 différents. La hiérarchie reste visible dans les noms (`First.R1`,
 `Second.Buffer`) et la même construction sert au point de repos, à l'AC et à la
@@ -1398,7 +1398,7 @@ step = transient(filter, 0s => 1ms; saveat = 1μs)
 
 # 17. Pont résistif et amplificateur d'instrumentation
 
-`examples/11_precision_bridge` transforme le déséquilibre sub-millivolt d'un
+`Amber/examples/11_precision_bridge` transforme le déséquilibre sub-millivolt d'un
 pont de Wheatstone avec un amplificateur d'instrumentation à trois AOP. Son
 analyse Monte-Carlo applique directement une matrice de covariance aux quatre
 résistances du pont, exécute les essais en parallèle et calcule le rendement
