@@ -15,4 +15,30 @@
     _, analytic = Amber.residual_jacobian(compiled, point, previous, 0.2, α; temperature)
     numerical = Amber._jacobian(z -> Amber.residual(compiled, z, α .* (z .- previous), 0.2; temperature), point)
     @test relative_error(Matrix(analytic), numerical) < 2.0e-5
+
+    # Check the assembled current and charge Jacobians against AD of the
+    # residual and stored charge stamps in a common state direction.
+    direction = collect(range(-0.2, 0.3; length = compiled.n))
+    currents = zeros(compiled.n)
+    charges = zeros(compiled.n)
+    for batch in compiled.parameters.batches
+        stamp = let batch = batch, temperature = temperature
+            function (z)
+                residual = zeros(length(z))
+                storage = zeros(length(z))
+                sink = (; residual, storage, jacobian = (; nzval = nothing),
+                    storage_jacobian = (; nzval = nothing))
+                Amber._assemble_batch!(sink, batch, z, zeros(length(z)), 0.0, 0.0,
+                    :dc, 1.0, temperature)
+                Amber._storage_batch!(sink, batch, z, temperature)
+                return residual, storage
+            end
+        end
+        dcurrent, dcharge = Amber._sensitivity_jvp(stamp, (point,), (direction,))
+        currents .+= dcurrent
+        charges .+= dcharge
+    end
+    static, dynamic = Amber._static_dynamic_jacobians(compiled, point; mode = :dc, temperature)
+    @test currents ≈ static * direction
+    @test charges ≈ dynamic * direction
 end

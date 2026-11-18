@@ -483,15 +483,25 @@ function _parameter_device_path(design, locator)
     return isempty(instance_path) ? device_name : string(instance_path, '.', device_name)
 end
 
+_resistor_parameter_values(parameters, ::Type{T}, value) where {T} =
+    inv(convert(T, value)), convert(typeof(parameters), merge(parameters, (value = value,)))
+
+function _primitive_parameter_values(kind, parameters, parameter, value)
+    if hasproperty(parameters, parameter)
+        updated = _component_parameter(kind, parameter, value)
+        return merge(parameters, NamedTuple{(parameter,)}((updated,)))
+    end
+    return merge(parameters, (model = with_model_parameter(parameters.model, parameter, value),))
+end
+
 function _updated_batch(batch::ResistorBatch, design, parameter, indices, value; owned = false,allow_derived=false)
     value = _component_parameter(:resistor, parameter, value)
     parameter === :value || throw(ArgumentError("resistor batches expose the numerical parameter `value`"))
     conductance = owned ? batch.conductance : copy(batch.conductance)
     parameters = owned ? batch.parameters : copy(batch.parameters)
     for index in indices
-        P = eltype(parameters)
         converted_conductance, updated_parameters = try
-            inv(convert(eltype(conductance), value)), convert(P, merge(parameters[index], (value = value,)))
+            _resistor_parameter_values(parameters[index], eltype(conductance), value)
         catch error
             error isa InterruptException && rethrow()
             throw(
@@ -544,8 +554,7 @@ function _updated_batch(batch::PrimitiveBatch{K, N, P}, design, parameter, indic
             throw(TopologyParameterError(path(), parameter))
         parameter in _elaborated_model_parameters(K) && throw(TopologyParameterError(path(), parameter))
         parameter in (:control, :control_count) && throw(TopologyParameterError(path(), parameter))
-        updated = direct ? merge(values[index], NamedTuple{(parameter,)}((_component_parameter(_batch_kind(batch), parameter, value),))) :
-            merge(values[index], (model = with_model_parameter(model, parameter, value),))
+        updated = _primitive_parameter_values(_batch_kind(batch), values[index], parameter, value)
         model === nothing || _check_model_update(K, model, updated.model, path())
         try
             values[index] = convert(P, updated)

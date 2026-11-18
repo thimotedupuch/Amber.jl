@@ -84,13 +84,7 @@ function _small_signal_path_sweep!(vals, fs, system, Jz, Jd, b, order)
     return vals
 end
 
-function small_signal(c, p::Union{Pair, AbstractVector}; points = p isa AbstractVector ? length(p) : 100, scale = :log, source = nothing, temperature = 300.0, solver = nothing, kw...)
-    automatic_solver = solver === nothing
-    solver = automatic_solver ? SolverOptions() : solver
-    temperature = _si_value(temperature, Unitful.K)
-    isfinite(temperature)&&temperature > 0||throw(AnalysisValidationError("temperature must be finite and positive"))
-    cc = compile(c); operating_point_result = _require_converged(operating_point(cc; temperature, solver, kw...), "small-signal operating point"); op = operating_point_result.values[:, 1]
-    fs = _small_signal_frequencies(p; points, scale)
+function _small_signal_sources(cc, source)
     warnings = String[]
     active = String[]
     source_kinds = Dict{String, Symbol}()
@@ -113,6 +107,17 @@ function small_signal(c, p::Union{Pair, AbstractVector}; points = p isa Abstract
     elseif isempty(active)
         push!(warnings, "the circuit has no nonzero AC excitation")
     end
+    return warnings, active
+end
+
+function small_signal(c, p::Union{Pair, AbstractVector}; points = p isa AbstractVector ? length(p) : 100, scale = :log, source = nothing, temperature = 300.0, solver = nothing, kw...)
+    automatic_solver = solver === nothing
+    solver = automatic_solver ? SolverOptions() : solver
+    temperature = _si_value(temperature, Unitful.K)
+    isfinite(temperature)&&temperature > 0||throw(AnalysisValidationError("temperature must be finite and positive"))
+    cc = compile(c); operating_point_result = _require_converged(operating_point(cc; temperature, solver, kw...), "small-signal operating point"); op = operating_point_result.values[:, 1]
+    fs = _small_signal_frequencies(p; points, scale)
+    warnings, active = _small_signal_sources(cc, source)
     vals = zeros(ComplexF64, cc.n, length(fs)); Jz, Jd = _static_dynamic_jacobians(cc, op; mode = :dc, temperature); b = ac_excitation(cc; source)
     Jz, Jd = _small_signal_compact_jacobians(Jz, Jd)
     # Both derivatives share the reduced union pattern: retain any slot that

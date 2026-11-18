@@ -3,6 +3,7 @@ module Amber
 using LinearAlgebra
 using AbstractFFTs
 using FFTW
+import Mooncake
 using Random
 using SparseArrays
 using SHA
@@ -79,6 +80,7 @@ export LinearizedModel, LinearFrequencyResponse, TimeResponse, linearize, freque
 export poles, transmission_zeros, natural_frequencies, damping_ratios, isstable
 export gain_crossovers, phase_crossovers, StabilityMargins, stability_margins, gain_margin, phase_margin
 export sensitivity, complementary_sensitivity, step_response, impulse_response
+export SensitivityResult
 export rise_time, settling_time, peak_time, steady_state_error, root_locus
 export AbstractLoopProbe, VoltageLoopProbe, CurrentLoopProbe, LoopGainResult
 export loop_gain, loop_sensitivity, closed_loop_response
@@ -159,6 +161,7 @@ include("Solvers/TransientNoise.jl")
 include("Solvers/PeriodicNoise.jl")
 include("Solvers/PhaseNoise.jl")
 include("Analysis/Sweeps.jl")
+include("Analysis/Sensitivity.jl")
 include("Analysis/MonteCarlo.jl")
 include("Analysis/Metrics.jl")
 include("Analysis/Specifications.jl")

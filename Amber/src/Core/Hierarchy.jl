@@ -137,8 +137,8 @@ _parameter_call(operation::Symbol, args...) = ParameterCall(_PARAMETER_OPERATION
 for operation in (:+, :-, :*, :/, :^, :min, :max)
     @eval begin
         Base.$operation(a::AbstractParameterExpression, b::AbstractParameterExpression) = _parameter_call($(QuoteNode(operation)), a, b)
-        Base.$operation(a::AbstractParameterExpression, b) = _parameter_call($(QuoteNode(operation)), a, b)
-        Base.$operation(a, b::AbstractParameterExpression) = _parameter_call($(QuoteNode(operation)), a, b)
+        Base.$operation(a::AbstractParameterExpression, b::Union{Number,AbstractArray}) = _parameter_call($(QuoteNode(operation)), a, b)
+        Base.$operation(a::Union{Number,AbstractArray}, b::AbstractParameterExpression) = _parameter_call($(QuoteNode(operation)), a, b)
     end
 end
 for operation in (:min, :max)
