@@ -45,7 +45,7 @@ illustrative. Reproduce the figure with the
 | Devices | R, G, C, L, independent and controlled sources, diodes, NPN BJTs, NMOS/PMOS, switches, behavioral op-amps, nonlinear behavioral sources |
 | Extended devices | Zener, Schottky, LED, photodiode, solar cell, N/P JFET, thermistor, varistor, controlled resistor, potentiometer, multiplier, limiter, comparator, ideal transformer, diode bridge, crystal, lumped RLGC line |
 | Physical details | resistor excess noise and material families, passive package parasitics, calibrated capacitor loss and dielectric absorption, diode depletion/diffusion charge, fixed BJT junction capacitances, MOS gate capacitances, matched devices |
-| Core analyses | operating point, BDF1/BDF2/trapezoidal transient, small-signal AC, parameter sweeps, periodic steady state |
+| Core analyses | operating point, BDF1/BDF2/trapezoidal transient, small-signal AC, parameter sensitivities, parameter sweeps, periodic steady state |
 | Noise | stationary frequency-domain noise, input-referred noise, contribution budgets, integrated noise, stochastic transient noise, cyclostationary periodic noise, oscillator phase noise |
 | RF and control | multiport Z/Y/S/ABCD/H parameters, descriptor-system linearization, poles, zeros, stability, root locus, step/impulse response, bias-preserving loop gain and margins |
 | Measurements | voltage/current/power/charge/state traces, transfer functions, bandwidth, delay, resonances, FFT spectra, THD, THD+N, SNR, SINAD, SFDR, ENOB, sampling and propagation metrics, CMOS inverter noise margins and switching energy |
@@ -55,8 +55,8 @@ illustrative. Reproduce the figure with the
 
 ## Installation
 
-Amber requires Julia 1.10 or later. Until it is registered, install it directly
-from GitHub:
+Amber requires Julia 1.10.8 or later, subject to Mooncake's Julia compatibility.
+Until it is registered, install it directly from GitHub:
 
 ```julia
 using Pkg
@@ -941,6 +941,32 @@ failure_rate(study)
 ```
 
 Every point retains its simulation or structured failure.
+
+### Local parameter sensitivity
+
+Use `sensitivity` to measure how a small change in a component or model
+parameter affects a circuit metric at its nominal operating point. Amber uses
+Mooncake to differentiate device contributions and reuses its sparse
+factorizations to propagate those derivatives. Supported metrics include DC
+voltages, internal states, supported branch currents and absorbed power, as
+well as small-signal transfer magnitude, phase and gain in dB at a specified
+frequency.
+
+For the low-pass filter from the tour, compute how the gain at 1 kHz changes
+with resistance and capacitance:
+
+```julia
+gain = transfer(:Source => voltage(:vout))
+result = sensitivity(
+    filter;
+    metric = db20(gain; at = 1kHz),
+    parameters = ["R1.value", "C1.value"],
+)
+
+result.value          # Nominal gain in dB
+result["R1.value"]    # Local derivative in dB per ohm
+result["C1.value"]    # Local derivative in dB per farad
+```
 
 ### Reproducible Monte Carlo
 
