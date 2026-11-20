@@ -45,7 +45,7 @@ save_schematic("low-pass.svg", drawing)
 
 Use a newline in a component label to set its reference above its value, for example `"R1\n1 kΩ"`. The first line is bold and subsequent lines use smaller type.
 
-The [complete low-pass example](examples/low_pass.jl) also routes the ground return and uses `net_markers` to place signal labels and a ground symbol on their conductors.
+The [complete low-pass example](examples/low_pass.jl) also routes the ground return and uses `net_markers` to place signal labels and a ground symbol on their conductors. Ground symbols require clearance from component bodies and conductors on other nets.
 
 Routes must use horizontal and vertical segments. The package rejects routes between distinct Amber nets and detects touching or crossing conductors on distinct nets. A completely wired signal net can be read from its wires. Partially routed nets retain their Amber names at the terminal stubs. Ground retains its stub labels unless it is fully routed and has a ground marker. Layout changes have no effect on electrical behavior. The renderer measures text and adjusts external labels to clear symbols, wires, and other labels. Multiline captions move as a group. In dense custom layouts, review the resulting label positions before publishing.
 
@@ -92,6 +92,15 @@ Use `:mos_body_tied` to show the tie inside the symbol, or `:mos_logic` to
 use three visible terminals and a bubble on the PMOS gate. Both compact
 styles require Amber's source and bulk to share a net. The bulk retains its
 original terminal index in `connectivity` and shares the source's anchor.
+
+Pass `compact = true` to `figure` or `save_schematic` to shorten large gaps
+in the rendered layout. Compaction keeps component and label sizes, routing
+order, and alignment. It shortens straight wire runs where there is clearance
+and leaves the original `Schematic` available for subsequent exports.
+
+Pass `check_layout = true` to either rendering function to check wiring and
+label clearance before export. A label clearance error names the two labels
+involved so you can adjust a placement or caption.
 
 Pass `theme = :dark` to `figure` or `save_schematic` for a dark background
 and a matching wire, symbol, and label palette.

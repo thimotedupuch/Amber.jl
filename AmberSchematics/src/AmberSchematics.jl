@@ -192,6 +192,7 @@ function schematic(design::Amber.CircuitDesign; placements = Dict(), labels = Di
         net === nothing && throw(ArgumentError("unknown net `$name`"))
         any(segment -> segment[1] == net && _on_segment(point, segment[2], segment[3]), segments) ||
             throw(ArgumentError("marker for `$name` must be on one of its conductors"))
+        net == ground && _validate_ground_marker(drawing, point, segments)
         push!(drawing.markers, (net, point))
     end
     sort!(drawing.markers)

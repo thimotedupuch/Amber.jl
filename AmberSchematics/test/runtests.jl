@@ -50,6 +50,42 @@ end
     end
 end
 
+@testset "Opt-in rendering compaction" begin
+    placements = Dict(:V => Placement(0, 0), :R => Placement(18, 0),
+        :C => Placement(32, 0), :X => Placement(0, -12))
+    drawing = schematic(Filter(); placements, wires = [Wire((:V, 1), (:R, 1);
+        via = [(-2, 0), (-2, 3), (12, 3), (12, 0)])],
+        net_markers = Dict(:gnd => (1.05, 0)))
+    routes = deepcopy(drawing.routes)
+    terminals = connectivity(drawing)
+    original = size(figure(drawing).scene)
+    compact = size(figure(drawing; compact = true).scene)
+    @test all(compact .< original)
+    @test size(figure(drawing; compact = false).scene) == original
+    @test drawing.routes == routes
+    @test connectivity(drawing) == terminals
+    @test anchor(drawing, :R, 1) == (16.95, 0.0)
+    mktempdir() do directory
+        path = joinpath(directory, "compact.svg")
+        @test save_schematic(path, drawing; compact = true, check_layout = true) == path
+        @test occursin("<svg", read(path, String))
+    end
+end
+
+@testset "Ground marker clearance" begin
+    design = Filter()
+    marker = Dict(:gnd => (1.05, 0.0))
+    placements = Dict(:V => Placement(0, 0), :R => Placement(4, 0),
+        :C => Placement(8, 0), :X => Placement(0, -4))
+    drawing = schematic(design; net_markers = marker, placements)
+    @test length(drawing.markers) == 1
+    @test figure(drawing) isa AmberSchematics.CM.Figure
+    @test_throws ArgumentError schematic(design; net_markers = marker,
+        placements = merge(placements, Dict(:R => Placement(2.10, -0.39))))
+    @test_throws ArgumentError schematic(design; net_markers = marker,
+        placements = merge(placements, Dict(:R => Placement(1.66, -0.70))))
+end
+
 @testset "Symbol pin order and compatible variants" begin
     builder = CircuitBuilder(:symbols)
     p = node!(builder, :p)
@@ -90,6 +126,8 @@ end
     @test placed[2].at[2] > 0.0
     @test placed[1].at[2] - placed[2].at[2] ≈ 0.22
     @test !AmberSchematics._boxes_overlap(obstacles[1], obstacles[3])
+    @test_throws ArgumentError AmberSchematics._check_label_clearance(
+        [label, label], [obstacles[2], obstacles[2]])
 end
 
 @testset "MOS variants and dark export" begin

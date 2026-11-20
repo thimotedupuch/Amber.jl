@@ -20,14 +20,16 @@ end
 
 _on_segment(point, a, b) = all(i -> min(a[i], b[i]) <= point[i] <= max(a[i], b[i]), 1:2)
 
+function _component_box(component)
+    width, height = _halfwidth(component), _halfheight(component)
+    a = _transform(component.placement, (-width, -height))
+    b = _transform(component.placement, (width, height))
+    return (min.(a, b), max.(a, b))
+end
+
 function _validate_wiring(drawing)
     segments = _segments(drawing)
-    boxes = [begin
-        width, height = _halfwidth(component), _halfheight(component)
-        a = _transform(component.placement, (-width, -height))
-        b = _transform(component.placement, (width, height))
-        (component.name, min.(a, b), max.(a, b))
-    end for component in drawing.components]
+    boxes = [(component.name, _component_box(component)...) for component in drawing.components]
     for (index, (name, low, high)) in enumerate(boxes)
         for (other, bottom, top) in @view boxes[1:index-1]
             all(i -> max(low[i], bottom[i]) < min(high[i], top[i]), 1:2) &&
@@ -43,6 +45,30 @@ function _validate_wiring(drawing)
         if all(i -> max(min(a[i], b[i]), min(c[i], d[i])) <=
                 min(max(a[i], b[i]), max(c[i], d[i])), 1:2)
             throw(ArgumentError("wires for `$(drawing.nets[net])` and `$(drawing.nets[other])` touch or cross"))
+        end
+    end
+end
+
+function _ground_paths((x, y))
+    stem = ((x, y), (x, y - 0.23))
+    bars = map(((0.23, 0.21), (0.31, 0.135), (0.39, 0.06))) do (offset, width)
+        ((x - width, y - offset), (x + width, y - offset))
+    end
+    return stem, bars
+end
+
+function _validate_ground_marker(drawing, point, segments)
+    stem, bars = _ground_paths(point)
+    for path in (stem, bars...)
+        box = _path_box(path)
+        for component in drawing.components
+            _boxes_overlap(box, _component_box(component)) &&
+                throw(ArgumentError("ground marker at $point overlaps the body of `$(component.name)`"))
+        end
+        for (net, a, b) in segments
+            net == drawing.ground && continue
+            _boxes_overlap(box, _path_box((a, b))) &&
+                throw(ArgumentError("ground marker at $point overlaps a conductor for `$(drawing.nets[net])`"))
         end
     end
 end
@@ -276,8 +302,7 @@ end
 
 _shift_box((low, high), offset) = (low .+ offset, high .+ offset)
 
-function _boxes_overlap((low, high), (other_low, other_high))
-    gap = 0.025
+function _boxes_overlap((low, high), (other_low, other_high); gap = 0.025)
     return all(i -> low[i] < other_high[i] + gap && other_low[i] < high[i] + gap, 1:2)
 end
 
@@ -307,19 +332,58 @@ function _label_positions(groups, obstacles)
     return labels
 end
 
-"""Render a schematic with the `:light` or `:dark` palette."""
-function figure(drawing::Schematic; theme::Symbol = :light)
+function _check_label_clearance(labels, boxes)
+    for (index, box) in enumerate(boxes)
+        for other in 1:index-1
+            _boxes_overlap(box, boxes[other]; gap = 0.0) || continue
+            first_label, second_label = labels[other].value, labels[index].value
+            throw(ArgumentError("schematic labels `$first_label` and `$second_label` overlap"))
+        end
+    end
+end
+
+# A strip between protected intervals can only contain straight orthogonal
+# wire runs. Keep a gutter and translate everything beyond it by the same amount.
+function _compact_axis(protected, axis)
+    intervals = sort!([(low[axis], high[axis]) for (low, high) in protected])
+    cuts = Tuple{Float64, Float64}[]
+    edge = first(intervals)[2]
+    for (low, high) in intervals
+        gap = low - edge
+        gap > 1.2 && push!(cuts, (low, gap - 1.2))
+        edge = max(edge, high)
+    end
+    return cuts
+end
+
+function _compact_point(point, cuts)
+    return ntuple(2) do axis
+        coordinate = point[axis]
+        coordinate - sum(width for (start, width) in cuts[axis] if start <= coordinate; init = 0.0)
+    end
+end
+
+"""
+Render a schematic with the `:light` or `:dark` palette. Set `compact=true`
+to shorten oversized gaps or `check_layout=true` to check wiring and label clearance.
+"""
+function figure(drawing::Schematic; theme::Symbol = :light, compact::Bool = false,
+                check_layout::Bool = false)
     palette = theme === :light ? LIGHT_PALETTE : theme === :dark ? DARK_PALETTE :
         throw(ArgumentError("expected theme=:light or theme=:dark"))
+    check_layout && _validate_wiring(drawing)
     conductors = Vector{Coordinate}[]
     outlines = Vector{Coordinate}[]
     blocks = Vector{Coordinate}[]
     groups = Tuple{Vector{NamedTuple}, Coordinate}[]
     fixed = NamedTuple[]
+    protected = Tuple{Coordinate, Coordinate}[]
     for (_, points) in drawing.routes
-        push!(conductors, points)
+        push!(conductors, compact ? copy(points) : points)
     end
     for component in drawing.components
+        first_outline = length(outlines) + 1
+        first_conductor = length(conductors) + 1
         transform(point) = _transform(component.placement, point)
         stroke(points) = push!(outlines, transform.(points))
         conductor(points) = push!(conductors, transform.(points))
@@ -385,15 +449,21 @@ function figure(drawing::Schematic; theme::Symbol = :light)
             label = (at, value = drawing.nets[net], align, size = 12, color = palette.net, font = :regular)
             push!(groups, ([label], outward))
         end
+        if compact
+            paths = Iterators.flatten((@view(outlines[first_outline:end]),
+                @view(conductors[first_conductor:end])))
+            points = collect(Iterators.flatten(paths))
+            push!(protected, isempty(points) ? _component_box(component) : _path_box(points))
+        end
     end
 
     marker_segments = isempty(drawing.markers) ? () : _segments(drawing)
     for (net, (x, y)) in drawing.markers
         if net == drawing.ground
-            push!(conductors, [(x, y), (x, y - 0.23)])
-            for (offset, width) in ((0.23, 0.21), (0.31, 0.135), (0.39, 0.06))
-                push!(outlines, [(x - width, y - offset), (x + width, y - offset)])
-            end
+            stem, bars = _ground_paths((x, y))
+            push!(conductors, collect(stem))
+            append!(outlines, collect.(bars))
+            compact && push!(protected, _path_box(collect(Iterators.flatten((stem, bars...)))))
         else
             on_horizontal = any(marker_segments) do (id, a, b)
                 id == net && a[2] == b[2] && _on_segment((x, y), a, b)
@@ -416,7 +486,28 @@ function figure(drawing::Schematic; theme::Symbol = :light)
         push!(obstacles, _path_box((point,); padding = 0.045))
     end
     pushfirst!(groups, (fixed, (0, 0)))
+    first_label = length(obstacles) + 1
     labels = _label_positions(groups, obstacles)
+    label_boxes = @view obstacles[first_label:end]
+    check_layout && _check_label_clearance(labels, label_boxes)
+    if compact
+        append!(protected, label_boxes)
+        for (_, points) in drawing.routes, point in points
+            push!(protected, _path_box((point,)))
+        end
+        for point in Iterators.flatten((junctions, taps))
+            push!(protected, _path_box((point,); padding = 0.045))
+        end
+        cuts = ntuple(axis -> _compact_axis(protected, axis), 2)
+        shift(point) = _compact_point(point, cuts)
+        for paths in (blocks, conductors, outlines), path in paths
+            map!(shift, path, path)
+        end
+        map!(shift, junctions, junctions)
+        map!(shift, taps, taps)
+        map!(box -> map(shift, box), obstacles, obstacles)
+        labels = [merge(label, (at = shift(label.at),)) for label in labels]
+    end
     bounds = collect(Iterators.flatten(obstacles))
     xmin, xmax = extrema(first, bounds) .+ (-0.36, 0.36)
     ymin, ymax = extrema(last, bounds) .+ (-0.36, 0.36)
@@ -447,9 +538,10 @@ function figure(drawing::Schematic; theme::Symbol = :light)
 end
 
 """Save an Amber schematic to SVG, PDF or PNG and return the output path."""
-function save_schematic(path::AbstractString, drawing::Schematic; theme::Symbol = :light, kwargs...)
+function save_schematic(path::AbstractString, drawing::Schematic; theme::Symbol = :light,
+                        compact::Bool = false, check_layout::Bool = false, kwargs...)
     lowercase(splitext(path)[2]) in (".svg", ".pdf", ".png") ||
         throw(ArgumentError("expected a .svg, .pdf, or .png output path"))
-    CM.save(path, figure(drawing; theme); kwargs...)
+    CM.save(path, figure(drawing; theme, compact, check_layout); kwargs...)
     return path
 end
